@@ -5,6 +5,16 @@ const { LavalinkManager } = require('lavalink-client');
 const { loadCommands, registerSlashCommands } = require('./handlers/commandHandler');
 const { setupLavalinkEvents } = require('./handlers/playerEvents');
 
+// ── Render.com / Cloud Health Check Server ─────────────────────
+const http = require('http');
+const PORT = process.env.PORT || 3000;
+http.createServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'text/plain' });
+    res.end('Reso Music Bot is running 24/7!');
+}).listen(PORT, () => {
+    console.log(`[Reso] ✓ Health check server listening on port ${PORT}`);
+});
+
 // ── Create Discord Client ──────────────────────────────────────
 const client = new Client({
     intents: [
