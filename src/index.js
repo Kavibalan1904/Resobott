@@ -22,6 +22,12 @@ const client = new Client({
         GatewayIntentBits.GuildVoiceStates,
         GatewayIntentBits.GuildMessages,
     ],
+    sweepers: {
+        messages: {
+            interval: 3600, // Sweep messages every hour
+            lifetime: 1800, // Remove messages older than 30 minutes from RAM
+        },
+    },
 });
 
 client.commands = new Collection();
@@ -141,5 +147,16 @@ async function main() {
         process.exit(1);
     }
 }
+
+// ── Global Anti-Crash Protection (Wispbyte / Game Panels) ──────
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('[Reso Anti-Crash] Unhandled Rejection:', reason);
+});
+process.on('uncaughtException', (err, origin) => {
+    console.error('[Reso Anti-Crash] Uncaught Exception:', err);
+});
+process.on('uncaughtExceptionMonitor', (err, origin) => {
+    console.error('[Reso Anti-Crash] Uncaught Exception Monitor:', err);
+});
 
 main();

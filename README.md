@@ -56,22 +56,32 @@ npm start
 
 ---
 
-## 🚀 Deploy to HeavenCloud
+## 🚀 Deployment & Hosting Guides
 
-1. **Sign up** at [heavencloud.in](https://heavencloud.in)
-2. **Create a new server** → Select **Node.js** as the runtime
-3. **Upload your files** via the File Manager or SFTP:
-   - Upload the entire project folder (`src/`, `package.json`, `.env`, etc.)
-   - ⚠️ Do NOT upload `node_modules/` — it will be installed on the server
-4. **Open the Console** and run:
+### 🌩️ Wispbyte & Game Panels (Pterodactyl / Wisp)
+This bot has been optimized with strict V8 garbage collection and global exception handlers to prevent Out-of-Memory (OOM) crashes on Wispbyte and Pterodactyl panels.
+1. Create a **Node.js** server on your Wispbyte/Pterodactyl dashboard.
+2. Go to **Startup** ➔ Set **Startup Command** to:
    ```bash
-   npm install
+   npm run start:wisp
    ```
-5. **Set environment variables** in the `.env` file via the File Manager
-6. **Start the bot** — click the Start button or run `npm start` in the console
-7. ✅ Your bot is now live 24/7!
+   *(This applies V8 `--optimize_for_size` and `--max-old-space-size=460` flags to prevent memory limit crashes).*
+3. Upload your project files (without `node_modules/`) or link your GitHub repository.
+4. Go to **Environment / Variables** and add your `DISCORD_TOKEN`, `CLIENT_ID`, and Lavalink credentials.
+5. Click **Start**!
+
+### 🚂 Railway.app
+1. Create a new project on [Railway.app](https://railway.app/) ➔ **"Deploy from GitHub repo"**.
+2. Railway automatically detects `railway.json` and uses the Nixpacks Node 20 builder.
+3. In the **Variables** tab, add your `DISCORD_TOKEN`, `CLIENT_ID`, and Lavalink environment variables.
+
+### ☁️ Render.com
+1. Create a **New Blueprint Instance** or **Web Service** on [Render.com](https://render.com/).
+2. Render uses `render.yaml` and starts a built-in HTTP health check server on port `10000` so your deployment passes port scans.
+3. Add your bot token in **Environment Variables**. You can plug your Render URL into [UptimeRobot](https://uptimerobot.com/) for 24/7 free uptime!
 
 ---
+
 
 ## 🎵 Commands
 
