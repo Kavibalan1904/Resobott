@@ -2,7 +2,7 @@
   "name": "reso-music-bot",
   "version": "2.0.0",
   "description": "Reso — A high-quality Discord music bot powered by Lavalink",
-  "main": "src/index.js",
+  "main": "index.js",
   "scripts": {
     "start": "node --optimize_for_size --max-old-space-size=460 src/index.js",
     "start:wisp": "node --optimize_for_size --max-old-space-size=460 --expose-gc src/index.js",
