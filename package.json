@@ -1,0 +1,28 @@
+{
+  "name": "reso-music-bot",
+  "version": "2.0.0",
+  "description": "Reso — A high-quality Discord music bot powered by Lavalink",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "discord",
+    "music",
+    "bot",
+    "reso",
+    "lavalink"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "discord.js": "^14.16.3",
+    "dotenv": "^16.4.5",
+    "genius-lyrics": "^4.4.7",
+    "lavalink-client": "^2.4.4"
+  }
+}

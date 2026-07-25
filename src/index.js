@@ -1,0 +1,135 @@
+require('dotenv').config();
+
+const { Client, GatewayIntentBits, Collection } = require('discord.js');
+const { LavalinkManager } = require('lavalink-client');
+const { loadCommands, registerSlashCommands } = require('./handlers/commandHandler');
+const { setupLavalinkEvents } = require('./handlers/playerEvents');
+
+// ── Create Discord Client ──────────────────────────────────────
+const client = new Client({
+    intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildVoiceStates,
+        GatewayIntentBits.GuildMessages,
+    ],
+});
+
+client.commands = new Collection();
+
+// ── 24/7 mode storage (guild ID → boolean) ─────────────────────
+client.twentyFourSeven = new Set();
+
+// ── Track history storage (guild ID → array of tracks) ─────────
+client.trackHistory = new Map();
+
+// ── Create Lavalink Manager ────────────────────────────────────
+client.lavalink = new LavalinkManager({
+    nodes: [
+        {
+            id: 'primary-jirayu',
+            host: process.env.LAVALINK_HOST || 'lavalink.jirayu.net',
+            port: parseInt(process.env.LAVALINK_PORT) || 13592,
+            authorization: process.env.LAVALINK_PASSWORD || 'youshallnotpass',
+            secure: process.env.LAVALINK_SECURE === 'true',
+        },
+        {
+            id: 'backup-kasawa',
+            host: 'lava2.kasawa.pro',
+            port: 2334,
+            authorization: 'youshallnotpass',
+            secure: false,
+        },
+        {
+            id: 'backup-serenetia',
+            host: 'lavalinkv4.serenetia.com',
+            port: 80,
+            authorization: 'https://seretia.link/discord',
+            secure: false,
+        },
+        {
+            id: 'backup-minecuta',
+            host: 'lavav4.minecuta.com',
+            port: 2333,
+            authorization: 'discord.gg/gKuXdHs',
+            secure: false,
+        },
+    ],
+    sendToShard: (guildId, payload) => {
+        client.guilds.cache.get(guildId)?.shard?.send(payload);
+    },
+    autoSkip: true,
+    client: {
+        id: process.env.CLIENT_ID,
+        username: 'Reso',
+    },
+    playerOptions: {
+        defaultSearchPlatform: 'ytsearch',
+        onDisconnect: {
+            autoReconnect: false,
+            destroyPlayer: true,
+        },
+    },
+});
+
+// ── Forward raw Discord events to Lavalink ─────────────────────
+client.on('raw', (data) => client.lavalink.sendRawData(data));
+
+// ── Initialize ─────────────────────────────────────────────────
+async function main() {
+    try {
+        // Load commands
+        await loadCommands(client);
+        console.log(`[Reso] ✓ Loaded ${client.commands.size} commands`);
+
+        // Setup Lavalink events
+        setupLavalinkEvents(client);
+        console.log('[Reso] ✓ Lavalink events registered');
+
+        // Bot ready event
+        client.once('ready', async () => {
+            console.log(`[Reso] ✓ Logged in as ${client.user.tag}`);
+            console.log(`[Reso] ✓ Serving ${client.guilds.cache.size} servers`);
+
+            // Initialize Lavalink manager
+            client.lavalink.init({ id: client.user.id, username: client.user.username });
+            console.log('[Reso] ✓ Lavalink manager initialized');
+
+            // Set activity
+            client.user.setActivity('music 🎵 | /help', { type: 2 }); // Type 2 = Listening
+
+            // Register slash commands globally
+            await registerSlashCommands(client);
+            console.log('[Reso] ✓ Slash commands registered globally');
+        });
+
+        // Handle interactions
+        client.on('interactionCreate', async (interaction) => {
+            if (!interaction.isChatInputCommand()) return;
+            const command = client.commands.get(interaction.commandName);
+            if (!command) return;
+
+            try {
+                await command.execute(interaction, client);
+            } catch (error) {
+                console.error(`[Reso] Command error (${interaction.commandName}):`, error);
+                const errorMsg = {
+                    content: '❌ An error occurred while executing this command.',
+                    ephemeral: true,
+                };
+                if (interaction.replied || interaction.deferred) {
+                    await interaction.followUp(errorMsg).catch(() => {});
+                } else {
+                    await interaction.reply(errorMsg).catch(() => {});
+                }
+            }
+        });
+
+        // Login
+        await client.login(process.env.DISCORD_TOKEN);
+    } catch (error) {
+        console.error('[Reso] Fatal error:', error);
+        process.exit(1);
+    }
+}
+
+main();

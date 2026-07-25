@@ -1,0 +1,161 @@
+const { EmbedBuilder } = require('discord.js');
+const { createProgressBar, formatMs } = require('./helpers');
+
+// ── Reso Brand Colors ──────────────────────────────────────────
+const Colors = {
+    Primary: 0x5865F2,   // Discord Blurple
+    Success: 0x57F287,   // Green
+    Warning: 0xFEE75C,   // Yellow
+    Error: 0xED4245,     // Red
+    Info: 0x5865F2,      // Blurple
+    Music: 0xEB459E,     // Fuchsia
+    Queue: 0x5865F2,     // Blurple
+};
+
+const EMOJIS = {
+    music: '🎵',
+    play: '▶️',
+    pause: '⏸️',
+    stop: '⏹️',
+    skip: '⏭️',
+    back: '⏮️',
+    loop: '🔁',
+    loopOne: '🔂',
+    shuffle: '🔀',
+    volume: '🔊',
+    volumeMute: '🔇',
+    queue: '📋',
+    filter: '🎛️',
+    lyrics: '📝',
+    clock: '⏱️',
+    disc: '💿',
+    star: '⭐',
+    link: '🔗',
+    ping: '🏓',
+    info: 'ℹ️',
+    success: '✅',
+    error: '❌',
+    warning: '⚠️',
+    grab: '💾',
+    dj: '🎧',
+    live: '🔴',
+    search: '🔍',
+};
+
+/**
+ * Create a themed Reso embed
+ */
+function createEmbed(type = 'Primary') {
+    const color = Colors[type] || Colors.Primary;
+    return new EmbedBuilder()
+        .setColor(color)
+        .setTimestamp()
+        .setFooter({ text: 'Reso • Resonance' });
+}
+
+/**
+ * Create a "Now Playing" embed for a Lavalink track
+ * @param {object} track Lavalink track object (has track.info)
+ * @param {object} player Lavalink player instance
+ */
+function nowPlayingEmbed(track, player) {
+    const info = track.info || track;
+    const duration = info.duration || 0;
+    const position = player.position || 0;
+    const isStream = info.isStream || false;
+
+    const progress = isStream
+        ? '🔴 Live Stream'
+        : createProgressBar(position, duration);
+
+    const embed = createEmbed('Music')
+        .setAuthor({ name: 'Now Playing', iconURL: 'https://cdn.discordapp.com/emojis/741605543046807626.gif' })
+        .setTitle(info.title || 'Unknown Track')
+        .setURL(info.uri || null)
+        .setThumbnail(info.artworkUrl || null)
+        .addFields(
+            { name: `${EMOJIS.clock} Duration`, value: isStream ? 'Live' : formatMs(duration), inline: true },
+            { name: `${EMOJIS.dj} Requested by`, value: `${track.requester || 'Unknown'}`, inline: true },
+            { name: `${EMOJIS.volume} Volume`, value: `${player.volume}%`, inline: true },
+        )
+        .setDescription(progress);
+
+    if (info.sourceName) {
+        embed.addFields({ name: `${EMOJIS.disc} Source`, value: capitalize(info.sourceName), inline: true });
+    }
+
+    const loopModes = ['Off', 'Track', 'Queue'];
+    embed.addFields(
+        { name: `${EMOJIS.loop} Loop`, value: loopModes[player.repeatMode] || 'Off', inline: true },
+        { name: `${EMOJIS.queue} Queue`, value: `${player.queue.tracks.length} tracks`, inline: true },
+    );
+
+    return embed;
+}
+
+/**
+ * Create a track-added embed for a Lavalink track
+ */
+function trackAddedEmbed(track) {
+    const info = track.info || track;
+    return createEmbed('Success')
+        .setAuthor({ name: 'Added to Queue' })
+        .setTitle(info.title || 'Unknown Track')
+        .setURL(info.uri || null)
+        .setThumbnail(info.artworkUrl || null)
+        .addFields(
+            { name: `${EMOJIS.clock} Duration`, value: info.isStream ? 'Live' : formatMs(info.duration), inline: true },
+            { name: `${EMOJIS.dj} Requested by`, value: `${track.requester || 'Unknown'}`, inline: true },
+            { name: `${EMOJIS.disc} Source`, value: capitalize(info.sourceName || 'Unknown'), inline: true },
+        );
+}
+
+/**
+ * Create an error embed
+ */
+function errorEmbed(message) {
+    return createEmbed('Error')
+        .setDescription(`${EMOJIS.error} ${message}`);
+}
+
+/**
+ * Create a success embed
+ */
+function successEmbed(message) {
+    return createEmbed('Success')
+        .setDescription(`${EMOJIS.success} ${message}`);
+}
+
+/**
+ * Create a warning embed
+ */
+function warningEmbed(message) {
+    return createEmbed('Warning')
+        .setDescription(`${EMOJIS.warning} ${message}`);
+}
+
+/**
+ * Create an info embed
+ */
+function infoEmbed(message) {
+    return createEmbed('Info')
+        .setDescription(`${EMOJIS.info} ${message}`);
+}
+
+function capitalize(str) {
+    if (!str) return '';
+    return str.charAt(0).toUpperCase() + str.slice(1);
+}
+
+module.exports = {
+    Colors,
+    EMOJIS,
+    createEmbed,
+    nowPlayingEmbed,
+    trackAddedEmbed,
+    errorEmbed,
+    successEmbed,
+    warningEmbed,
+    infoEmbed,
+    capitalize,
+};
