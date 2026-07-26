@@ -1,5 +1,11 @@
 require('dotenv').config();
 
+// ── Force IPv4 First (Fixes container IPv6 blackhole hanging on Wispbyte / Docker) ──
+const dns = require('dns');
+if (dns.setDefaultResultOrder) {
+    dns.setDefaultResultOrder('ipv4first');
+}
+
 const { Client, GatewayIntentBits, Collection } = require('discord.js');
 const { LavalinkManager } = require('lavalink-client');
 const { loadCommands, registerSlashCommands } = require('./handlers/commandHandler');
@@ -22,6 +28,9 @@ const client = new Client({
         GatewayIntentBits.GuildVoiceStates,
         GatewayIntentBits.GuildMessages,
     ],
+    rest: {
+        timeout: 15000, // 15 seconds timeout instead of hanging forever
+    },
     sweepers: {
         messages: {
             interval: 3600, // Sweep messages every hour
