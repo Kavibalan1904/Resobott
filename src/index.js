@@ -48,65 +48,56 @@ client.twentyFourSeven = new Set();
 client.trackHistory = new Map();
 
 // ── Create Lavalink Manager ────────────────────────────────────
+const defaultNodes = [
+    {
+        id: 'node-serenetia-ssl',
+        host: 'lavalinkv4.serenetia.com',
+        port: 443,
+        authorization: 'https://seretia.link/discord',
+        secure: true,
+    },
+    {
+        id: 'node-millohost-ssl',
+        host: 'lava-v4.millohost.my.id',
+        port: 443,
+        authorization: 'https://discord.gg/mjS5J2K3ep',
+        secure: true,
+    },
+    {
+        id: 'backup-serenetia',
+        host: 'lavalinkv4.serenetia.com',
+        port: 80,
+        authorization: 'https://seretia.link/discord',
+        secure: false,
+    },
+    {
+        id: 'backup-kasawa',
+        host: 'lava2.kasawa.pro',
+        port: 2334,
+        authorization: 'youshallnotpass',
+        secure: false,
+    },
+    {
+        id: 'node-uk-g3v',
+        host: 'lava.g3v.co.uk',
+        port: 9008,
+        authorization: 'lavalinklol',
+        secure: false,
+    },
+];
+
+if (process.env.LAVALINK_HOST) {
+    defaultNodes.unshift({
+        id: 'custom-env',
+        host: process.env.LAVALINK_HOST,
+        port: parseInt(process.env.LAVALINK_PORT) || 2333,
+        authorization: process.env.LAVALINK_PASSWORD || 'youshallnotpass',
+        secure: process.env.LAVALINK_SECURE === 'true',
+    });
+}
+
 client.lavalink = new LavalinkManager({
-    nodes: [
-        {
-            id: 'custom-env',
-            host: process.env.LAVALINK_HOST || 'lavalinkv4.serenetia.com',
-            port: parseInt(process.env.LAVALINK_PORT) || 80,
-            authorization: process.env.LAVALINK_PASSWORD || 'https://seretia.link/discord',
-            secure: process.env.LAVALINK_SECURE === 'true',
-        },
-        {
-            id: 'node-uk-g3v',
-            host: 'lava.g3v.co.uk',
-            port: 9008,
-            authorization: 'lavalinklol',
-            secure: false,
-        },
-        {
-            id: 'node-trinium-6000',
-            host: 'lavalink.triniumhost.com',
-            port: 6000,
-            authorization: 'trinium',
-            secure: false,
-        },
-        {
-            id: 'node-serenetia-ssl',
-            host: 'lavalinkv4.serenetia.com',
-            port: 443,
-            authorization: 'https://seretia.link/discord',
-            secure: true,
-        },
-        {
-            id: 'node-trinium-nodelink-ssl',
-            host: 'nodelink-02.triniumhost.com',
-            port: 443,
-            authorization: 'trinium',
-            secure: true,
-        },
-        {
-            id: 'node-millohost-ssl',
-            host: 'lava-v4.millohost.my.id',
-            port: 443,
-            authorization: 'https://discord.gg/mjS5J2K3ep',
-            secure: true,
-        },
-        {
-            id: 'backup-serenetia',
-            host: 'lavalinkv4.serenetia.com',
-            port: 80,
-            authorization: 'https://seretia.link/discord',
-            secure: false,
-        },
-        {
-            id: 'backup-kasawa',
-            host: 'lava2.kasawa.pro',
-            port: 2334,
-            authorization: 'youshallnotpass',
-            secure: false,
-        },
-    ],
+    nodes: defaultNodes,
     sendToShard: (guildId, payload) => {
         client.guilds.cache.get(guildId)?.shard?.send(payload);
     },
@@ -155,7 +146,7 @@ async function main() {
         console.log('[Reso] ✓ Lavalink events registered');
 
         // Bot ready event
-        client.once('ready', async () => {
+        client.once('clientReady', async () => {
             console.log(`[Reso] ✓ Logged in as ${client.user.tag}`);
             console.log(`[Reso] ✓ Serving ${client.guilds.cache.size} servers`);
 
