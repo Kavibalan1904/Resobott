@@ -52,17 +52,10 @@ client.lavalink = new LavalinkManager({
     nodes: [
         {
             id: 'custom-env',
-            host: process.env.LAVALINK_HOST || 'lavalink.triniumhost.com',
-            port: parseInt(process.env.LAVALINK_PORT) || 2333,
-            authorization: process.env.LAVALINK_PASSWORD || 'kirito',
+            host: process.env.LAVALINK_HOST || 'lavalinkv4.serenetia.com',
+            port: parseInt(process.env.LAVALINK_PORT) || 80,
+            authorization: process.env.LAVALINK_PASSWORD || 'https://seretia.link/discord',
             secure: process.env.LAVALINK_SECURE === 'true',
-        },
-        {
-            id: 'node-asia-nexcloud',
-            host: 'n3.nexcloud.in',
-            port: 2026,
-            authorization: 'nexcloud',
-            secure: false,
         },
         {
             id: 'node-uk-g3v',
@@ -72,25 +65,32 @@ client.lavalink = new LavalinkManager({
             secure: false,
         },
         {
-            id: 'node-us-trinium-ssl',
-            host: 'lavalink-v4.triniumhost.com',
-            port: 443,
-            authorization: 'free',
-            secure: true,
-        },
-        {
-            id: 'node-global-vexanode',
-            host: 'omega.vexanode.cloud',
-            port: 2031,
-            authorization: 'https://discord.vexanode.cloud',
-            secure: false,
-        },
-        {
             id: 'node-trinium-6000',
             host: 'lavalink.triniumhost.com',
             port: 6000,
             authorization: 'trinium',
             secure: false,
+        },
+        {
+            id: 'node-serenetia-ssl',
+            host: 'lavalinkv4.serenetia.com',
+            port: 443,
+            authorization: 'https://seretia.link/discord',
+            secure: true,
+        },
+        {
+            id: 'node-trinium-nodelink-ssl',
+            host: 'nodelink-02.triniumhost.com',
+            port: 443,
+            authorization: 'trinium',
+            secure: true,
+        },
+        {
+            id: 'node-millohost-ssl',
+            host: 'lava-v4.millohost.my.id',
+            port: 443,
+            authorization: 'https://discord.gg/mjS5J2K3ep',
+            secure: true,
         },
         {
             id: 'backup-serenetia',
