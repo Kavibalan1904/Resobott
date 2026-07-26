@@ -90,6 +90,22 @@ client.lavalink = new LavalinkManager({
 // ── Forward raw Discord events to Lavalink ─────────────────────
 client.on('raw', (data) => client.lavalink.sendRawData(data));
 
+// ── Discord Client & REST Debugging / Error Handling ───────────
+client.on('error', (err) => console.error('[Reso Discord Error]:', err));
+client.on('warn', (msg) => console.warn('[Reso Discord Warning]:', msg));
+client.on('debug', (info) => {
+    // Filter out routine heartbeat messages to keep console clean
+    if (info.toLowerCase().includes('heartbeat')) return;
+    console.log('[Reso Discord Debug]:', info);
+});
+client.rest.on('rateLimited', (info) => {
+    console.warn('[Reso Discord RateLimit] 429 Hit! Details:', JSON.stringify(info));
+});
+client.on('shardError', (error, shardId) => console.error(`[Reso Shard ${shardId} Error]:`, error));
+client.on('shardDisconnect', (event, shardId) => console.warn(`[Reso Shard ${shardId} Disconnected]:`, event));
+client.on('shardReconnecting', (shardId) => console.log(`[Reso Shard ${shardId}] Reconnecting...`));
+client.on('shardResume', (shardId, replayedEvents) => console.log(`[Reso Shard ${shardId}] Resumed connection (replayed ${replayedEvents} events)`));
+
 // ── Initialize ─────────────────────────────────────────────────
 async function main() {
     try {
@@ -141,6 +157,7 @@ async function main() {
         });
 
         // Login
+        console.log('[Reso] Attempting to connect to Discord Gateway...');
         await client.login(process.env.DISCORD_TOKEN);
     } catch (error) {
         console.error('[Reso] Fatal error:', error);
