@@ -34,9 +34,10 @@ async function registerSlashCommands(client) {
     const commands = client.commands.map(cmd => cmd.data.toJSON());
     const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
 
+    const clientId = (process.env.CLIENT_ID && /^\d+$/.test(process.env.CLIENT_ID)) ? process.env.CLIENT_ID : client.user.id;
     try {
         await rest.put(
-            Routes.applicationCommands(process.env.CLIENT_ID || client.user.id),
+            Routes.applicationCommands(clientId),
             { body: commands },
         );
     } catch (error) {

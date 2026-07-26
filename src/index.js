@@ -84,7 +84,7 @@ client.lavalink = new LavalinkManager({
     },
     autoSkip: true,
     client: {
-        id: process.env.CLIENT_ID,
+        id: (process.env.CLIENT_ID && /^\d+$/.test(process.env.CLIENT_ID)) ? process.env.CLIENT_ID : undefined,
         username: 'Reso',
     },
     playerOptions: {
