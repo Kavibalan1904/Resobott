@@ -86,16 +86,6 @@ const defaultNodes = [
     },
 ];
 
-if (process.env.LAVALINK_HOST) {
-    defaultNodes.unshift({
-        id: 'custom-env',
-        host: process.env.LAVALINK_HOST,
-        port: parseInt(process.env.LAVALINK_PORT) || 2333,
-        authorization: process.env.LAVALINK_PASSWORD || 'youshallnotpass',
-        secure: process.env.LAVALINK_SECURE === 'true',
-    });
-}
-
 client.lavalink = new LavalinkManager({
     nodes: defaultNodes,
     sendToShard: (guildId, payload) => {
