@@ -53,16 +53,19 @@ const addedHosts = new Set();
 
 // 1. Region-Optimized Node from .env (Highest Priority)
 if (process.env.LAVALINK_HOST) {
-    const host = process.env.LAVALINK_HOST.trim();
+    const host = process.env.LAVALINK_HOST.trim()
+        .replace(/^(https?|wss?):\/\//i, '') // Remove http://, https://, ws://, wss://
+        .replace(/\/.*$/, ''); // Remove trailing slashes or paths
     const port = parseInt(process.env.LAVALINK_PORT) || 443;
+    console.log(`[Reso] Loading primary Lavalink node from .env: ${host}:${port}`);
     defaultNodes.push({
         id: 'node-env-primary',
         host: host,
         port: port,
         authorization: process.env.LAVALINK_PASSWORD ? process.env.LAVALINK_PASSWORD.trim() : 'youshallnotpass',
         secure: String(process.env.LAVALINK_SECURE).toLowerCase() === 'true' || port === 443,
-        retryAmount: 5,
-        retryDelay: 5000,
+        retryAmount: 3,
+        retryDelay: 10000,
     });
     addedHosts.add(`${host.toLowerCase()}:${port}`);
 }

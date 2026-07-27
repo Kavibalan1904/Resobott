@@ -9,22 +9,22 @@ function setupLavalinkEvents(client) {
 
     // ── Node connected ─────────────────────────────────────────
     manager.nodeManager.on('connect', (node) => {
-        console.log(`[Reso] ✓ Lavalink node "${node.id}" connected`);
+        console.log(`[Reso] ✓ Lavalink node "${node.id}" (${node.options?.host}:${node.options?.port}) connected`);
     });
 
     // ── Node disconnected ──────────────────────────────────────
     manager.nodeManager.on('disconnect', (node, reason) => {
-        console.warn(`[Reso] ⚠ Lavalink node "${node.id}" disconnected:`, reason?.code || 'unknown');
+        console.warn(`[Reso] ⚠ Lavalink node "${node.id}" (${node.options?.host}:${node.options?.port}) disconnected:`, reason?.code || reason?.message || 'unknown');
     });
 
     // ── Node error ─────────────────────────────────────────────
     manager.nodeManager.on('error', (node, error) => {
-        console.error(`[Reso] ✗ Lavalink node "${node.id}" error:`, error.message);
+        console.error(`[Reso] ✗ Lavalink node "${node.id}" (${node.options?.host}:${node.options?.port}) error:`, error?.message || error || 'Unknown Error');
     });
 
     // ── Node reconnecting ──────────────────────────────────────
     manager.nodeManager.on('reconnecting', (node) => {
-        console.log(`[Reso] ↻ Lavalink node "${node.id}" reconnecting...`);
+        console.log(`[Reso] ↻ Lavalink node "${node.id}" (${node.options?.host}:${node.options?.port}) reconnecting...`);
     });
 
     // ── Track starts playing ───────────────────────────────────
