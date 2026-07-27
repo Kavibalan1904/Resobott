@@ -49,22 +49,26 @@ client.trackHistory = new Map();
 
 // ── Create Lavalink Manager ────────────────────────────────────
 const defaultNodes = [];
+const addedHosts = new Set();
 
 // 1. Region-Optimized Node from .env (Highest Priority)
 if (process.env.LAVALINK_HOST) {
+    const host = process.env.LAVALINK_HOST.trim();
+    const port = parseInt(process.env.LAVALINK_PORT) || 443;
     defaultNodes.push({
         id: 'node-env-primary',
-        host: process.env.LAVALINK_HOST,
-        port: parseInt(process.env.LAVALINK_PORT) || 443,
-        authorization: process.env.LAVALINK_PASSWORD || 'youshallnotpass',
-        secure: process.env.LAVALINK_SECURE === 'true' || process.env.LAVALINK_PORT === '443',
-        retryAmount: 10,
-        retryDelay: 3000,
+        host: host,
+        port: port,
+        authorization: process.env.LAVALINK_PASSWORD ? process.env.LAVALINK_PASSWORD.trim() : 'youshallnotpass',
+        secure: String(process.env.LAVALINK_SECURE).toLowerCase() === 'true' || port === 443,
+        retryAmount: 5,
+        retryDelay: 5000,
     });
+    addedHosts.add(`${host.toLowerCase()}:${port}`);
 }
 
-// 2. Backup / Default Nodes
-defaultNodes.push(
+// 2. Backup / Default Nodes (deduplicated)
+const backupNodes = [
     {
         id: 'node-millohost-ssl',
         host: 'lava-v4.millohost.my.id',
@@ -72,7 +76,7 @@ defaultNodes.push(
         authorization: 'https://discord.gg/mjS5J2K3ep',
         secure: true,
         retryAmount: 5,
-        retryDelay: 3000,
+        retryDelay: 5000,
     },
     {
         id: 'node-serenetia-ssl',
@@ -81,7 +85,7 @@ defaultNodes.push(
         authorization: 'https://seretia.link/discord',
         secure: true,
         retryAmount: 5,
-        retryDelay: 3000,
+        retryDelay: 5000,
     },
     {
         id: 'backup-serenetia',
@@ -89,8 +93,8 @@ defaultNodes.push(
         port: 80,
         authorization: 'https://seretia.link/discord',
         secure: false,
-        retryAmount: 5,
-        retryDelay: 3000,
+        retryAmount: 3,
+        retryDelay: 5000,
     },
     {
         id: 'backup-kasawa',
@@ -98,8 +102,8 @@ defaultNodes.push(
         port: 2334,
         authorization: 'youshallnotpass',
         secure: false,
-        retryAmount: 5,
-        retryDelay: 3000,
+        retryAmount: 3,
+        retryDelay: 5000,
     },
     {
         id: 'node-uk-g3v',
@@ -107,10 +111,18 @@ defaultNodes.push(
         port: 9008,
         authorization: 'lavalinklol',
         secure: false,
-        retryAmount: 5,
-        retryDelay: 3000,
+        retryAmount: 3,
+        retryDelay: 5000,
     }
-);
+];
+
+for (const node of backupNodes) {
+    const key = `${node.host.toLowerCase()}:${node.port}`;
+    if (!addedHosts.has(key)) {
+        defaultNodes.push(node);
+        addedHosts.add(key);
+    }
+}
 
 client.lavalink = new LavalinkManager({
     nodes: defaultNodes,
