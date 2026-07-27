@@ -57,17 +57,25 @@ if (process.env.LAVALINK_HOST) {
         .replace(/^(https?|wss?):\/\//i, '') // Remove http://, https://, ws://, wss://
         .replace(/\/.*$/, ''); // Remove trailing slashes or paths
     const port = parseInt(process.env.LAVALINK_PORT) || 443;
-    console.log(`[Reso] Loading primary Lavalink node from .env: ${host}:${port}`);
-    defaultNodes.push({
-        id: 'node-env-primary',
-        host: host,
-        port: port,
-        authorization: process.env.LAVALINK_PASSWORD ? process.env.LAVALINK_PASSWORD.trim() : 'youshallnotpass',
-        secure: String(process.env.LAVALINK_SECURE).toLowerCase() === 'true' || port === 443,
-        retryAmount: 3,
-        retryDelay: 10000,
-    });
-    addedHosts.add(`${host.toLowerCase()}:${port}`);
+    
+    const isCloudHost = !!(process.env.RENDER || process.env.RAILWAY_ENVIRONMENT || process.env.PORT);
+    const isLocalhost = ['localhost', '127.0.0.1', '::1', '0.0.0.0'].includes(host.toLowerCase());
+
+    if (isLocalhost && isCloudHost) {
+        console.log(`[Reso] ℹ Skipping env node (${host}:${port}) because localhost is not running inside the cloud container.`);
+    } else {
+        console.log(`[Reso] Loading primary Lavalink node from .env: ${host}:${port}`);
+        defaultNodes.push({
+            id: 'node-env-primary',
+            host: host,
+            port: port,
+            authorization: process.env.LAVALINK_PASSWORD ? process.env.LAVALINK_PASSWORD.trim() : 'youshallnotpass',
+            secure: String(process.env.LAVALINK_SECURE).toLowerCase() === 'true' || port === 443,
+            retryAmount: 3,
+            retryDelay: 10000,
+        });
+        addedHosts.add(`${host.toLowerCase()}:${port}`);
+    }
 }
 
 // 2. Backup / Default Nodes (deduplicated)
