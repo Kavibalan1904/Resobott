@@ -75,6 +75,13 @@ This bot has been optimized with strict V8 garbage collection and global excepti
 2. Railway automatically detects `railway.json` and uses the Nixpacks Node 20 builder.
 3. In the **Variables** tab, add your `DISCORD_TOKEN`, `CLIENT_ID`, and Lavalink environment variables.
 
+### ☁️ DisCloud (100% Free Discord Bot Hosting)
+1. Go to [DisCloud App](https://discloud.app) and sign in with Discord.
+2. Connect your GitHub repository `Kavibalan1904/Resobott` or upload a `.zip` of the project files.
+3. DisCloud automatically detects `discloud.config` in the root folder.
+4. Go to **Environment Variables** and add your `DISCORD_TOKEN`, `CLIENT_ID`, and Lavalink credentials.
+5. Click **Start**!
+
 ### ☁️ Render.com
 1. Create a **New Blueprint Instance** or **Web Service** on [Render.com](https://render.com/).
 2. Render uses `render.yaml` and starts a built-in HTTP health check server on port `10000` so your deployment passes port scans.
