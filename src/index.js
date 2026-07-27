@@ -48,20 +48,40 @@ client.twentyFourSeven = new Set();
 client.trackHistory = new Map();
 
 // ── Create Lavalink Manager ────────────────────────────────────
-const defaultNodes = [
-    {
-        id: 'node-serenetia-ssl',
-        host: 'lavalinkv4.serenetia.com',
-        port: 443,
-        authorization: 'https://seretia.link/discord',
-        secure: true,
-    },
+const defaultNodes = [];
+
+// 1. Region-Optimized Node from .env (Highest Priority)
+if (process.env.LAVALINK_HOST) {
+    defaultNodes.push({
+        id: 'node-env-primary',
+        host: process.env.LAVALINK_HOST,
+        port: parseInt(process.env.LAVALINK_PORT) || 443,
+        authorization: process.env.LAVALINK_PASSWORD || 'youshallnotpass',
+        secure: process.env.LAVALINK_SECURE === 'true' || process.env.LAVALINK_PORT === '443',
+        retryAmount: 10,
+        retryDelay: 3000,
+    });
+}
+
+// 2. Backup / Default Nodes
+defaultNodes.push(
     {
         id: 'node-millohost-ssl',
         host: 'lava-v4.millohost.my.id',
         port: 443,
         authorization: 'https://discord.gg/mjS5J2K3ep',
         secure: true,
+        retryAmount: 5,
+        retryDelay: 3000,
+    },
+    {
+        id: 'node-serenetia-ssl',
+        host: 'lavalinkv4.serenetia.com',
+        port: 443,
+        authorization: 'https://seretia.link/discord',
+        secure: true,
+        retryAmount: 5,
+        retryDelay: 3000,
     },
     {
         id: 'backup-serenetia',
@@ -69,6 +89,8 @@ const defaultNodes = [
         port: 80,
         authorization: 'https://seretia.link/discord',
         secure: false,
+        retryAmount: 5,
+        retryDelay: 3000,
     },
     {
         id: 'backup-kasawa',
@@ -76,6 +98,8 @@ const defaultNodes = [
         port: 2334,
         authorization: 'youshallnotpass',
         secure: false,
+        retryAmount: 5,
+        retryDelay: 3000,
     },
     {
         id: 'node-uk-g3v',
@@ -83,8 +107,10 @@ const defaultNodes = [
         port: 9008,
         authorization: 'lavalinklol',
         secure: false,
-    },
-];
+        retryAmount: 5,
+        retryDelay: 3000,
+    }
+);
 
 client.lavalink = new LavalinkManager({
     nodes: defaultNodes,
@@ -99,9 +125,10 @@ client.lavalink = new LavalinkManager({
     playerOptions: {
         defaultSearchPlatform: 'ytsearch',
         onDisconnect: {
-            autoReconnect: false,
-            destroyPlayer: true,
+            autoReconnect: true,
+            destroyPlayer: false,
         },
+        useUnresolvedData: true,
     },
 });
 
