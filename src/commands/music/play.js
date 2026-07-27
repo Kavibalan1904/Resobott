@@ -47,10 +47,19 @@ module.exports = {
             return interaction.reply({ embeds: [errorEmbed('You need to be in a voice channel!')], ephemeral: true });
         }
 
-        const query = interaction.options.getString('query', true);
+        const rawQuery = interaction.options.getString('query', true).trim();
         const source = interaction.options.getString('source') || 'auto';
         const manager = interaction.client.lavalink;
         const searchPlatform = SOURCE_MAP[source] || 'ytsearch';
+
+        // Detect URLs, Spotify URIs, and domain-only links (e.g., open.spotify.com/playlist/... or youtube.com/playlist?list=...)
+        const isUrlPattern = /^(https?:\/\/|spotify:|www\.|open\.spotify\.com|music\.youtube\.com|youtube\.com|youtu\.be)/i;
+        let isUrl = isUrlPattern.test(rawQuery);
+        let query = rawQuery;
+
+        if (isUrl && !/^https?:\/\//i.test(query) && !query.startsWith('spotify:')) {
+            query = `https://${query}`;
+        }
 
         await interaction.deferReply();
 
@@ -72,8 +81,7 @@ module.exports = {
                 await player.connect();
             }
 
-            // Search for the track
-            const isUrl = /^https?:\/\//.test(query);
+            // Search for the track or playlist
             const result = await player.search({
                 query: query,
                 source: isUrl ? undefined : searchPlatform,
@@ -82,7 +90,7 @@ module.exports = {
             if (!result.tracks || result.tracks.length === 0) {
                 const sourceLabel = source === 'auto' ? 'any platform' : capitalize(source);
                 return interaction.editReply({
-                    embeds: [errorEmbed(`No results found for **${truncate(query, 50)}** on ${sourceLabel}.\n\nTry a different search term or source.`)]
+                    embeds: [errorEmbed(`No results found for **${truncate(rawQuery, 50)}** on ${sourceLabel}.\n\nTry a different search term or valid link.`)]
                 });
             }
 
@@ -91,29 +99,34 @@ module.exports = {
                 // 24/7 mode: keep player alive
             }
 
-            // If it's a playlist
-            if (result.loadType === 'playlist') {
-                // Add all tracks to queue
-                for (const track of result.tracks) {
+            // If it's a playlist or album
+            if (result.loadType === 'playlist' || result.playlist) {
+                const tracks = result.tracks;
+                for (const track of tracks) {
                     track.requester = interaction.user;
-                    player.queue.add(track);
                 }
+                player.queue.add(tracks);
 
                 // Start playing if not already
                 if (!player.playing) {
                     await player.play();
                 }
 
+                const playlistTitle = result.playlist?.name || 'Playlist';
+                const firstTrack = tracks[0]?.info;
+                const sourceName = firstTrack?.sourceName ? capitalize(firstTrack.sourceName) : 'Unknown';
+
                 const embed = createEmbed('Success')
                     .setAuthor({ name: '📀 Playlist Queued' })
-                    .setTitle(result.playlist?.name || 'Playlist')
-                    .setURL(query)
-                    .setDescription(`${EMOJIS.success} Added **${result.tracks.length}** tracks to the queue.`)
-                    .setThumbnail(result.tracks[0]?.info?.artworkUrl || null)
+                    .setTitle(truncate(playlistTitle, 60))
+                    .setURL(/^https?:\/\//.test(query) ? query : undefined)
+                    .setDescription(`${EMOJIS.success} Added **${tracks.length}** tracks to the queue.`)
+                    .setThumbnail(firstTrack?.artworkUrl || null)
                     .addFields(
-                        { name: `${EMOJIS.disc} Source`, value: capitalize(result.tracks[0]?.info?.sourceName || 'Unknown'), inline: true },
+                        { name: `${EMOJIS.disc} Source`, value: sourceName, inline: true },
                         { name: `${EMOJIS.dj} Requested by`, value: `${interaction.user}`, inline: true },
                     );
+
                 return interaction.editReply({ embeds: [embed] });
             }
 
