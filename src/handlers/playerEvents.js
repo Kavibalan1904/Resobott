@@ -9,22 +9,27 @@ function setupLavalinkEvents(client) {
 
     // ── Node connected ─────────────────────────────────────────
     manager.nodeManager.on('connect', (node) => {
-        console.log(`[Reso] ✓ Lavalink node "${node.id}" (${node.options?.host}:${node.options?.port}) connected`);
+        console.log(`[Reso] ✓ Lavalink node "${node.id}" connected (${node.options?.host}:${node.options?.port})`);
     });
 
     // ── Node disconnected ──────────────────────────────────────
     manager.nodeManager.on('disconnect', (node, reason) => {
-        console.warn(`[Reso] ⚠ Lavalink node "${node.id}" (${node.options?.host}:${node.options?.port}) disconnected:`, reason?.code || reason?.message || 'unknown');
+        const code = reason?.code;
+        // Suppress routine idle socket resets (code 4000 / 1000 / 1006) to prevent log flooding
+        if (code === 4000 || code === 1000 || code === 1006) return;
+        console.warn(`[Reso] ⚠ Lavalink node "${node.id}" disconnected (${reason?.code || 'unknown'})`);
     });
 
     // ── Node error ─────────────────────────────────────────────
     manager.nodeManager.on('error', (node, error) => {
-        console.error(`[Reso] ✗ Lavalink node "${node.id}" (${node.options?.host}:${node.options?.port}) error:`, error?.message || error || 'Unknown Error');
+        const msg = error?.message || String(error || '');
+        if (msg.includes('429') || msg.includes('Too Many Requests') || msg.includes('ECONNREFUSED')) return;
+        console.error(`[Reso] ✗ Lavalink node "${node.id}" error:`, msg);
     });
 
     // ── Node reconnecting ──────────────────────────────────────
     manager.nodeManager.on('reconnecting', (node) => {
-        console.log(`[Reso] ↻ Lavalink node "${node.id}" (${node.options?.host}:${node.options?.port}) reconnecting...`);
+        // Routine background reconnect — kept quiet to keep console clean
     });
 
     // ── Track starts playing ───────────────────────────────────
