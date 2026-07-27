@@ -61,6 +61,11 @@ module.exports = {
             query = `https://${query}`;
         }
 
+        // Normalize youtube.com to www.youtube.com for Lavalink plugin compatibility
+        if (isUrl) {
+            query = query.replace(/^https?:\/\/youtube\.com\//i, 'https://www.youtube.com/');
+        }
+
         await interaction.deferReply();
 
         try {
@@ -82,15 +87,38 @@ module.exports = {
             }
 
             // Search for the track or playlist
-            const result = await player.search({
+            let result = await player.search({
                 query: query,
                 source: isUrl ? undefined : searchPlatform,
             }, interaction.user);
 
+            // Fallback search across other connected nodes if primary node returned empty for a URL
+            if ((!result.tracks || result.tracks.length === 0) && isUrl) {
+                const connectedNodes = Array.from(manager.nodeManager.nodes.values()).filter(n => n.connected && n.id !== player.node?.id);
+                for (const fallbackNode of connectedNodes) {
+                    try {
+                        const fallbackResult = await fallbackNode.search({
+                            query: query,
+                            source: undefined,
+                        }, interaction.user);
+                        if (fallbackResult.tracks && fallbackResult.tracks.length > 0) {
+                            result = fallbackResult;
+                            break;
+                        }
+                    } catch (e) {
+                        // ignore node search error
+                    }
+                }
+            }
+
             if (!result.tracks || result.tracks.length === 0) {
                 const sourceLabel = source === 'auto' ? 'any platform' : capitalize(source);
+                const tipMessage = isUrl && query.includes('youtube.com') 
+                    ? '\n\n💡 **Tip**: Make sure YouTube playlists are set to **Public** or **Unlisted** (Private playlists cannot be loaded).'
+                    : '\n\nTry a different search term or valid link.';
+
                 return interaction.editReply({
-                    embeds: [errorEmbed(`No results found for **${truncate(rawQuery, 50)}** on ${sourceLabel}.\n\nTry a different search term or valid link.`)]
+                    embeds: [errorEmbed(`No results found for **${truncate(rawQuery, 50)}** on ${sourceLabel}.${tipMessage}`)]
                 });
             }
 
