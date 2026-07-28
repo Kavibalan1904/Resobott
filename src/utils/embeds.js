@@ -57,8 +57,9 @@ function createEmbed(type = 'Primary') {
  * Create a "Now Playing" embed for a Lavalink track
  * @param {object} track Lavalink track object (has track.info)
  * @param {object} player Lavalink player instance
+ * @param {object} [client] Discord client instance (for resolving voice channel bitrate)
  */
-function nowPlayingEmbed(track, player) {
+function nowPlayingEmbed(track, player, client) {
     const info = track.info || track;
     const duration = info.duration || 0;
     const position = player.position || 0;
@@ -67,6 +68,15 @@ function nowPlayingEmbed(track, player) {
     const progress = isStream
         ? '🔴 Live Stream'
         : createProgressBar(position, duration);
+
+    // Resolve audio bitrate from the voice channel the bot is in
+    let bitrateLabel = 'Unknown kbps';
+    if (client && player.voiceChannelId) {
+        const vc = client.channels?.cache?.get(player.voiceChannelId);
+        if (vc && vc.bitrate) {
+            bitrateLabel = `${Math.round(vc.bitrate / 1000)} kbps`;
+        }
+    }
 
     const embed = createEmbed('Music')
         .setAuthor({ name: 'Now Playing', iconURL: 'https://cdn.discordapp.com/emojis/741605543046807626.gif' })
@@ -78,7 +88,8 @@ function nowPlayingEmbed(track, player) {
             { name: `${EMOJIS.dj} Requested by`, value: `${track.requester || 'Unknown'}`, inline: true },
             { name: `${EMOJIS.volume} Volume`, value: `${player.volume}%`, inline: true },
         )
-        .setDescription(progress);
+        .setDescription(progress)
+        .setFooter({ text: `Reso • ${bitrateLabel}` });
 
     if (info.sourceName) {
         embed.addFields({ name: `${EMOJIS.disc} Source`, value: capitalize(info.sourceName), inline: true });

@@ -57,7 +57,7 @@ if (process.env.LAVALINK_HOST) {
         .replace(/^(https?|wss?):\/\//i, '') // Remove http://, https://, ws://, wss://
         .replace(/\/.*$/, ''); // Remove trailing slashes or paths
     const port = parseInt(process.env.LAVALINK_PORT) || 443;
-    
+
     const isCloudHost = !!(process.env.RENDER || process.env.RAILWAY_ENVIRONMENT || process.env.PORT);
     const isLocalhost = ['localhost', '127.0.0.1', '::1', '0.0.0.0'].includes(host.toLowerCase());
 
@@ -225,9 +225,9 @@ async function main() {
                     ephemeral: true,
                 };
                 if (interaction.replied || interaction.deferred) {
-                    await interaction.followUp(errorMsg).catch(() => {});
+                    await interaction.followUp(errorMsg).catch(() => { });
                 } else {
-                    await interaction.reply(errorMsg).catch(() => {});
+                    await interaction.reply(errorMsg).catch(() => { });
                 }
             }
         });

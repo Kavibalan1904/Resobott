@@ -75,7 +75,7 @@ function setupLavalinkEvents(client) {
         const channel = client.channels.cache.get(player.textChannelId);
         if (!channel) return;
 
-        const embed = nowPlayingEmbed(track, player);
+        const embed = nowPlayingEmbed(track, player, client);
         channel.send({ embeds: [embed] }).catch(() => {});
     });
 

@@ -17,7 +17,7 @@ module.exports = {
             return interaction.reply({ embeds: [errorEmbed('No track information available.')], ephemeral: true });
         }
 
-        const embed = nowPlayingEmbed(track, player);
+        const embed = nowPlayingEmbed(track, player, interaction.client);
         return interaction.reply({ embeds: [embed] });
     },
 };
