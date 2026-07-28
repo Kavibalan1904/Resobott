@@ -106,16 +106,7 @@ const backupNodes = [
         secure: false,
         retryAmount: 15,
         retryDelay: 5000,
-    },
-    {
-        id: 'node-trinium-ssl',
-        host: 'lavalink-v4.triniumhost.com',
-        port: 443,
-        authorization: 'free',
-        secure: true,
-        retryAmount: 15,
-        retryDelay: 5000,
-    },
+    }
 ];
 
 for (const node of backupNodes) {
