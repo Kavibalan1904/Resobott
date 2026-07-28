@@ -71,8 +71,8 @@ if (process.env.LAVALINK_HOST) {
             port: port,
             authorization: process.env.LAVALINK_PASSWORD ? process.env.LAVALINK_PASSWORD.trim() : 'youshallnotpass',
             secure: String(process.env.LAVALINK_SECURE).toLowerCase() === 'true' || port === 443,
-            retryAmount: 3,
-            retryDelay: 10000,
+            retryAmount: 15,
+            retryDelay: 5000,
         });
         addedHosts.add(`${host.toLowerCase()}:${port}`);
     }
@@ -86,8 +86,8 @@ const backupNodes = [
         port: 443,
         authorization: 'https://discord.gg/mjS5J2K3ep',
         secure: true,
-        retryAmount: 3,
-        retryDelay: 10000,
+        retryAmount: 15,
+        retryDelay: 5000,
     },
     {
         id: 'node-jirayu-ssl',
@@ -95,8 +95,8 @@ const backupNodes = [
         port: 443,
         authorization: 'youshallnotpass',
         secure: true,
-        retryAmount: 3,
-        retryDelay: 10000,
+        retryAmount: 15,
+        retryDelay: 5000,
     },
     {
         id: 'node-kasawa',
@@ -104,8 +104,8 @@ const backupNodes = [
         port: 2334,
         authorization: 'youshallnotpass',
         secure: false,
-        retryAmount: 3,
-        retryDelay: 10000,
+        retryAmount: 15,
+        retryDelay: 5000,
     },
     {
         id: 'node-uk-g3v',
@@ -113,8 +113,8 @@ const backupNodes = [
         port: 9008,
         authorization: 'lavalinklol',
         secure: false,
-        retryAmount: 3,
-        retryDelay: 10000,
+        retryAmount: 15,
+        retryDelay: 5000,
     }
 ];
 
@@ -144,7 +144,24 @@ client.lavalink = new LavalinkManager({
         },
         useUnresolvedData: true,
     },
+    advancedOptions: {
+        enableDebugEvents: false,
+    },
 });
+
+// ── WebSocket Keep-Alive Ping (prevents 1006 from idle proxy/firewall timeouts) ──
+const WS_PING_INTERVAL_MS = 30_000; // 30 seconds
+setInterval(() => {
+    for (const node of client.lavalink.nodeManager.nodes.values()) {
+        if (node.connected && node.socket?.readyState === 1) {
+            try {
+                node.socket.ping();
+            } catch {
+                // Ignore — if the socket is dead the reconnect handler will take over
+            }
+        }
+    }
+}, WS_PING_INTERVAL_MS);
 
 // ── Forward raw Discord events to Lavalink ─────────────────────
 client.on('raw', (data) => client.lavalink.sendRawData(data));

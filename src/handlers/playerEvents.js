@@ -7,29 +7,60 @@ const { truncate } = require('../utils/helpers');
 function setupLavalinkEvents(client) {
     const manager = client.lavalink;
 
+    // ── Track which nodes have had problems (for smart logging) ──
+    const nodeReconnectCounts = new Map();
+
     // ── Node connected ─────────────────────────────────────────
     manager.nodeManager.on('connect', (node) => {
-        console.log(`[Reso] ✓ Lavalink node "${node.id}" connected (${node.options?.host}:${node.options?.port})`);
+        const prevAttempts = nodeReconnectCounts.get(node.id) || 0;
+        if (prevAttempts > 0) {
+            console.log(`[Reso] ✓ Lavalink node "${node.id}" reconnected after ${prevAttempts} attempt(s)`);
+        } else {
+            console.log(`[Reso] ✓ Lavalink node "${node.id}" connected (${node.options?.host}:${node.options?.port})`);
+        }
+        nodeReconnectCounts.set(node.id, 0);
     });
 
     // ── Node disconnected ──────────────────────────────────────
     manager.nodeManager.on('disconnect', (node, reason) => {
         const code = reason?.code;
-        // Suppress routine idle socket resets (code 4000 / 1000 / 1006) to prevent log flooding
-        if (code === 4000 || code === 1000 || code === 1006) return;
-        console.warn(`[Reso] ⚠ Lavalink node "${node.id}" disconnected (${reason?.code || 'unknown'})`);
+        const readableReason = reason?.reason || 'No reason given';
+
+        // Always log 1006 at warn level — this IS the problem the user is seeing
+        if (code === 1006) {
+            console.warn(`[Reso] ⚠ Node "${node.id}" abnormal closure (1006) — proxy/firewall likely killed idle WebSocket. Will retry.`);
+        } else if (code === 4000 || code === 1000) {
+            // These are normal/expected closures, keep them quiet
+            console.log(`[Reso] ℹ Node "${node.id}" closed normally (${code}: ${readableReason})`);
+        } else {
+            console.warn(`[Reso] ⚠ Node "${node.id}" disconnected (code: ${code || 'unknown'}, reason: ${readableReason})`);
+        }
+
+        // Attempt to migrate active players to another healthy node
+        migratePlayersFromDeadNode(manager, node);
     });
 
     // ── Node error ─────────────────────────────────────────────
     manager.nodeManager.on('error', (node, error) => {
         const msg = error?.message || String(error || '');
-        if (msg.includes('429') || msg.includes('Too Many Requests') || msg.includes('ECONNREFUSED')) return;
-        console.error(`[Reso] ✗ Lavalink node "${node.id}" error:`, msg);
+        // Only suppress 429 rate-limit spam
+        if (msg.includes('429') || msg.includes('Too Many Requests')) return;
+        console.error(`[Reso] ✗ Node "${node.id}" error:`, msg);
     });
 
     // ── Node reconnecting ──────────────────────────────────────
     manager.nodeManager.on('reconnecting', (node) => {
-        // Routine background reconnect — kept quiet to keep console clean
+        const attempts = (nodeReconnectCounts.get(node.id) || 0) + 1;
+        nodeReconnectCounts.set(node.id, attempts);
+        // Only log every few attempts to avoid flooding
+        if (attempts <= 3 || attempts % 5 === 0) {
+            console.log(`[Reso] ↻ Node "${node.id}" reconnecting (attempt ${attempts})...`);
+        }
+    });
+
+    // ── Node resumed ───────────────────────────────────────────
+    manager.nodeManager.on('resumed', (node, payload, players) => {
+        console.log(`[Reso] ✓ Node "${node.id}" session resumed — ${players?.length || 0} player(s) restored`);
     });
 
     // ── Track starts playing ───────────────────────────────────
@@ -114,6 +145,32 @@ function setupLavalinkEvents(client) {
         // Clean up history
         client.trackHistory.delete(player.guildId);
     });
+}
+
+/**
+ * When a node goes down, attempt to move its active players to another healthy node.
+ * This prevents 1006 disconnects from silently killing all playback.
+ */
+function migratePlayersFromDeadNode(manager, deadNode) {
+    try {
+        const healthyNode = Array.from(manager.nodeManager.nodes.values())
+            .find(n => n.connected && n.id !== deadNode.id);
+
+        if (!healthyNode) return; // No healthy node available — retries will handle it
+
+        for (const [, player] of manager.players) {
+            if (player.node?.id === deadNode.id) {
+                try {
+                    player.node = healthyNode;
+                    console.log(`[Reso] ↝ Migrated player (guild: ${player.guildId}) from "${deadNode.id}" → "${healthyNode.id}"`);
+                } catch {
+                    // Migration failed — the player will be picked up when the dead node reconnects
+                }
+            }
+        }
+    } catch {
+        // Safety net — never let migration logic crash the bot
+    }
 }
 
 module.exports = { setupLavalinkEvents };
