@@ -24,21 +24,21 @@ module.exports = {
         await interaction.deferReply();
 
         try {
-            const Genius = require('genius-lyrics');
-            const Client = new Genius.Client();
+            // Use lrclib.net API instead of Genius (which heavily blocks scraping)
+            const response = await fetch(`https://lrclib.net/api/search?q=${encodeURIComponent(query)}`);
+            const data = await response.json();
 
-            const searches = await Client.songs.search(query);
-
-            if (!searches || searches.length === 0) {
+            if (!data || data.length === 0 || !data[0].plainLyrics) {
                 return interaction.editReply({ embeds: [errorEmbed(`No lyrics found for **${truncate(query, 50)}**`)] });
             }
 
-            const song = searches[0];
-            const lyrics = await song.lyrics();
-
-            if (!lyrics) {
-                return interaction.editReply({ embeds: [errorEmbed(`Could not fetch lyrics for **${song.title}**`)] });
-            }
+            const song = {
+                title: data[0].trackName,
+                fullTitle: `${data[0].artistName} - ${data[0].trackName}`,
+                url: `https://lrclib.net`,
+                thumbnail: null
+            };
+            const lyrics = data[0].plainLyrics;
 
             // Split lyrics if too long (Discord embed limit is 4096 chars)
             const chunks = splitText(lyrics, 4000);
