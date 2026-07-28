@@ -43,8 +43,9 @@ function setupLavalinkEvents(client) {
     // ── Node error ─────────────────────────────────────────────
     manager.nodeManager.on('error', (node, error) => {
         const msg = error?.message || String(error || '');
-        // Only suppress 429 rate-limit spam
+        // Suppress known spam from broken/rate-limited nodes
         if (msg.includes('429') || msg.includes('Too Many Requests')) return;
+        if (msg.includes('/v4/info') || msg.includes('is not valid JSON')) return;
         console.error(`[Reso] ✗ Node "${node.id}" error:`, msg);
     });
 
