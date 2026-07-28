@@ -129,10 +129,19 @@ module.exports = {
 
             // If it's a playlist or album
             if (result.loadType === 'playlist' || result.playlist) {
-                const tracks = result.tracks;
-                for (const track of tracks) {
+                const tracks = result.tracks.map(track => {
+                    // Force Spotify tracks to be resolved via YouTube Music to avoid music video dialogues
+                    if (track.info.sourceName === 'spotify' || query.includes('spotify')) {
+                        return manager.utils.buildUnresolvedTrack({
+                            title: track.info.title,
+                            author: track.info.author,
+                            uri: track.info.uri,
+                            artworkUrl: track.info.artworkUrl
+                        }, interaction.user);
+                    }
                     track.requester = interaction.user;
-                }
+                    return track;
+                });
                 player.queue.add(tracks);
 
                 // Start playing if not already
@@ -159,8 +168,18 @@ module.exports = {
             }
 
             // Single track
-            const track = result.tracks[0];
-            track.requester = interaction.user;
+            let track = result.tracks[0];
+            // Force Spotify tracks to be resolved via YouTube Music to avoid music video dialogues
+            if (track.info.sourceName === 'spotify' || query.includes('spotify')) {
+                track = manager.utils.buildUnresolvedTrack({
+                    title: track.info.title,
+                    author: track.info.author,
+                    uri: track.info.uri,
+                    artworkUrl: track.info.artworkUrl
+                }, interaction.user);
+            } else {
+                track.requester = interaction.user;
+            }
             player.queue.add(track);
 
             if (!player.playing) {
