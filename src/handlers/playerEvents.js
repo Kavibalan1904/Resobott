@@ -90,25 +90,9 @@ function setupLavalinkEvents(client) {
         const channel = client.channels.cache.get(player.textChannelId);
         if (!channel) return;
 
-        // Check if 24/7 mode is on
-        if (client.twentyFourSeven?.has(player.guildId)) {
-            const embed = createEmbed('Info')
-                .setDescription(`${EMOJIS.music} Queue has ended. Add more songs to keep the party going!\n*24/7 mode is active — I'll stay in the channel.*`);
-            channel.send({ embeds: [embed] }).catch(() => {});
-            return;
-        }
-
         const embed = createEmbed('Info')
-            .setDescription(`${EMOJIS.music} Queue has ended. Add more songs to keep the party going!`);
+            .setDescription(`${EMOJIS.music} Queue has ended. Add more songs to keep the party going!\n*I'll stay here until everyone leaves or you use \`/leave\`.*`);
         channel.send({ embeds: [embed] }).catch(() => {});
-
-        // Auto-disconnect after 30 seconds if not in 24/7 mode
-        setTimeout(() => {
-            const currentPlayer = manager.getPlayer(player.guildId);
-            if (currentPlayer && !currentPlayer.playing && !client.twentyFourSeven?.has(player.guildId)) {
-                currentPlayer.destroy();
-            }
-        }, 30000);
     });
 
     // ── Track error ────────────────────────────────────────────

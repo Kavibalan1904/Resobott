@@ -166,6 +166,56 @@ setInterval(() => {
 // ── Forward raw Discord events to Lavalink ─────────────────────
 client.on('raw', (data) => client.lavalink.sendRawData(data));
 
+// ── Auto-leave when all users leave the voice channel ──────────
+const aloneTimers = new Map();
+client.on('voiceStateUpdate', (oldState, newState) => {
+    // Only care about channel leave/move events (not mute/deaf/etc.)
+    if (oldState.channelId === newState.channelId) return;
+
+    const guildId = oldState.guild.id || newState.guild.id;
+    const player = client.lavalink.getPlayer(guildId);
+    if (!player || !player.voiceChannelId) return;
+
+    const botVC = client.channels.cache.get(player.voiceChannelId);
+    if (!botVC) return;
+
+    // Count human members in the bot's voice channel
+    const humanMembers = botVC.members.filter(m => !m.user.bot).size;
+
+    if (humanMembers === 0) {
+        // All humans left — start a 5-second grace timer then disconnect
+        if (!aloneTimers.has(guildId)) {
+            const timer = setTimeout(() => {
+                aloneTimers.delete(guildId);
+                const currentPlayer = client.lavalink.getPlayer(guildId);
+                if (!currentPlayer) return;
+
+                // Re-check: still alone?
+                const vc = client.channels.cache.get(currentPlayer.voiceChannelId);
+                const stillAlone = !vc || vc.members.filter(m => !m.user.bot).size === 0;
+
+                if (stillAlone) {
+                    const textChannel = client.channels.cache.get(currentPlayer.textChannelId);
+                    currentPlayer.destroy();
+                    if (textChannel) {
+                        const { createEmbed, EMOJIS } = require('./utils/embeds');
+                        const embed = createEmbed('Info')
+                            .setDescription(`${EMOJIS.music} Everyone left the voice channel, so I've disconnected. 👋`);
+                        textChannel.send({ embeds: [embed] }).catch(() => {});
+                    }
+                }
+            }, 5000);
+            aloneTimers.set(guildId, timer);
+        }
+    } else {
+        // Someone rejoined — cancel the alone timer if one is running
+        if (aloneTimers.has(guildId)) {
+            clearTimeout(aloneTimers.get(guildId));
+            aloneTimers.delete(guildId);
+        }
+    }
+});
+
 // ── Discord Client & REST Debugging / Error Handling ───────────
 client.on('error', (err) => console.error('[Reso Discord Error]:', err));
 client.on('warn', (msg) => console.warn('[Reso Discord Warning]:', msg));

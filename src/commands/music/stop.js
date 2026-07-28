@@ -5,7 +5,7 @@ const { getVoiceChannel } = require('../../utils/helpers');
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('stop')
-        .setDescription('Stop playback, clear the queue, and disconnect'),
+        .setDescription('Stop playback and clear the queue (stays in voice channel)'),
 
     async execute(interaction) {
         const voiceChannel = getVoiceChannel(interaction);
@@ -18,10 +18,10 @@ module.exports = {
             return interaction.reply({ embeds: [errorEmbed('Nothing is playing right now.')], ephemeral: true });
         }
 
-        // Remove 24/7 mode if active
-        interaction.client.twentyFourSeven?.delete(interaction.guild.id);
+        // Stop playback and clear the queue, but stay connected
+        player.queue.clear();
+        await player.stopPlaying(true, false);
 
-        await player.destroy();
-        return interaction.reply({ embeds: [successEmbed('Stopped playback, cleared the queue, and disconnected. 👋')] });
+        return interaction.reply({ embeds: [successEmbed('Stopped playback and cleared the queue. Use `/leave` to disconnect. ⏹️')] });
     },
 };
