@@ -97,7 +97,8 @@ function setupLavalinkEvents(client) {
 
     // ── Track error ────────────────────────────────────────────
     manager.on('trackError', (player, track, payload) => {
-        console.error(`[Reso] Track error:`, payload);
+        const errorMsg = payload?.exception?.message || 'Unknown error';
+        console.error(`[Reso] ✗ Track error for "${track?.info?.title}":`, errorMsg);
         const channel = client.channels.cache.get(player.textChannelId);
         if (!channel) return;
 
