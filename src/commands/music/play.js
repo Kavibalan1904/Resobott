@@ -130,16 +130,6 @@ module.exports = {
             // If it's a playlist or album
             if (result.loadType === 'playlist' || result.playlist) {
                 const tracks = result.tracks.map(track => {
-                    // Force Spotify tracks to be resolved via YouTube search to get playable audio
-                    // Do NOT pass sourceName or uri — those cause circular Spotify→Spotify resolution
-                    if (track.info?.sourceName === 'spotify' || query.includes('spotify')) {
-                        return manager.utils.buildUnresolvedTrack({
-                            title: track.info?.title,
-                            author: track.info?.author,
-                            artworkUrl: track.info?.artworkUrl,
-                            duration: track.info?.duration || 0,
-                        }, interaction.user);
-                    }
                     track.requester = interaction.user;
                     return track;
                 });
@@ -151,15 +141,16 @@ module.exports = {
                 }
 
                 const playlistTitle = result.playlist?.name || 'Playlist';
-                const firstTrack = tracks[0]?.info;
-                const sourceName = firstTrack?.sourceName ? capitalize(firstTrack.sourceName) : 'Unknown';
+                const firstTrack = tracks[0];
+                const firstInfo = firstTrack?.info || {};
+                const sourceName = firstInfo.sourceName ? capitalize(firstInfo.sourceName) : 'Unknown';
 
                 const embed = createEmbed('Success')
                     .setAuthor({ name: '📀 Playlist Queued' })
                     .setTitle(truncate(playlistTitle, 60))
                     .setURL(/^https?:\/\//.test(query) ? query : undefined)
                     .setDescription(`${EMOJIS.success} Added **${tracks.length}** tracks to the queue.`)
-                    .setThumbnail(firstTrack?.artworkUrl || null)
+                    .setThumbnail(firstInfo.artworkUrl || null)
                     .addFields(
                         { name: `${EMOJIS.disc} Source`, value: sourceName, inline: true },
                         { name: `${EMOJIS.dj} Requested by`, value: `${interaction.user}`, inline: true },
@@ -170,18 +161,7 @@ module.exports = {
 
             // Single track
             let track = result.tracks[0];
-            // Force Spotify tracks to be resolved via YouTube search to get playable audio
-            // Do NOT pass sourceName or uri — those cause circular Spotify→Spotify resolution
-            if (track.info?.sourceName === 'spotify' || query.includes('spotify')) {
-                track = manager.utils.buildUnresolvedTrack({
-                    title: track.info?.title,
-                    author: track.info?.author,
-                    artworkUrl: track.info?.artworkUrl,
-                    duration: track.info?.duration || 0,
-                }, interaction.user);
-            } else {
-                track.requester = interaction.user;
-            }
+            track.requester = interaction.user;
             player.queue.add(track);
 
             if (!player.playing) {
@@ -195,7 +175,7 @@ module.exports = {
             const embed = createEmbed('Success')
                 .setDescription(
                     `${sourceEmoji} Found on **${matchedSource}**\n\n` +
-                    `**[${truncate(info.title, 55)}](${info.uri})**\n` +
+                    `**[${truncate(info.title || 'Unknown Track', 55)}](${info.uri || ''})**\n` +
                     `${EMOJIS.clock} \`${info.isStream ? 'Live' : formatMs(info.duration)}\` • Requested by ${interaction.user}`
                 )
                 .setThumbnail(info.artworkUrl || null);
