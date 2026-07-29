@@ -1,4 +1,4 @@
-const { nowPlayingEmbed, createEmbed, errorEmbed, EMOJIS } = require('../utils/embeds');
+const { nowPlayingEmbed, createEmbed, errorEmbed, warningEmbed, EMOJIS } = require('../utils/embeds');
 const { truncate } = require('../utils/helpers');
 
 /**
@@ -9,6 +9,84 @@ function setupLavalinkEvents(client) {
 
     // ── Track which nodes have had problems (for smart logging) ──
     const nodeReconnectCounts = new Map();
+
+    // ── Track retry state per guild to prevent infinite retry loops ──
+    // Key: guildId, Value: Set of track identifiers (uri or title) already retried
+    const retriedTracks = new Map();
+
+    /**
+     * Attempt to re-resolve and replay a failed/stuck track once.
+     * Returns true if retry was initiated, false if we should skip.
+     */
+    async function retryTrack(player, track, reason) {
+        const guildId = player.guildId;
+        const trackKey = track?.info?.uri || track?.info?.title || 'unknown';
+
+        // Get or create the retry set for this guild
+        if (!retriedTracks.has(guildId)) {
+            retriedTracks.set(guildId, new Set());
+        }
+        const guildRetries = retriedTracks.get(guildId);
+
+        // Already retried this track? Don't loop.
+        if (guildRetries.has(trackKey)) {
+            guildRetries.delete(trackKey);
+            return false;
+        }
+
+        // Mark as retried
+        guildRetries.add(trackKey);
+
+        // Clean up old entries if the set grows too large (prevents memory leak)
+        if (guildRetries.size > 100) {
+            const first = guildRetries.values().next().value;
+            guildRetries.delete(first);
+        }
+
+        try {
+            // Build a search query from the track title + author
+            const title = track?.info?.title || '';
+            const author = track?.info?.author || '';
+            const searchQuery = `${title} ${author}`.trim();
+
+            if (!searchQuery) return false;
+
+            console.log(`[Reso] ↻ Retrying "${title}" via ytsearch (reason: ${reason})`);
+
+            // Search YouTube directly for this track
+            const result = await player.search({
+                query: searchQuery,
+                source: 'ytsearch',
+            }, track.requester);
+
+            if (!result.tracks || result.tracks.length === 0) {
+                console.log(`[Reso] ✗ Retry search found no results for "${title}"`);
+                return false;
+            }
+
+            // Pick the best match — first result from YouTube
+            const resolvedTrack = result.tracks[0];
+            resolvedTrack.requester = track.requester;
+
+            // Insert at the front of the queue and play
+            player.queue.add(resolvedTrack, 0);
+            await player.skip();
+
+            // Notify the text channel
+            const channel = client.channels.cache.get(player.textChannelId);
+            if (channel) {
+                const embed = warningEmbed(
+                    `Track **${truncate(title, 50)}** ${reason}. Retrying with a different source...`
+                );
+                channel.send({ embeds: [embed] }).catch(() => {});
+            }
+
+            return true;
+        } catch (err) {
+            console.error(`[Reso] ✗ Retry failed for "${track?.info?.title}":`, err.message);
+            return false;
+        }
+    }
 
     // ── Node connected ─────────────────────────────────────────
     manager.nodeManager.on('connect', (node) => {
@@ -87,6 +165,9 @@ function setupLavalinkEvents(client) {
 
     // ── Queue finished (all tracks done) ───────────────────────
     manager.on('queueEnd', (player) => {
+        // Clean up retry state for this guild
+        retriedTracks.delete(player.guildId);
+
         const channel = client.channels.cache.get(player.textChannelId);
         if (!channel) return;
 
@@ -96,9 +177,15 @@ function setupLavalinkEvents(client) {
     });
 
     // ── Track error ────────────────────────────────────────────
-    manager.on('trackError', (player, track, payload) => {
+    manager.on('trackError', async (player, track, payload) => {
         const errorMsg = payload?.exception?.message || 'Unknown error';
         console.error(`[Reso] ✗ Track error for "${track?.info?.title}":`, errorMsg);
+
+        // Attempt retry before giving up
+        const retried = await retryTrack(player, track, 'failed to load');
+        if (retried) return; // Retry initiated, don't skip
+
+        // Retry failed or already retried — skip with error message
         const channel = client.channels.cache.get(player.textChannelId);
         if (!channel) return;
 
@@ -109,8 +196,14 @@ function setupLavalinkEvents(client) {
     });
 
     // ── Track stuck ────────────────────────────────────────────
-    manager.on('trackStuck', (player, track, payload) => {
+    manager.on('trackStuck', async (player, track, payload) => {
         console.error(`[Reso] Track stuck:`, track?.info?.title);
+
+        // Attempt retry before giving up
+        const retried = await retryTrack(player, track, 'got stuck');
+        if (retried) return; // Retry initiated, don't skip
+
+        // Retry failed or already retried — skip with error message
         const channel = client.channels.cache.get(player.textChannelId);
         if (!channel) return;
 
@@ -128,8 +221,9 @@ function setupLavalinkEvents(client) {
     // ── Player destroyed ───────────────────────────────────────
     manager.on('playerDestroy', (player) => {
         console.log(`[Reso] Player destroyed for guild: ${player.guildId}`);
-        // Clean up history
+        // Clean up history and retry state
         client.trackHistory.delete(player.guildId);
+        retriedTracks.delete(player.guildId);
     });
 }
 

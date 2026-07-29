@@ -136,7 +136,9 @@ module.exports = {
                             title: track.info.title,
                             author: track.info.author,
                             uri: track.info.uri,
-                            artworkUrl: track.info.artworkUrl
+                            artworkUrl: track.info.artworkUrl,
+                            duration: track.info.duration || 0,
+                            sourceName: track.info.sourceName || 'spotify',
                         }, interaction.user);
                     }
                     track.requester = interaction.user;
@@ -175,7 +177,9 @@ module.exports = {
                     title: track.info.title,
                     author: track.info.author,
                     uri: track.info.uri,
-                    artworkUrl: track.info.artworkUrl
+                    artworkUrl: track.info.artworkUrl,
+                    duration: track.info.duration || 0,
+                    sourceName: track.info.sourceName || 'spotify',
                 }, interaction.user);
             } else {
                 track.requester = interaction.user;
