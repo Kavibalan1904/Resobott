@@ -90,15 +90,6 @@ const backupNodes = [
         retryDelay: 5000,
     },
     {
-        id: 'node-jirayu-ssl',
-        host: 'lavalink.jirayu.net',
-        port: 443,
-        authorization: 'youshallnotpass',
-        secure: true,
-        retryAmount: 15,
-        retryDelay: 5000,
-    },
-    {
         id: 'node-kasawa',
         host: 'lava2.kasawa.pro',
         port: 2334,
