@@ -130,15 +130,14 @@ module.exports = {
             // If it's a playlist or album
             if (result.loadType === 'playlist' || result.playlist) {
                 const tracks = result.tracks.map(track => {
-                    // Force Spotify tracks to be resolved via YouTube Music to avoid music video dialogues
-                    if (track.info.sourceName === 'spotify' || query.includes('spotify')) {
+                    // Force Spotify tracks to be resolved via YouTube search to get playable audio
+                    // Do NOT pass sourceName or uri — those cause circular Spotify→Spotify resolution
+                    if (track.info?.sourceName === 'spotify' || query.includes('spotify')) {
                         return manager.utils.buildUnresolvedTrack({
-                            title: track.info.title,
-                            author: track.info.author,
-                            uri: track.info.uri,
-                            artworkUrl: track.info.artworkUrl,
-                            duration: track.info.duration || 0,
-                            sourceName: track.info.sourceName || 'spotify',
+                            title: track.info?.title,
+                            author: track.info?.author,
+                            artworkUrl: track.info?.artworkUrl,
+                            duration: track.info?.duration || 0,
                         }, interaction.user);
                     }
                     track.requester = interaction.user;
@@ -171,15 +170,14 @@ module.exports = {
 
             // Single track
             let track = result.tracks[0];
-            // Force Spotify tracks to be resolved via YouTube Music to avoid music video dialogues
-            if (track.info.sourceName === 'spotify' || query.includes('spotify')) {
+            // Force Spotify tracks to be resolved via YouTube search to get playable audio
+            // Do NOT pass sourceName or uri — those cause circular Spotify→Spotify resolution
+            if (track.info?.sourceName === 'spotify' || query.includes('spotify')) {
                 track = manager.utils.buildUnresolvedTrack({
-                    title: track.info.title,
-                    author: track.info.author,
-                    uri: track.info.uri,
-                    artworkUrl: track.info.artworkUrl,
-                    duration: track.info.duration || 0,
-                    sourceName: track.info.sourceName || 'spotify',
+                    title: track.info?.title,
+                    author: track.info?.author,
+                    artworkUrl: track.info?.artworkUrl,
+                    duration: track.info?.duration || 0,
                 }, interaction.user);
             } else {
                 track.requester = interaction.user;
@@ -190,7 +188,7 @@ module.exports = {
                 await player.play();
             }
 
-            const info = track.info;
+            const info = track.info || {};
             const sourceEmoji = SOURCE_EMOJIS[source] || '🔍';
             const matchedSource = info.sourceName ? capitalize(info.sourceName) : 'Unknown';
 
