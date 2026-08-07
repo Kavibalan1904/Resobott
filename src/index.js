@@ -119,7 +119,7 @@ client.lavalink = new LavalinkManager({
         username: 'Reso',
     },
     playerOptions: {
-        defaultSearchPlatform: 'ytsearch',
+        defaultSearchPlatform: 'spsearch',
         clientBasedPositionUpdate: true,
         onDisconnect: {
             autoReconnect: true,

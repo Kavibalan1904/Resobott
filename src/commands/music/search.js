@@ -3,7 +3,7 @@ const { errorEmbed, createEmbed, EMOJIS, capitalize } = require('../../utils/emb
 const { getVoiceChannel, truncate, formatMs } = require('../../utils/helpers');
 
 const SOURCE_MAP = {
-    auto: 'ytsearch',
+    auto: 'spsearch',
     youtube: 'ytsearch',
     spotify: 'spsearch',
     soundcloud: 'scsearch',

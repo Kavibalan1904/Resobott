@@ -16,6 +16,7 @@ function setupLavalinkEvents(client) {
 
     /**
      * Attempt to re-resolve and replay a failed/stuck track once.
+     * Source-aware: retries on the original source first, then falls back to YouTube.
      * Returns true if retry was initiated, false if we should skip.
      */
     async function retryTrack(player, track, reason) {
@@ -48,40 +49,79 @@ function setupLavalinkEvents(client) {
             const title = track?.info?.title || '';
             const author = track?.info?.author || '';
             const searchQuery = `${title} ${author}`.trim();
+            const isrc = track?.info?.isrc || null;
+            const originalSource = (track?.info?.sourceName || '').toLowerCase();
 
             if (!searchQuery) return false;
 
-            console.log(`[Reso] ↻ Retrying "${title}" via ytsearch (reason: ${reason})`);
+            // Determine retry search sources based on original source
+            // Priority: original source → Spotify → YouTube (last resort)
+            const retrySources = [];
 
-            // Search YouTube directly for this track
-            const result = await player.search({
-                query: searchQuery,
-                source: 'ytsearch',
-            }, track.requester);
-
-            if (!result.tracks || result.tracks.length === 0) {
-                console.log(`[Reso] ✗ Retry search found no results for "${title}"`);
-                return false;
+            if (originalSource === 'spotify' || originalSource === 'spsearch') {
+                // Track was from Spotify — retry with spsearch first
+                if (isrc) retrySources.push({ source: 'spsearch', query: isrc, label: 'Spotify ISRC' });
+                retrySources.push({ source: 'spsearch', query: searchQuery, label: 'Spotify search' });
+                retrySources.push({ source: 'ytsearch', query: searchQuery, label: 'YouTube fallback' });
+            } else if (originalSource === 'soundcloud') {
+                retrySources.push({ source: 'scsearch', query: searchQuery, label: 'SoundCloud search' });
+                retrySources.push({ source: 'spsearch', query: searchQuery, label: 'Spotify fallback' });
+                retrySources.push({ source: 'ytsearch', query: searchQuery, label: 'YouTube fallback' });
+            } else if (originalSource === 'deezer') {
+                retrySources.push({ source: 'dzsearch', query: searchQuery, label: 'Deezer search' });
+                retrySources.push({ source: 'spsearch', query: searchQuery, label: 'Spotify fallback' });
+                retrySources.push({ source: 'ytsearch', query: searchQuery, label: 'YouTube fallback' });
+            } else {
+                // Default: try Spotify first (better quality), then YouTube
+                retrySources.push({ source: 'spsearch', query: searchQuery, label: 'Spotify search' });
+                retrySources.push({ source: 'ytsearch', query: searchQuery, label: 'YouTube fallback' });
             }
 
-            // Pick the best match — first result from YouTube
-            const resolvedTrack = result.tracks[0];
-            resolvedTrack.requester = track.requester;
+            // Try each source in priority order
+            for (const retrySource of retrySources) {
+                try {
+                    console.log(`[Reso] ↻ Retrying "${title}" via ${retrySource.label} (reason: ${reason})`);
 
-            // Insert at the front of the queue and play
-            player.queue.add(resolvedTrack, 0);
-            await player.skip();
+                    const result = await player.search({
+                        query: retrySource.query,
+                        source: retrySource.source,
+                    }, track.requester);
 
-            // Notify the text channel
-            const channel = client.channels.cache.get(player.textChannelId);
-            if (channel) {
-                const embed = warningEmbed(
-                    `Track **${truncate(title, 50)}** ${reason}. Retrying with a different source...`
-                );
-                channel.send({ embeds: [embed] }).catch(() => {});
+                    if (!result.tracks || result.tracks.length === 0) {
+                        console.log(`[Reso] ✗ ${retrySource.label} found no results for "${title}"`);
+                        continue; // Try next source
+                    }
+
+                    // Pick the best match — first result
+                    const resolvedTrack = result.tracks[0];
+                    resolvedTrack.requester = track.requester;
+                    const resolvedSource = resolvedTrack?.info?.sourceName || 'unknown';
+
+                    console.log(`[Reso] ✓ Retry resolved from: ${resolvedSource} via ${retrySource.label}`);
+
+                    // Insert at the front of the queue and play
+                    player.queue.add(resolvedTrack, 0);
+                    await player.skip();
+
+                    // Notify the text channel
+                    const channel = client.channels.cache.get(player.textChannelId);
+                    if (channel) {
+                        const embed = warningEmbed(
+                            `Track **${truncate(title, 50)}** ${reason}. Retrying with **${resolvedSource}**...`
+                        );
+                        channel.send({ embeds: [embed] }).catch(() => {});
+                    }
+
+                    return true;
+                } catch (err) {
+                    console.error(`[Reso] ✗ Retry via ${retrySource.label} failed:`, err.message);
+                    continue; // Try next source
+                }
             }
 
-            return true;
+            // All retry sources exhausted
+            console.log(`[Reso] ✗ All retry sources exhausted for "${title}"`);
+            return false;
         } catch (err) {
             console.error(`[Reso] ✗ Retry failed for "${track?.info?.title}":`, err.message);
             return false;
