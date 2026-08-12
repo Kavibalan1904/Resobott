@@ -1,5 +1,6 @@
-const { nowPlayingEmbed, createEmbed, errorEmbed, warningEmbed, EMOJIS } = require('../utils/embeds');
+const { nowPlayingEmbed, createRecommendationComponents, createEmbed, errorEmbed, warningEmbed, EMOJIS } = require('../utils/embeds');
 const { truncate } = require('../utils/helpers');
+const { getRecommendations } = require('../utils/recommendations');
 
 /**
  * Setup all Lavalink event listeners on the LavalinkManager
@@ -183,7 +184,7 @@ function setupLavalinkEvents(client) {
     });
 
     // ── Track starts playing ───────────────────────────────────
-    manager.on('trackStart', (player, track) => {
+    manager.on('trackStart', async (player, track) => {
         // Store in history for /back command
         const history = client.trackHistory.get(player.guildId) || [];
         // Keep last 50 tracks in history
@@ -205,8 +206,24 @@ function setupLavalinkEvents(client) {
         const channel = client.channels.cache.get(player.textChannelId);
         if (!channel) return;
 
-        const embed = nowPlayingEmbed(track, player, client);
-        channel.send({ embeds: [embed] }).catch(() => {});
+        // Fetch YouTube-style song recommendations matching vibe/artist/language
+        let recommendations = [];
+        try {
+            recommendations = await getRecommendations(player, track, 3);
+            if (client.recommendations) {
+                client.recommendations.set(player.guildId, recommendations);
+            }
+        } catch (e) {
+            console.log('[Reso] Failed to fetch recommendations for nowPlaying:', e.message);
+        }
+
+        const embed = nowPlayingEmbed(track, player, client, recommendations);
+        const row = createRecommendationComponents(recommendations, player.guildId);
+
+        const msgOptions = { embeds: [embed] };
+        if (row) msgOptions.components = [row];
+
+        channel.send(msgOptions).catch(() => {});
     });
 
     // ── Track ends ─────────────────────────────────────────────

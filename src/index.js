@@ -47,6 +47,9 @@ client.twentyFourSeven = new Set();
 // ── Track history storage (guild ID → array of tracks) ─────────
 client.trackHistory = new Map();
 
+// ── Recommendation storage (guild ID → array of recommended tracks) ──
+client.recommendations = new Map();
+
 // ── Create Lavalink Manager ────────────────────────────────────
 const defaultNodes = [];
 const addedHosts = new Set();
@@ -290,6 +293,69 @@ async function main() {
 
         // Handle interactions
         client.on('interactionCreate', async (interaction) => {
+            // Handle recommendation button clicks
+            if (interaction.isButton() && interaction.customId?.startsWith('rec_add_')) {
+                try {
+                    const parts = interaction.customId.split('_');
+                    const guildId = parts[2];
+                    const recIndex = parseInt(parts[3], 10);
+
+                    const memberVC = interaction.member?.voice?.channel;
+                    if (!memberVC) {
+                        return interaction.reply({
+                            content: '❌ You need to be in a voice channel to add recommendations!',
+                            ephemeral: true,
+                        });
+                    }
+
+                    const recs = client.recommendations.get(guildId) || [];
+                    const recommendedTrack = recs[recIndex];
+
+                    if (!recommendedTrack) {
+                        return interaction.reply({
+                            content: '❌ Recommendation no longer available.',
+                            ephemeral: true,
+                        });
+                    }
+
+                    let player = client.lavalink.getPlayer(guildId);
+                    if (!player) {
+                        player = client.lavalink.createPlayer({
+                            guildId: guildId,
+                            voiceChannelId: memberVC.id,
+                            textChannelId: interaction.channel.id,
+                            selfDeaf: true,
+                            volume: parseInt(process.env.DEFAULT_VOLUME) || 50,
+                        });
+                    }
+
+                    if (!player.connected) {
+                        await player.connect();
+                    }
+
+                    recommendedTrack.requester = interaction.user;
+                    player.queue.add(recommendedTrack);
+
+                    if (!player.playing) {
+                        await player.play();
+                    }
+
+                    const { truncate } = require('./utils/helpers');
+                    const title = truncate(recommendedTrack.info?.title || 'Track', 45);
+
+                    return interaction.reply({
+                        content: `✅ Added recommended song **${title}** to the queue! 🎵`,
+                        ephemeral: true,
+                    });
+                } catch (btnErr) {
+                    console.error('[Reso] Recommendation button error:', btnErr);
+                    return interaction.reply({
+                        content: '❌ Failed to queue recommendation.',
+                        ephemeral: true,
+                    }).catch(() => {});
+                }
+            }
+
             if (!interaction.isChatInputCommand()) return;
             const command = client.commands.get(interaction.commandName);
             if (!command) return;

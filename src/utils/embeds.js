@@ -1,5 +1,5 @@
-const { EmbedBuilder } = require('discord.js');
-const { createProgressBar, formatMs } = require('./helpers');
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { createProgressBar, formatMs, truncate } = require('./helpers');
 
 // ── Reso Brand Colors ──────────────────────────────────────────
 const Colors = {
@@ -58,8 +58,9 @@ function createEmbed(type = 'Primary') {
  * @param {object} track Lavalink track object (has track.info)
  * @param {object} player Lavalink player instance
  * @param {object} [client] Discord client instance (for resolving voice channel bitrate)
+ * @param {Array} [recommendations] Array of recommended Lavalink tracks
  */
-function nowPlayingEmbed(track, player, client) {
+function nowPlayingEmbed(track, player, client, recommendations = []) {
     const info = track.info || track;
     const duration = info.duration || 0;
     const position = player.position || 0;
@@ -101,7 +102,47 @@ function nowPlayingEmbed(track, player, client) {
         { name: `${EMOJIS.queue} Queue`, value: `${player.queue.tracks.length} tracks`, inline: true },
     );
 
+    if (recommendations && recommendations.length > 0) {
+        const recList = recommendations.slice(0, 3).map((rec, i) => {
+            const rInfo = rec.info || {};
+            const rTitle = truncate(rInfo.title || 'Unknown', 40);
+            const rAuthor = rInfo.author ? `by ${truncate(rInfo.author, 25)}` : '';
+            return `\`${i + 1}.\` **[${rTitle}](${rInfo.uri || '#'})** ${rAuthor}`;
+        }).join('\n');
+
+        embed.addFields({
+            name: `💡 YouTube Recommended Next`,
+            value: recList + '\n*Click a button below to add to queue!*',
+            inline: false,
+        });
+    }
+
     return embed;
+}
+
+/**
+ * Create interactive action row with recommendation buttons
+ * @param {Array} recommendations Array of recommended tracks
+ * @param {string} guildId Guild ID
+ * @returns {ActionRowBuilder|null}
+ */
+function createRecommendationComponents(recommendations = [], guildId = '') {
+    if (!recommendations || recommendations.length === 0) return null;
+
+    const row = new ActionRowBuilder();
+    const sliced = recommendations.slice(0, 3);
+
+    sliced.forEach((rec, idx) => {
+        const rTitle = truncate(rec.info?.title || `Song ${idx + 1}`, 30);
+        row.addComponents(
+            new ButtonBuilder()
+                .setCustomId(`rec_add_${guildId}_${idx}`)
+                .setLabel(`➕ ${idx + 1}. ${rTitle}`)
+                .setStyle(ButtonStyle.Secondary)
+        );
+    });
+
+    return row;
 }
 
 /**
@@ -163,6 +204,7 @@ module.exports = {
     EMOJIS,
     createEmbed,
     nowPlayingEmbed,
+    createRecommendationComponents,
     trackAddedEmbed,
     errorEmbed,
     successEmbed,
