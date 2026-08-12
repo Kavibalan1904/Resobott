@@ -1,87 +1,83 @@
 const { truncate } = require('./helpers');
 
-// Known publisher / record label patterns to filter out YouTube channel names
-const PUBLISHER_REGEX = /(vevo|t-series|tseries|sony|saregama|speed audio|think music|aditya music|lahari|tips|yrf|zee music|rajshri|venus|wave music|eros|goldmines|sainath|sun tv|star music|muzik247|dvo|records|recordings|music company|music india|entertainment|media|production|official channel|regional)/i;
-
-// Words to strip from title parts to clean song, movie, actor, and artist names
-const JUNK_TITLE_WORDS = /\b(official|music|video|audio|lyric|lyrics|full song|hd|4k|1080p|remastered|visualizer|status|shorts|song|songs|video song|lyric video|4k video|uhd|teaser|trailer)\b/gi;
-
 /**
- * Clean string by removing bracketed info and junk video words
+ * Universal video descriptor remover (removes "(Official Video)", "[4K]", "Lyric Video", "Video Song", etc.)
  */
-function cleanString(str = '') {
-    if (!str) return '';
-    return str
-        .replace(/[\(\[\{].*?[\)\]\}]/g, '') // remove (Official Video), [HD], etc.
-        .replace(JUNK_TITLE_WORDS, '')       // remove "Video Song", "Lyric", etc.
+function stripVideoJunk(text = '') {
+    if (!text) return '';
+    return text
+        .replace(/[\(\[\{].*?[\)\]\}]/g, '') // remove brackets (...) [...] {...}
+        .replace(/\b(official|music|video|audio|lyric|lyrics|full song|hd|4k|1080p|remastered|visualizer|status|shorts|video song|lyric video|4k video|uhd|teaser|trailer|song|songs)\b/gi, '')
         .replace(/\s+/g, ' ')
         .trim();
 }
 
 /**
- * Clean track title helper
+ * Clean song title helper
  */
 function cleanSongTitle(title = '') {
-    const firstPart = title.split(/\||-|\//)[0] || title;
-    return cleanString(firstPart);
+    const firstPart = title.split(/\||-|:|\//)[0] || title;
+    return stripVideoJunk(firstPart) || title;
 }
 
 /**
- * Dynamically & intelligently extract song title, movie/album name, actor/feature, and real singer/artist
- * Filters out publisher channel names (T-Series, Sony Music, VEVO, etc.) and title junk words.
+ * Pure Algorithmic Title Metadata Parser
+ * Parses song name, album/movie name, artist name, and secondary artists
+ * directly from video title syntax without needing ANY channel or publisher lists!
  */
 function parseTrackMetadata(title = '', author = '') {
-    const rawParts = title.split(/\||-|\//).map(p => p.trim()).filter(Boolean);
-    const cleanAuth = author ? author.replace(/ - Topic$/i, '').trim() : '';
+    // Split title by delimiters |, -, :, /
+    const rawSegments = title.split(/\||-|:|\//).map(s => s.trim()).filter(Boolean);
+    const cleanedSegments = rawSegments.map(s => stripVideoJunk(s)).filter(s => s.length > 0);
 
-    const isPublisher = PUBLISHER_REGEX.test(cleanAuth);
-    let realArtist = isPublisher ? null : cleanAuth;
+    let songName = '';
+    let movieOrAlbum = null;
+    let primaryArtist = null;
+    let secondaryArtist = null;
 
-    // Filter parts to remove pure metadata strings
-    const cleanedParts = rawParts
-        .map(p => cleanString(p))
-        .filter(p => p.length > 1 && !/^(official|video|audio|lyric|hd|4k)$/i.test(p));
+    if (cleanedSegments.length === 0) {
+        songName = stripVideoJunk(title) || title;
+    } else if (cleanedSegments.length === 1) {
+        songName = cleanedSegments[0];
+        if (author && !/(vevo|official|channel|studio|records|recordings|music|tv|media|production)/i.test(author)) {
+            primaryArtist = author.replace(/ - Topic$/i, '').trim();
+        }
+    } else {
+        // Multi-segment title
+        const seg0 = cleanedSegments[0];
+        const seg1 = cleanedSegments[1];
 
-    const songName = cleanedParts[0] || cleanString(title);
-    let movieName = null;
-    let actorOrFeature = null;
-
-    for (let i = 1; i < cleanedParts.length; i++) {
-        const part = cleanedParts[i];
-        if (!part || part.toLowerCase() === songName.toLowerCase()) continue;
-
-        const rawPart = rawParts[i] || '';
-
-        // Movie / Album detection
-        if (!movieName && /(movie|film|album|ost|jukebox|soundtrack)/i.test(rawPart)) {
-            movieName = part;
-        } else if (!movieName && i === 1 && part.length < 30) {
-            movieName = part;
-        } else if (!realArtist && i >= 1) {
-            realArtist = part;
-        } else if (!actorOrFeature && i >= 1 && part !== realArtist) {
-            actorOrFeature = part;
+        // Format A: "Artist - Song" (Common in Western/Indie titles like "Ed Sheeran - Shape of You")
+        if (title.includes(' - ') && !title.includes('|')) {
+            primaryArtist = seg0;
+            songName = seg1;
+            if (cleanedSegments[2]) movieOrAlbum = cleanedSegments[2];
+        } else {
+            // Format B: "Song | Movie | Artist | Singer" (Common in Indian/OST titles)
+            songName = seg0;
+            movieOrAlbum = seg1;
+            primaryArtist = cleanedSegments[2] || null;
+            secondaryArtist = cleanedSegments[3] || null;
         }
     }
 
     // Fallbacks
-    if (!movieName) movieName = songName;
-    if (!realArtist) realArtist = cleanAuth && !isPublisher ? cleanAuth : songName;
-    if (!actorOrFeature) actorOrFeature = realArtist;
+    if (!songName) songName = stripVideoJunk(title) || 'Song';
+    if (!primaryArtist) primaryArtist = secondaryArtist || songName;
 
     return {
         songName,
-        movieName,
-        artistName: realArtist,
-        actorOrFeature,
+        movieOrAlbum,
+        primaryArtist,
+        secondaryArtist: secondaryArtist || primaryArtist,
     };
 }
 
 /**
- * Fetch 5 structured, high-relevance recommendations:
+ * Fetch 5 structured, high-relevance recommendations using pure title syntax parsing:
  * 1. Same Movie / Album (1 song)
  * 2. Same Singer / Main Artist (2 songs)
- * 3. Actor / Featured Artist Other Songs (1 song)
+ * 3. Actor / Secondary Artist Other Songs (1 song)
  * 4. Random Unrelated Discovery Song (1 song)
  */
 async function getRecommendations(player, currentTrack, limit = 5) {
@@ -151,25 +147,25 @@ async function getRecommendations(player, currentTrack, limit = 5) {
     }
 
     // 1. Same Movie / Album (1 song)
-    if (meta.movieName && meta.movieName !== meta.songName) {
-        const movieQuery = `${meta.movieName} movie song`;
-        await fetchUniqueTrack(movieQuery, `🎬 From ${truncate(meta.movieName, 18)}`, 1);
+    if (meta.movieOrAlbum && meta.movieOrAlbum !== meta.songName) {
+        const movieQuery = `${meta.movieOrAlbum} song`;
+        await fetchUniqueTrack(movieQuery, `🎬 From ${truncate(meta.movieOrAlbum, 18)}`, 1);
     } else {
-        const vibeQuery = `${meta.songName} ${meta.artistName} song`;
+        const vibeQuery = `${meta.songName} ${meta.primaryArtist} song`;
         await fetchUniqueTrack(vibeQuery, '🔥 Similar Vibe', 1);
     }
 
     // 2. Same Singer / Main Artist (2 songs)
-    const singerQuery = `${meta.artistName} hit songs`;
-    await fetchUniqueTrack(singerQuery, `🎤 By ${truncate(meta.artistName, 18)}`, 2);
+    const artistQuery = `${meta.primaryArtist} songs`;
+    await fetchUniqueTrack(artistQuery, `🎤 By ${truncate(meta.primaryArtist, 18)}`, 2);
 
-    // 3. Actor or Featured Artist Other Songs (1 song)
-    if (meta.actorOrFeature && meta.actorOrFeature !== meta.artistName) {
-        const actorQuery = `${meta.actorOrFeature} hit songs`;
-        await fetchUniqueTrack(actorQuery, `🎭 Starring ${truncate(meta.actorOrFeature, 16)}`, 1);
+    // 3. Secondary Artist / Actor Other Songs (1 song)
+    if (meta.secondaryArtist && meta.secondaryArtist !== meta.primaryArtist) {
+        const secondaryQuery = `${meta.secondaryArtist} songs`;
+        await fetchUniqueTrack(secondaryQuery, `🎭 Featuring ${truncate(meta.secondaryArtist, 16)}`, 1);
     } else {
-        const similarQuery = `${meta.artistName} famous songs`;
-        await fetchUniqueTrack(similarQuery, '🎧 Similar Artist', 1);
+        const famousQuery = `${meta.primaryArtist} famous songs`;
+        await fetchUniqueTrack(famousQuery, '🎧 Similar Artist', 1);
     }
 
     // 4. Random Unrelated Discovery Song (1 song)
@@ -186,7 +182,7 @@ async function getRecommendations(player, currentTrack, limit = 5) {
     // Fallback if any category returned fewer tracks than 5 total
     if (finalRecommendations.length < limit) {
         const remainingNeeded = limit - finalRecommendations.length;
-        await fetchUniqueTrack(`${meta.artistName} top songs`, '🎵 Related Track', remainingNeeded);
+        await fetchUniqueTrack(`${meta.primaryArtist} top songs`, '🎵 Related Track', remainingNeeded);
     }
 
     return finalRecommendations.slice(0, limit);
