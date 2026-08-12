@@ -102,21 +102,6 @@ function nowPlayingEmbed(track, player, client, recommendations = []) {
         { name: `${EMOJIS.queue} Queue`, value: `${player.queue.tracks.length} tracks`, inline: true },
     );
 
-    if (recommendations && recommendations.length > 0) {
-        const recList = recommendations.slice(0, 5).map((rec, i) => {
-            const rInfo = rec.info || {};
-            const rTitle = truncate(rInfo.title || 'Unknown', 36);
-            const badge = rec.categoryLabel ? `• ${rec.categoryLabel}` : '';
-            return `\`${i + 1}.\` **[${rTitle}](${rInfo.uri || '#'})** ${badge}`;
-        }).join('\n');
-
-        embed.addFields({
-            name: `💡 YouTube Recommended Next`,
-            value: recList + '\n*Select a song from the dropdown menu below to add to queue!*',
-            inline: false,
-        });
-    }
-
     return embed;
 }
 
