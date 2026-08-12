@@ -156,8 +156,14 @@ function setupLavalinkEvents(client) {
         // Always log 1006 at warn level — this IS the problem the user is seeing
         if (code === 1006) {
             console.warn(`[Reso] ⚠ Node "${node.id}" abnormal closure (1006) — proxy/firewall likely killed idle WebSocket. Will retry.`);
-        } else if (code === 4000 || code === 1000) {
-            // These are normal/expected closures, keep them quiet
+        } else if (code === 4000) {
+            // Code 4000 is public node rate limit per bot ID
+            const count = (nodeReconnectCounts.get(`${node.id}_4000`) || 0) + 1;
+            nodeReconnectCounts.set(`${node.id}_4000`, count);
+            if (count === 1) {
+                console.log(`[Reso] ℹ Node "${node.id}" reached public server connection limit (4000). Pausing retries.`);
+            }
+        } else if (code === 1000) {
             console.log(`[Reso] ℹ Node "${node.id}" closed normally (${code}: ${readableReason})`);
         } else {
             console.warn(`[Reso] ⚠ Node "${node.id}" disconnected (code: ${code || 'unknown'}, reason: ${readableReason})`);
@@ -180,6 +186,10 @@ function setupLavalinkEvents(client) {
     manager.nodeManager.on('reconnecting', (node) => {
         const attempts = (nodeReconnectCounts.get(node.id) || 0) + 1;
         nodeReconnectCounts.set(node.id, attempts);
+
+        // Don't flood logs if node is getting 4000 connection limit
+        if (nodeReconnectCounts.get(`${node.id}_4000`) > 0) return;
+
         // Only log every few attempts to avoid flooding
         if (attempts <= 3 || attempts % 5 === 0) {
             console.log(`[Reso] ↻ Node "${node.id}" reconnecting (attempt ${attempts})...`);

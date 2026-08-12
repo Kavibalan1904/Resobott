@@ -6,7 +6,7 @@ if (dns.setDefaultResultOrder) {
     dns.setDefaultResultOrder('ipv4first');
 }
 
-const { Client, GatewayIntentBits, Collection } = require('discord.js');
+const { Client, GatewayIntentBits, Collection, MessageFlags } = require('discord.js');
 const { LavalinkManager } = require('lavalink-client');
 const { loadCommands, registerSlashCommands } = require('./handlers/commandHandler');
 const { setupLavalinkEvents } = require('./handlers/playerEvents');
@@ -91,17 +91,8 @@ const backupNodes = [
         port: 443,
         authorization: 'https://seretia.link/discord',
         secure: true,
-        retryAmount: 5,
-        retryDelay: 10000,
-    },
-    {
-        id: 'node-serenetia',
-        host: 'lavalinkv4.serenetia.com',
-        port: 80,
-        authorization: 'https://seretia.link/discord',
-        secure: false,
-        retryAmount: 5,
-        retryDelay: 10000,
+        retryAmount: 3,
+        retryDelay: 15000,
     },
     {
         id: 'node-kasawa',
@@ -109,8 +100,8 @@ const backupNodes = [
         port: 2334,
         authorization: 'youshallnotpass',
         secure: false,
-        retryAmount: 5,
-        retryDelay: 10000,
+        retryAmount: 3,
+        retryDelay: 15000,
     },
     // ── Additional Backup Nodes ──────────────────────────────────
     {
@@ -289,7 +280,7 @@ async function main() {
                     if (!memberVC) {
                         return interaction.reply({
                             content: '❌ You need to be in a voice channel to add recommendations!',
-                            ephemeral: true,
+                            flags: MessageFlags.Ephemeral,
                         });
                     }
 
@@ -299,7 +290,7 @@ async function main() {
                     if (!recommendedTrack) {
                         return interaction.reply({
                             content: '❌ Recommendation no longer available.',
-                            ephemeral: true,
+                            flags: MessageFlags.Ephemeral,
                         });
                     }
 
@@ -330,13 +321,13 @@ async function main() {
 
                     return interaction.reply({
                         content: `✅ Added recommended song **${title}** to the queue! 🎵`,
-                        ephemeral: true,
+                        flags: MessageFlags.Ephemeral,
                     });
                 } catch (recErr) {
                     console.error('[Reso] Recommendation interaction error:', recErr);
                     return interaction.reply({
                         content: '❌ Failed to queue recommendation.',
-                        ephemeral: true,
+                        flags: MessageFlags.Ephemeral,
                     }).catch(() => {});
                 }
             }
@@ -351,7 +342,7 @@ async function main() {
                 console.error(`[Reso] Command error (${interaction.commandName}):`, error);
                 const errorMsg = {
                     content: '❌ An error occurred while executing this command.',
-                    ephemeral: true,
+                    flags: MessageFlags.Ephemeral,
                 };
                 if (interaction.replied || interaction.deferred) {
                     await interaction.followUp(errorMsg).catch(() => { });
