@@ -79,54 +79,17 @@ if (process.env.LAVALINK_HOST) {
 }
 
 // 2. Backup / Default Nodes (deduplicated)
-// Sourced from https://lavalink-list.ajieblogs.eu.org/All — all v4 nodes
+// Only nodes confirmed working as of Aug 2026. Dead nodes removed to stop log spam.
 const backupNodes = [
-    // ── SSL Nodes (port 443, secure: true) ──────────────────────
+    // ── Confirmed Working ────────────────────────────────────────
     {
         id: 'node-serenetia-ssl',
         host: 'lavalinkv4.serenetia.com',
         port: 443,
         authorization: 'https://seretia.link/discord',
         secure: true,
-        retryAmount: 15,
-        retryDelay: 5000,
-    },
-    {
-        id: 'node-jirayu-ssl',
-        host: 'lavalink.jirayu.net',
-        port: 443,
-        authorization: 'youshallnotpass',
-        secure: true,
-        retryAmount: 15,
-        retryDelay: 5000,
-    },
-    {
-        id: 'node-trinium-ssl',
-        host: 'lavalink-v4.triniumhost.com',
-        port: 443,
-        authorization: 'free',
-        secure: true,
-        retryAmount: 15,
-        retryDelay: 5000,
-    },
-    {
-        id: 'node-nodelink-trinium-ssl',
-        host: 'nodelink.triniumhost.com',
-        port: 443,
-        authorization: 'free',
-        secure: true,
-        retryAmount: 15,
-        retryDelay: 5000,
-    },
-    // ── Non-SSL Nodes (fallback) ────────────────────────────────
-    {
-        id: 'node-jirayu',
-        host: 'lavalink.jirayu.net',
-        port: 13592,
-        authorization: 'youshallnotpass',
-        secure: false,
-        retryAmount: 15,
-        retryDelay: 5000,
+        retryAmount: 5,
+        retryDelay: 10000,
     },
     {
         id: 'node-serenetia',
@@ -134,17 +97,8 @@ const backupNodes = [
         port: 80,
         authorization: 'https://seretia.link/discord',
         secure: false,
-        retryAmount: 15,
-        retryDelay: 5000,
-    },
-    {
-        id: 'node-nexcloud',
-        host: 'n3.nexcloud.in',
-        port: 2026,
-        authorization: 'nexcloud',
-        secure: false,
-        retryAmount: 15,
-        retryDelay: 5000,
+        retryAmount: 5,
+        retryDelay: 10000,
     },
     {
         id: 'node-kasawa',
@@ -152,8 +106,36 @@ const backupNodes = [
         port: 2334,
         authorization: 'youshallnotpass',
         secure: false,
-        retryAmount: 15,
-        retryDelay: 5000,
+        retryAmount: 5,
+        retryDelay: 10000,
+    },
+    // ── Additional Backup Nodes ──────────────────────────────────
+    {
+        id: 'node-vexanode',
+        host: 'omega.vexanode.cloud',
+        port: 2031,
+        authorization: 'https://discord.vexanode.cloud',
+        secure: false,
+        retryAmount: 5,
+        retryDelay: 10000,
+    },
+    {
+        id: 'node-g3v',
+        host: 'lava.g3v.co.uk',
+        port: 9008,
+        authorization: 'lavalinklol',
+        secure: false,
+        retryAmount: 5,
+        retryDelay: 10000,
+    },
+    {
+        id: 'node-minecuta',
+        host: 'lavav4.minecuta.com',
+        port: 2333,
+        authorization: 'discord.gg/gKuXdHs',
+        secure: false,
+        retryAmount: 5,
+        retryDelay: 10000,
     },
 ];
 
