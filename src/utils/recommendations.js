@@ -16,10 +16,10 @@ function cleanSongTitle(title = '') {
  * Fetch YouTube-style song recommendations matching the vibe, artist, and language of currentTrack
  * @param {object} player Lavalink player instance
  * @param {object} currentTrack Currently playing track
- * @param {number} limit Number of recommendations to fetch (default: 3)
+ * @param {number} limit Number of recommendations to fetch (default: 5)
  * @returns {Promise<Array>} Array of recommended Lavalink track objects
  */
-async function getRecommendations(player, currentTrack, limit = 3) {
+async function getRecommendations(player, currentTrack, limit = 5) {
     if (!player || !currentTrack || !currentTrack.info) return [];
 
     const info = currentTrack.info;

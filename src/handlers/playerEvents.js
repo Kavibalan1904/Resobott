@@ -217,7 +217,7 @@ function setupLavalinkEvents(client) {
         // Fetch YouTube-style song recommendations matching vibe/artist/language
         let recommendations = [];
         try {
-            recommendations = await getRecommendations(player, track, 3);
+            recommendations = await getRecommendations(player, track, 5);
             if (client.recommendations) {
                 client.recommendations.set(player.guildId, recommendations);
             }

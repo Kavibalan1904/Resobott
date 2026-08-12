@@ -1,4 +1,4 @@
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder } = require('discord.js');
 const { createProgressBar, formatMs, truncate } = require('./helpers');
 
 // ── Reso Brand Colors ──────────────────────────────────────────
@@ -103,7 +103,7 @@ function nowPlayingEmbed(track, player, client, recommendations = []) {
     );
 
     if (recommendations && recommendations.length > 0) {
-        const recList = recommendations.slice(0, 3).map((rec, i) => {
+        const recList = recommendations.slice(0, 5).map((rec, i) => {
             const rInfo = rec.info || {};
             const rTitle = truncate(rInfo.title || 'Unknown', 40);
             const rAuthor = rInfo.author ? `by ${truncate(rInfo.author, 25)}` : '';
@@ -112,7 +112,7 @@ function nowPlayingEmbed(track, player, client, recommendations = []) {
 
         embed.addFields({
             name: `💡 YouTube Recommended Next`,
-            value: recList + '\n*Click a button below to add to queue!*',
+            value: recList + '\n*Select a song from the dropdown menu below to add to queue!*',
             inline: false,
         });
     }
@@ -121,7 +121,7 @@ function nowPlayingEmbed(track, player, client, recommendations = []) {
 }
 
 /**
- * Create interactive action row with recommendation buttons
+ * Create interactive action row with recommendation dropdown menu
  * @param {Array} recommendations Array of recommended tracks
  * @param {string} guildId Guild ID
  * @returns {ActionRowBuilder|null}
@@ -129,20 +129,29 @@ function nowPlayingEmbed(track, player, client, recommendations = []) {
 function createRecommendationComponents(recommendations = [], guildId = '') {
     if (!recommendations || recommendations.length === 0) return null;
 
-    const row = new ActionRowBuilder();
-    const sliced = recommendations.slice(0, 3);
+    const sliced = recommendations.slice(0, 5);
+    const numberEmojis = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣'];
 
-    sliced.forEach((rec, idx) => {
-        const rTitle = truncate(rec.info?.title || `Song ${idx + 1}`, 30);
-        row.addComponents(
-            new ButtonBuilder()
-                .setCustomId(`rec_add_${guildId}_${idx}`)
-                .setLabel(`➕ ${idx + 1}. ${rTitle}`)
-                .setStyle(ButtonStyle.Secondary)
-        );
+    const options = sliced.map((rec, idx) => {
+        const rInfo = rec.info || {};
+        const rTitle = truncate(rInfo.title || `Song ${idx + 1}`, 90);
+        const rAuthor = truncate(rInfo.author || 'YouTube Mix', 40);
+        const dur = rInfo.isStream ? 'Live' : formatMs(rInfo.duration || 0);
+
+        return {
+            label: `${idx + 1}. ${rTitle}`,
+            description: `${dur} • ${rAuthor}`,
+            value: String(idx),
+            emoji: numberEmojis[idx] || '🎵',
+        };
     });
 
-    return row;
+    const selectMenu = new StringSelectMenuBuilder()
+        .setCustomId(`rec_select_${guildId}`)
+        .setPlaceholder('🎵 Pick a recommended song to add to queue...')
+        .addOptions(options);
+
+    return new ActionRowBuilder().addComponents(selectMenu);
 }
 
 /**

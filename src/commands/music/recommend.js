@@ -1,5 +1,5 @@
-const { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
-const { errorEmbed, createEmbed, EMOJIS } = require('../../utils/embeds');
+const { SlashCommandBuilder } = require('discord.js');
+const { errorEmbed, createEmbed, createRecommendationComponents, EMOJIS } = require('../../utils/embeds');
 const { getVoiceChannel, truncate, formatMs } = require('../../utils/helpers');
 const { getRecommendations } = require('../../utils/recommendations');
 
@@ -31,7 +31,7 @@ module.exports = {
                 });
             }
 
-            // Save recommendations for button handling
+            // Save recommendations for menu handling
             client.recommendations.set(interaction.guild.id, recs);
 
             const recList = recs.map((rec, i) => {
@@ -43,21 +43,13 @@ module.exports = {
             const embed = createEmbed('Music')
                 .setAuthor({ name: '💡 YouTube Song Recommendations' })
                 .setTitle(`Based on: ${truncate(currentTrack.info?.title || 'Current Song', 50)}`)
-                .setDescription(`${recList}\n\n*Click a button below to add that song to your queue!*`);
+                .setDescription(`${recList}\n\n*Select a song from the dropdown below to add to queue!*`);
 
-            const row = new ActionRowBuilder();
-            recs.slice(0, 5).forEach((rec, idx) => {
-                row.addComponents(
-                    new ButtonBuilder()
-                        .setCustomId(`rec_add_${interaction.guild.id}_${idx}`)
-                        .setLabel(`➕ ${idx + 1}`)
-                        .setStyle(ButtonStyle.Secondary)
-                );
-            });
+            const row = createRecommendationComponents(recs, interaction.guild.id);
 
             return interaction.editReply({
                 embeds: [embed],
-                components: [row],
+                components: row ? [row] : [],
             });
         } catch (error) {
             console.error('[Reso] /recommend command error:', error);

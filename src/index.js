@@ -275,12 +275,15 @@ async function main() {
 
         // Handle interactions
         client.on('interactionCreate', async (interaction) => {
-            // Handle recommendation button clicks
-            if (interaction.isButton() && interaction.customId?.startsWith('rec_add_')) {
+            // Handle recommendation dropdown select menu & button clicks
+            const isRecSelect = interaction.isStringSelectMenu() && interaction.customId?.startsWith('rec_select_');
+            const isRecButton = interaction.isButton() && interaction.customId?.startsWith('rec_add_');
+
+            if (isRecSelect || isRecButton) {
                 try {
                     const parts = interaction.customId.split('_');
                     const guildId = parts[2];
-                    const recIndex = parseInt(parts[3], 10);
+                    const recIndex = isRecSelect ? parseInt(interaction.values[0], 10) : parseInt(parts[3], 10);
 
                     const memberVC = interaction.member?.voice?.channel;
                     if (!memberVC) {
@@ -329,8 +332,8 @@ async function main() {
                         content: `✅ Added recommended song **${title}** to the queue! 🎵`,
                         ephemeral: true,
                     });
-                } catch (btnErr) {
-                    console.error('[Reso] Recommendation button error:', btnErr);
+                } catch (recErr) {
+                    console.error('[Reso] Recommendation interaction error:', recErr);
                     return interaction.reply({
                         content: '❌ Failed to queue recommendation.',
                         ephemeral: true,
