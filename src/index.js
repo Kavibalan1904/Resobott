@@ -275,7 +275,13 @@ async function main() {
             console.log('[Reso] ✓ Lavalink manager initialized');
 
             // Set activity
-            client.user.setActivity('music 🎵 | /help', { type: 2 }); // Type 2 = Listening
+            client.user.setPresence({
+                activities: [{
+                    name: 'music 🎵 | /help',
+                    type: 2, // Listening
+                }],
+                status: 'online',
+            });
 
             // Register slash commands globally
             await registerSlashCommands(client);

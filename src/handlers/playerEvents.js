@@ -191,6 +191,17 @@ function setupLavalinkEvents(client) {
         history.push(track);
         client.trackHistory.set(player.guildId, history);
 
+        // Update bot presence to show current song with VC elapsed time
+        const trackTitle = track?.info?.title ? truncate(track.info.title, 40) : 'music';
+        client.user.setPresence({
+            activities: [{
+                name: `${trackTitle} 🎵`,
+                type: 2, // Listening
+                timestamps: { start: Date.now() },
+            }],
+            status: 'online',
+        });
+
         const channel = client.channels.cache.get(player.textChannelId);
         if (!channel) return;
 
@@ -207,6 +218,12 @@ function setupLavalinkEvents(client) {
     manager.on('queueEnd', (player) => {
         // Clean up retry state for this guild
         retriedTracks.delete(player.guildId);
+
+        // Reset bot presence to idle (no elapsed timer)
+        client.user.setPresence({
+            activities: [{ name: 'music 🎵 | /help', type: 2 }],
+            status: 'online',
+        });
 
         const channel = client.channels.cache.get(player.textChannelId);
         if (!channel) return;
@@ -264,6 +281,12 @@ function setupLavalinkEvents(client) {
         // Clean up history and retry state
         client.trackHistory.delete(player.guildId);
         retriedTracks.delete(player.guildId);
+
+        // Reset bot presence to idle (no elapsed timer)
+        client.user.setPresence({
+            activities: [{ name: 'music 🎵 | /help', type: 2 }],
+            status: 'online',
+        });
     });
 }
 
