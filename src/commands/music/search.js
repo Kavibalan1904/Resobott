@@ -1,6 +1,6 @@
 const { SlashCommandBuilder, ActionRowBuilder, StringSelectMenuBuilder } = require('discord.js');
 const { errorEmbed, createEmbed, EMOJIS, capitalize } = require('../../utils/embeds');
-const { getVoiceChannel, truncate, formatMs } = require('../../utils/helpers');
+const { getVoiceChannel, truncate, formatMs, ensurePlayerNode } = require('../../utils/helpers');
 
 const SOURCE_MAP = {
     auto: 'ytsearch',
@@ -57,6 +57,9 @@ module.exports = {
                     volume: parseInt(process.env.DEFAULT_VOLUME) || 50,
                 });
             }
+
+            // Ensure player is connected to a healthy, active Lavalink node
+            ensurePlayerNode(player, interaction.client);
 
             let result = await player.search({
                 query: query,

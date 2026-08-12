@@ -124,6 +124,26 @@ function createProgressBar(position, duration, length = 15) {
     return `${formatMs(position)} ${bar} ${formatMs(duration)}`;
 }
 
+/**
+ * Ensure player has a healthy, connected Lavalink node attached.
+ * If the current node is null or disconnected, assigns an active connected node.
+ */
+function ensurePlayerNode(player, client) {
+    if (!player) return null;
+    if (player.node && player.node.connected) return player.node;
+
+    const manager = client?.lavalink;
+    if (!manager || !manager.nodeManager) return null;
+
+    const connected = Array.from(manager.nodeManager.nodes.values()).filter(n => n.connected);
+    if (connected.length === 0) return null;
+
+    const healthyNode = connected[Math.floor(Math.random() * connected.length)];
+    player.node = healthyNode;
+    console.log(`[Reso] ↝ Assigned healthy node "${healthyNode.id}" to player (${player.guildId})`);
+    return healthyNode;
+}
+
 module.exports = {
     parseTime,
     formatTime,
@@ -135,4 +155,5 @@ module.exports = {
     truncate,
     paginate,
     createProgressBar,
+    ensurePlayerNode,
 };

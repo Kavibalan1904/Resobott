@@ -1,4 +1,4 @@
-const { truncate } = require('./helpers');
+const { truncate, ensurePlayerNode } = require('./helpers');
 
 /**
  * Universal video descriptor remover (removes "(Official Video)", "[4K]", "Lyric Video", "Video Song", etc.)
@@ -108,6 +108,7 @@ async function getRecommendations(player, currentTrack, limit = 5) {
     async function fetchUniqueTrack(query, categoryLabel, count = 1) {
         let added = 0;
         try {
+            ensurePlayerNode(player, player.LavalinkManager?.client);
             const searchResult = await player.search({
                 query: query,
                 source: 'ytsearch',

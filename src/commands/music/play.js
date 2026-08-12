@@ -1,6 +1,6 @@
 const { SlashCommandBuilder } = require('discord.js');
 const { errorEmbed, successEmbed, createEmbed, EMOJIS, capitalize } = require('../../utils/embeds');
-const { getVoiceChannel, truncate, formatMs } = require('../../utils/helpers');
+const { getVoiceChannel, truncate, formatMs, ensurePlayerNode } = require('../../utils/helpers');
 
 // Map user-friendly source names to Lavalink search platforms
 const SOURCE_MAP = {
@@ -137,6 +137,9 @@ module.exports = {
             if (!player.connected) {
                 await player.connect();
             }
+
+            // Ensure player is connected to a healthy, active Lavalink node
+            ensurePlayerNode(player, interaction.client);
 
             // Search for the track or playlist
             let result = await player.search({
