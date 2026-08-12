@@ -114,30 +114,12 @@ const backupNodes = [
     },
     // ── Additional Backup Nodes ──────────────────────────────────
     {
-        id: 'node-vexanode',
-        host: 'omega.vexanode.cloud',
-        port: 2031,
-        authorization: 'https://discord.vexanode.cloud',
-        secure: false,
-        retryAmount: 5,
-        retryDelay: 10000,
-    },
-    {
-        id: 'node-g3v',
-        host: 'lava.g3v.co.uk',
-        port: 9008,
-        authorization: 'lavalinklol',
-        secure: false,
-        retryAmount: 5,
-        retryDelay: 10000,
-    },
-    {
         id: 'node-minecuta',
         host: 'lavav4.minecuta.com',
         port: 2333,
         authorization: 'discord.gg/gKuXdHs',
         secure: false,
-        retryAmount: 5,
+        retryAmount: 3,
         retryDelay: 10000,
     },
 ];

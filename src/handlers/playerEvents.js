@@ -55,6 +55,14 @@ function setupLavalinkEvents(client) {
 
             if (!searchQuery) return false;
 
+            // If another healthy connected node exists, switch player to it to bypass YouTube rate-limits/issues on current node
+            const connectedNodes = Array.from(manager.nodeManager.nodes.values()).filter(n => n.connected && n.id !== player.node?.id);
+            if (connectedNodes.length > 0) {
+                const nextNode = connectedNodes[Math.floor(Math.random() * connectedNodes.length)];
+                console.log(`[Reso] ↝ Switching player node "${player.node?.id || 'unknown'}" → "${nextNode.id}" for retry`);
+                player.node = nextNode;
+            }
+
             // Determine retry search sources based on original source
             // Priority: original source → Spotify → YouTube (last resort)
             const retrySources = [];
