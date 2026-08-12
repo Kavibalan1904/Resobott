@@ -105,9 +105,9 @@ function nowPlayingEmbed(track, player, client, recommendations = []) {
     if (recommendations && recommendations.length > 0) {
         const recList = recommendations.slice(0, 5).map((rec, i) => {
             const rInfo = rec.info || {};
-            const rTitle = truncate(rInfo.title || 'Unknown', 40);
-            const rAuthor = rInfo.author ? `by ${truncate(rInfo.author, 25)}` : '';
-            return `\`${i + 1}.\` **[${rTitle}](${rInfo.uri || '#'})** ${rAuthor}`;
+            const rTitle = truncate(rInfo.title || 'Unknown', 36);
+            const badge = rec.categoryLabel ? `• ${rec.categoryLabel}` : '';
+            return `\`${i + 1}.\` **[${rTitle}](${rInfo.uri || '#'})** ${badge}`;
         }).join('\n');
 
         embed.addFields({
@@ -130,19 +130,24 @@ function createRecommendationComponents(recommendations = [], guildId = '') {
     if (!recommendations || recommendations.length === 0) return null;
 
     const sliced = recommendations.slice(0, 5);
-    const numberEmojis = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣'];
+    const categoryEmojis = {
+        '🎬 Same Movie': '🎬',
+        '🎤 Same Singer': '🎤',
+        '🎭 Actor\'s Other Movie': '🎭',
+        '🎲 Random Unrelated': '🎲',
+    };
 
     const options = sliced.map((rec, idx) => {
         const rInfo = rec.info || {};
-        const rTitle = truncate(rInfo.title || `Song ${idx + 1}`, 90);
-        const rAuthor = truncate(rInfo.author || 'YouTube Mix', 40);
+        const rTitle = truncate(rInfo.title || `Song ${idx + 1}`, 70);
+        const badge = rec.categoryLabel || 'Recommended';
         const dur = rInfo.isStream ? 'Live' : formatMs(rInfo.duration || 0);
 
         return {
             label: `${idx + 1}. ${rTitle}`,
-            description: `${dur} • ${rAuthor}`,
+            description: `${badge} • ${dur}`,
             value: String(idx),
-            emoji: numberEmojis[idx] || '🎵',
+            emoji: categoryEmojis[badge] || '🎵',
         };
     });
 
