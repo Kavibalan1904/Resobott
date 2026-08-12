@@ -138,12 +138,14 @@ function setupLavalinkEvents(client) {
     }
 
     // ── Node connected ─────────────────────────────────────────
+    const initialConnectedNodes = new Set();
     manager.nodeManager.on('connect', (node) => {
         const prevAttempts = nodeReconnectCounts.get(node.id) || 0;
-        if (prevAttempts > 0) {
-            console.log(`[Reso] ✓ Lavalink node "${node.id}" reconnected after ${prevAttempts} attempt(s)`);
-        } else {
+        if (!initialConnectedNodes.has(node.id)) {
+            initialConnectedNodes.add(node.id);
             console.log(`[Reso] ✓ Lavalink node "${node.id}" connected (${node.options?.host}:${node.options?.port})`);
+        } else if (prevAttempts >= 2) {
+            console.log(`[Reso] ✓ Lavalink node "${node.id}" reconnected after ${prevAttempts} attempt(s)`);
         }
         nodeReconnectCounts.set(node.id, 0);
     });
