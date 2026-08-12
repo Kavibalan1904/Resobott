@@ -1,63 +1,87 @@
 const { truncate } = require('./helpers');
 
+// Known publisher / record label patterns to filter out YouTube channel names
+const PUBLISHER_REGEX = /(vevo|t-series|tseries|sony|saregama|speed audio|think music|aditya music|lahari|tips|yrf|zee music|rajshri|venus|wave music|eros|goldmines|sainath|sun tv|star music|muzik247|dvo|records|recordings|music company|music india|entertainment|media|production|official channel|regional)/i;
+
+// Words to strip from title parts to clean song, movie, actor, and artist names
+const JUNK_TITLE_WORDS = /\b(official|music|video|audio|lyric|lyrics|full song|hd|4k|1080p|remastered|visualizer|status|shorts|song|songs|video song|lyric video|4k video|uhd|teaser|trailer)\b/gi;
+
 /**
- * Clean track title by removing video tags like (Official Video), [HD], etc.
+ * Clean string by removing bracketed info and junk video words
  */
-function cleanSongTitle(title = '') {
-    return title
-        .replace(/\s*[\(\[\{](official|music|video|audio|lyric|hd|4k|remastered|full|visualizer).*?[\)\]\}]/gi, '')
-        .replace(/\s*ft\.?.*$/gi, '')
-        .replace(/\s*feat\.?.*$/gi, '')
-        .replace(/\|.*$/g, '')
+function cleanString(str = '') {
+    if (!str) return '';
+    return str
+        .replace(/[\(\[\{].*?[\)\]\}]/g, '') // remove (Official Video), [HD], etc.
+        .replace(JUNK_TITLE_WORDS, '')       // remove "Video Song", "Lyric", etc.
+        .replace(/\s+/g, ' ')
         .trim();
 }
 
 /**
- * Dynamically extract song title, movie/album name, actors/features, and singer/artist
- * Works dynamically for any language or genre without hardcoded artist lists.
+ * Clean track title helper
+ */
+function cleanSongTitle(title = '') {
+    const firstPart = title.split(/\||-|\//)[0] || title;
+    return cleanString(firstPart);
+}
+
+/**
+ * Dynamically & intelligently extract song title, movie/album name, actor/feature, and real singer/artist
+ * Filters out publisher channel names (T-Series, Sony Music, VEVO, etc.) and title junk words.
  */
 function parseTrackMetadata(title = '', author = '') {
-    const rawParts = title.split(/\||-/).map(p => p.trim()).filter(Boolean);
+    const rawParts = title.split(/\||-|\//).map(p => p.trim()).filter(Boolean);
     const cleanAuth = author ? author.replace(/ - Topic$/i, '').trim() : '';
 
-    // Filter out video metadata junk parts
-    const filteredParts = rawParts.filter(p => 
-        !/^(official|video|audio|lyric|lyrics|full song|hd|4k|1080p|remastered|visualizer|status|shorts)$/i.test(p)
-    );
+    const isPublisher = PUBLISHER_REGEX.test(cleanAuth);
+    let realArtist = isPublisher ? null : cleanAuth;
 
-    const songName = cleanSongTitle(filteredParts[0] || title);
+    // Filter parts to remove pure metadata strings
+    const cleanedParts = rawParts
+        .map(p => cleanString(p))
+        .filter(p => p.length > 1 && !/^(official|video|audio|lyric|hd|4k)$/i.test(p));
+
+    const songName = cleanedParts[0] || cleanString(title);
     let movieName = null;
-    let actorOrArtist = null;
+    let actorOrFeature = null;
 
-    if (filteredParts.length >= 2) {
-        const p1 = filteredParts[1];
-        // If part 1 contains "Movie", "Album", "OST", "Film" or looks like a project title
-        if (/(movie|album|ost|film|jukebox|soundtrack|songs)/i.test(p1)) {
-            movieName = p1.replace(/\s*(movie|album|ost|film|jukebox|soundtrack|songs?|hd|4k)\b/gi, '').trim();
-        } else if (p1.length < 35) {
-            movieName = p1;
+    for (let i = 1; i < cleanedParts.length; i++) {
+        const part = cleanedParts[i];
+        if (!part || part.toLowerCase() === songName.toLowerCase()) continue;
+
+        const rawPart = rawParts[i] || '';
+
+        // Movie / Album detection
+        if (!movieName && /(movie|film|album|ost|jukebox|soundtrack)/i.test(rawPart)) {
+            movieName = part;
+        } else if (!movieName && i === 1 && part.length < 30) {
+            movieName = part;
+        } else if (!realArtist && i >= 1) {
+            realArtist = part;
+        } else if (!actorOrFeature && i >= 1 && part !== realArtist) {
+            actorOrFeature = part;
         }
     }
 
-    if (filteredParts.length >= 3) {
-        actorOrArtist = filteredParts[2];
-    } else if (filteredParts.length >= 2 && !movieName) {
-        actorOrArtist = filteredParts[1];
-    }
+    // Fallbacks
+    if (!movieName) movieName = songName;
+    if (!realArtist) realArtist = cleanAuth && !isPublisher ? cleanAuth : songName;
+    if (!actorOrFeature) actorOrFeature = realArtist;
 
     return {
         songName,
-        movieName: movieName || null,
-        actorOrArtist: actorOrArtist || null,
-        singerName: cleanAuth || songName,
+        movieName,
+        artistName: realArtist,
+        actorOrFeature,
     };
 }
 
 /**
- * Fetch 5 structured recommendations:
- * 1. Same Movie / Album (or Same Vibe if not a movie track)
- * 2. Same Singer / Primary Artist (2 songs)
- * 3. Actor / Feature Artist Other Songs (or Similar Artist if no actor)
+ * Fetch 5 structured, high-relevance recommendations:
+ * 1. Same Movie / Album (1 song)
+ * 2. Same Singer / Main Artist (2 songs)
+ * 3. Actor / Featured Artist Other Songs (1 song)
  * 4. Random Unrelated Discovery Song (1 song)
  */
 async function getRecommendations(player, currentTrack, limit = 5) {
@@ -79,7 +103,7 @@ async function getRecommendations(player, currentTrack, limit = 5) {
         }
     }
 
-    const recommendedTitles = new Set([rawTitle.toLowerCase()]);
+    const recommendedTitles = new Set([rawTitle.toLowerCase(), meta.songName.toLowerCase()]);
     const finalRecommendations = [];
 
     /**
@@ -129,26 +153,26 @@ async function getRecommendations(player, currentTrack, limit = 5) {
     // 1. Same Movie / Album (1 song)
     if (meta.movieName && meta.movieName !== meta.songName) {
         const movieQuery = `${meta.movieName} movie song`;
-        await fetchUniqueTrack(movieQuery, `🎬 From ${truncate(meta.movieName, 20)}`, 1);
+        await fetchUniqueTrack(movieQuery, `🎬 From ${truncate(meta.movieName, 18)}`, 1);
     } else {
-        const vibeQuery = `${meta.songName} ${meta.singerName} mix`;
+        const vibeQuery = `${meta.songName} ${meta.artistName} song`;
         await fetchUniqueTrack(vibeQuery, '🔥 Similar Vibe', 1);
     }
 
     // 2. Same Singer / Main Artist (2 songs)
-    const singerQuery = `${meta.singerName} hit songs`;
-    await fetchUniqueTrack(singerQuery, `🎤 By ${truncate(meta.singerName, 20)}`, 2);
+    const singerQuery = `${meta.artistName} hit songs`;
+    await fetchUniqueTrack(singerQuery, `🎤 By ${truncate(meta.artistName, 18)}`, 2);
 
-    // 3. Actor or Feature Artist Other Songs (1 song)
-    if (meta.actorOrArtist && meta.actorOrArtist !== meta.singerName) {
-        const actorQuery = `${meta.actorOrArtist} hit songs`;
-        await fetchUniqueTrack(actorQuery, `🎭 Starring ${truncate(meta.actorOrArtist, 18)}`, 1);
+    // 3. Actor or Featured Artist Other Songs (1 song)
+    if (meta.actorOrFeature && meta.actorOrFeature !== meta.artistName) {
+        const actorQuery = `${meta.actorOrFeature} hit songs`;
+        await fetchUniqueTrack(actorQuery, `🎭 Starring ${truncate(meta.actorOrFeature, 16)}`, 1);
     } else {
-        const similarQuery = `${meta.singerName} famous songs`;
+        const similarQuery = `${meta.artistName} famous songs`;
         await fetchUniqueTrack(similarQuery, '🎧 Similar Artist', 1);
     }
 
-    // 4. Random Unrelated Song (1 song)
+    // 4. Random Unrelated Discovery Song (1 song)
     const randomPool = [
         'top global viral hits 2026',
         'trending acoustic chill hits',
@@ -162,7 +186,7 @@ async function getRecommendations(player, currentTrack, limit = 5) {
     // Fallback if any category returned fewer tracks than 5 total
     if (finalRecommendations.length < limit) {
         const remainingNeeded = limit - finalRecommendations.length;
-        await fetchUniqueTrack(`${meta.singerName} top songs`, '🎵 Related Track', remainingNeeded);
+        await fetchUniqueTrack(`${meta.artistName} top songs`, '🎵 Related Track', remainingNeeded);
     }
 
     return finalRecommendations.slice(0, limit);
