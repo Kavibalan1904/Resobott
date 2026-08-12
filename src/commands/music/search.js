@@ -3,7 +3,7 @@ const { errorEmbed, createEmbed, EMOJIS, capitalize } = require('../../utils/emb
 const { getVoiceChannel, truncate, formatMs } = require('../../utils/helpers');
 
 const SOURCE_MAP = {
-    auto: 'spsearch',
+    auto: 'ytsearch',
     youtube: 'ytsearch',
     spotify: 'spsearch',
     soundcloud: 'scsearch',
@@ -58,10 +58,29 @@ module.exports = {
                 });
             }
 
-            const result = await player.search({
+            let result = await player.search({
                 query: query,
                 source: searchPlatform,
             }, interaction.user);
+
+            // ── Multi-platform search fallback ──
+            // If the default source returned nothing (e.g. node lacks LavaSrc), try others
+            if ((!result.tracks || result.tracks.length === 0) && source === 'auto') {
+                const fallbackSources = ['ytsearch', 'ytmsearch', 'scsearch'];
+                const toTry = fallbackSources.filter(s => s !== searchPlatform);
+                for (const fbSource of toTry) {
+                    try {
+                        const fbResult = await player.search({
+                            query: query,
+                            source: fbSource,
+                        }, interaction.user);
+                        if (fbResult.tracks && fbResult.tracks.length > 0) {
+                            result = fbResult;
+                            break;
+                        }
+                    } catch { /* skip */ }
+                }
+            }
 
             if (!result.tracks || result.tracks.length === 0) {
                 return interaction.editReply({

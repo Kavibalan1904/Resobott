@@ -4,7 +4,7 @@ const { getVoiceChannel, truncate, formatMs } = require('../../utils/helpers');
 
 // Map user-friendly source names to Lavalink search platforms
 const SOURCE_MAP = {
-    auto: 'spsearch',        // Default to Spotify search for best quality
+    auto: 'ytsearch',        // Default to YouTube search (works on all nodes)
     youtube: 'ytsearch',
     spotify: 'spsearch',
     soundcloud: 'scsearch',
@@ -148,6 +148,34 @@ module.exports = {
             if (result.tracks && result.tracks.length > 0) {
                 const resolvedSource = result.tracks[0]?.info?.sourceName || 'unknown';
                 console.log(`[Reso] ✓ Resolved from: ${resolvedSource} (${result.tracks.length} track(s))`);
+            }
+
+            // ── Multi-platform search fallback for text queries ──
+            // If the default source (e.g. spsearch) returned nothing, try other platforms.
+            // This handles free public nodes that don't have LavaSrc/Spotify configured.
+            if ((!result.tracks || result.tracks.length === 0) && !isUrl && (source === 'auto')) {
+                const fallbackSources = ['ytsearch', 'ytmsearch', 'scsearch'];
+                // Remove the source we already tried
+                const alreadyTried = searchSource;
+                const toTry = fallbackSources.filter(s => s !== alreadyTried);
+
+                for (const fbSource of toTry) {
+                    try {
+                        console.log(`[Reso] ↻ Fallback text search with "${fbSource}" for: ${truncate(query, 60)}`);
+                        const fbResult = await player.search({
+                            query: query,
+                            source: fbSource,
+                        }, interaction.user);
+                        if (fbResult.tracks && fbResult.tracks.length > 0) {
+                            result = fbResult;
+                            const resolvedSource = result.tracks[0]?.info?.sourceName || fbSource;
+                            console.log(`[Reso] ✓ Fallback resolved from: ${resolvedSource} (${result.tracks.length} track(s))`);
+                            break;
+                        }
+                    } catch (e) {
+                        console.log(`[Reso] ⚠ Fallback source "${fbSource}" errored: ${e.message}`);
+                    }
+                }
             }
 
             // Fallback search across other connected nodes if primary node returned empty for a URL

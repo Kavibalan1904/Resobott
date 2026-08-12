@@ -79,13 +79,70 @@ if (process.env.LAVALINK_HOST) {
 }
 
 // 2. Backup / Default Nodes (deduplicated)
+// Sourced from https://lavalink-list.ajieblogs.eu.org/All — all v4 nodes
 const backupNodes = [
+    // ── SSL Nodes (port 443, secure: true) ──────────────────────
     {
-        id: 'node-millohost-ssl',
-        host: 'lava-v4.millohost.my.id',
+        id: 'node-serenetia-ssl',
+        host: 'lavalinkv4.serenetia.com',
         port: 443,
-        authorization: 'https://discord.gg/mjS5J2K3ep',
+        authorization: 'https://seretia.link/discord',
         secure: true,
+        retryAmount: 15,
+        retryDelay: 5000,
+    },
+    {
+        id: 'node-jirayu-ssl',
+        host: 'lavalink.jirayu.net',
+        port: 443,
+        authorization: 'youshallnotpass',
+        secure: true,
+        retryAmount: 15,
+        retryDelay: 5000,
+    },
+    {
+        id: 'node-trinium-ssl',
+        host: 'lavalink-v4.triniumhost.com',
+        port: 443,
+        authorization: 'free',
+        secure: true,
+        retryAmount: 15,
+        retryDelay: 5000,
+    },
+    {
+        id: 'node-nodelink-trinium-ssl',
+        host: 'nodelink.triniumhost.com',
+        port: 443,
+        authorization: 'free',
+        secure: true,
+        retryAmount: 15,
+        retryDelay: 5000,
+    },
+    // ── Non-SSL Nodes (fallback) ────────────────────────────────
+    {
+        id: 'node-jirayu',
+        host: 'lavalink.jirayu.net',
+        port: 13592,
+        authorization: 'youshallnotpass',
+        secure: false,
+        retryAmount: 15,
+        retryDelay: 5000,
+    },
+    {
+        id: 'node-serenetia',
+        host: 'lavalinkv4.serenetia.com',
+        port: 80,
+        authorization: 'https://seretia.link/discord',
+        secure: false,
+        retryAmount: 15,
+        retryDelay: 5000,
+    },
+    {
+        id: 'node-nexcloud',
+        host: 'n3.nexcloud.in',
+        port: 2026,
+        authorization: 'nexcloud',
+        secure: false,
         retryAmount: 15,
         retryDelay: 5000,
     },
@@ -97,7 +154,7 @@ const backupNodes = [
         secure: false,
         retryAmount: 15,
         retryDelay: 5000,
-    }
+    },
 ];
 
 for (const node of backupNodes) {
@@ -119,7 +176,7 @@ client.lavalink = new LavalinkManager({
         username: 'Reso',
     },
     playerOptions: {
-        defaultSearchPlatform: 'spsearch',
+        defaultSearchPlatform: 'ytsearch',
         clientBasedPositionUpdate: true,
         onDisconnect: {
             autoReconnect: true,
