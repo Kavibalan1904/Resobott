@@ -130,24 +130,25 @@ function createRecommendationComponents(recommendations = [], guildId = '') {
     if (!recommendations || recommendations.length === 0) return null;
 
     const sliced = recommendations.slice(0, 5);
-    const categoryEmojis = {
-        '🎬 Same Movie': '🎬',
-        '🎤 Same Singer': '🎤',
-        '🎭 Actor\'s Other Movie': '🎭',
-        '🎲 Random Unrelated': '🎲',
-    };
-
     const options = sliced.map((rec, idx) => {
         const rInfo = rec.info || {};
         const rTitle = truncate(rInfo.title || `Song ${idx + 1}`, 70);
-        const badge = rec.categoryLabel || 'Recommended';
+        const badge = rec.categoryLabel || '🎵 Recommended';
         const dur = rInfo.isStream ? 'Live' : formatMs(rInfo.duration || 0);
+
+        let emoji = '🎵';
+        if (badge.startsWith('🎬')) emoji = '🎬';
+        else if (badge.startsWith('🎤')) emoji = '🎤';
+        else if (badge.startsWith('🎭')) emoji = '🎭';
+        else if (badge.startsWith('🔥')) emoji = '🔥';
+        else if (badge.startsWith('🎧')) emoji = '🎧';
+        else if (badge.startsWith('🎲')) emoji = '🎲';
 
         return {
             label: `${idx + 1}. ${rTitle}`,
             description: `${badge} • ${dur}`,
             value: String(idx),
-            emoji: categoryEmojis[badge] || '🎵',
+            emoji: emoji,
         };
     });
 
