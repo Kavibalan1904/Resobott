@@ -13,15 +13,26 @@ module.exports = {
         ),
 
     async execute(interaction) {
+        let deferred = false;
+        try {
+            await interaction.deferReply();
+            deferred = true;
+        } catch (deferErr) {
+            console.warn('[Reso] deferReply failed for /lyrics:', deferErr.message);
+        }
+
         const player = interaction.client.lavalink.getPlayer(interaction.guild.id);
         const query = interaction.options.getString('query')
             || player?.queue?.current?.info?.title;
 
         if (!query) {
-            return interaction.reply({ embeds: [errorEmbed('No song specified and nothing is playing. Please provide a song name.')], ephemeral: true });
+            const embed = errorEmbed('No song specified and nothing is playing. Please provide a song name.');
+            if (interaction.deferred || interaction.replied || deferred) {
+                return interaction.editReply({ embeds: [embed] }).catch(() => {});
+            } else {
+                return interaction.reply({ embeds: [embed], ephemeral: true }).catch(() => {});
+            }
         }
-
-        await interaction.deferReply();
 
         try {
             // Use lrclib.net API instead of Genius (which heavily blocks scraping)
@@ -63,7 +74,12 @@ module.exports = {
 
         } catch (error) {
             console.error('[Reso] Lyrics error:', error);
-            return interaction.editReply({ embeds: [errorEmbed(`Failed to fetch lyrics for **${truncate(query, 50)}**`)] });
+            const embed = errorEmbed(`Failed to fetch lyrics for **${truncate(query, 50)}**`);
+            if (interaction.deferred || interaction.replied) {
+                return interaction.editReply({ embeds: [embed] }).catch(() => {});
+            } else {
+                return interaction.reply({ embeds: [embed], ephemeral: true }).catch(() => {});
+            }
         }
     },
 };

@@ -66,9 +66,23 @@ module.exports = {
         ),
 
     async execute(interaction) {
+        // Defer reply immediately to secure the 15-minute response window and prevent 3s Discord timeout (Unknown interaction 10062)
+        let deferred = false;
+        try {
+            await interaction.deferReply();
+            deferred = true;
+        } catch (deferErr) {
+            console.warn('[Reso] deferReply failed (interaction timed out or invalid):', deferErr.message);
+        }
+
         const voiceChannel = getVoiceChannel(interaction);
         if (!voiceChannel) {
-            return interaction.reply({ embeds: [errorEmbed('You need to be in a voice channel!')], ephemeral: true });
+            const embed = errorEmbed('You need to be in a voice channel!');
+            if (interaction.deferred || interaction.replied || deferred) {
+                return interaction.editReply({ embeds: [embed] }).catch(() => {});
+            } else {
+                return interaction.reply({ embeds: [embed], ephemeral: true }).catch(() => {});
+            }
         }
 
         const rawQuery = interaction.options.getString('query', true).trim();
@@ -117,8 +131,6 @@ module.exports = {
             searchSource = SOURCE_MAP[source] || 'spsearch';
             console.log(`[Reso] 🔍 Text search on ${source} (${searchSource}): ${truncate(query, 80)}`);
         }
-
-        await interaction.deferReply();
 
         try {
             // Create or get the player
@@ -286,7 +298,12 @@ module.exports = {
 
         } catch (error) {
             console.error('[Reso] Play error:', error);
-            return interaction.editReply({ embeds: [errorEmbed(`Could not play: ${truncate(error.message, 100)}`)] });
+            const embed = errorEmbed(`Could not play: ${truncate(error.message, 100)}`);
+            if (interaction.deferred || interaction.replied) {
+                return interaction.editReply({ embeds: [embed] }).catch(() => {});
+            } else {
+                return interaction.reply({ embeds: [embed], ephemeral: true }).catch(() => {});
+            }
         }
     },
 };

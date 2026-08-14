@@ -33,17 +33,28 @@ module.exports = {
         ),
 
     async execute(interaction) {
+        let deferred = false;
+        try {
+            await interaction.deferReply();
+            deferred = true;
+        } catch (deferErr) {
+            console.warn('[Reso] deferReply failed for /search:', deferErr.message);
+        }
+
         const voiceChannel = getVoiceChannel(interaction);
         if (!voiceChannel) {
-            return interaction.reply({ embeds: [errorEmbed('You need to be in a voice channel!')], ephemeral: true });
+            const embed = errorEmbed('You need to be in a voice channel!');
+            if (interaction.deferred || interaction.replied || deferred) {
+                return interaction.editReply({ embeds: [embed] }).catch(() => {});
+            } else {
+                return interaction.reply({ embeds: [embed], ephemeral: true }).catch(() => {});
+            }
         }
 
         const query = interaction.options.getString('query', true);
         const source = interaction.options.getString('source') || 'auto';
         const manager = interaction.client.lavalink;
         const searchPlatform = SOURCE_MAP[source] || 'ytsearch';
-
-        await interaction.deferReply();
 
         try {
             // Create or get the player for searching
@@ -180,7 +191,12 @@ module.exports = {
 
         } catch (error) {
             console.error('[Reso] Search error:', error);
-            return interaction.editReply({ embeds: [errorEmbed(`Search failed: ${truncate(error.message, 100)}`)] });
+            const embed = errorEmbed(`Search failed: ${truncate(error.message, 100)}`);
+            if (interaction.deferred || interaction.replied) {
+                return interaction.editReply({ embeds: [embed] }).catch(() => {});
+            } else {
+                return interaction.reply({ embeds: [embed], ephemeral: true }).catch(() => {});
+            }
         }
     },
 };

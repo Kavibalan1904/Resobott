@@ -1,5 +1,5 @@
 const { nowPlayingEmbed, createRecommendationComponents, createEmbed, errorEmbed, warningEmbed, EMOJIS } = require('../utils/embeds');
-const { truncate } = require('../utils/helpers');
+const { truncate, markNodeError, getHealthyNodes } = require('../utils/helpers');
 const { getRecommendations } = require('../utils/recommendations');
 
 /**
@@ -56,10 +56,10 @@ function setupLavalinkEvents(client) {
             if (!searchQuery) return false;
 
             // If another healthy connected node exists, switch player to it to bypass YouTube rate-limits/issues on current node
-            const connectedNodes = Array.from(manager.nodeManager.nodes.values()).filter(n => n.connected && n.id !== player.node?.id);
-            if (connectedNodes.length > 0) {
-                const nextNode = connectedNodes[Math.floor(Math.random() * connectedNodes.length)];
-                console.log(`[Reso] ↝ Switching player node "${player.node?.id || 'unknown'}" → "${nextNode.id}" for retry`);
+            const healthyNodes = getHealthyNodes(manager, player.node?.id);
+            if (healthyNodes.length > 0) {
+                const nextNode = healthyNodes[Math.floor(Math.random() * healthyNodes.length)];
+                console.log(`[Reso] m Switching player node "${player.node?.id || 'unknown'}" -> "${nextNode.id}" for retry`);
                 player.node = nextNode;
             }
 
@@ -274,6 +274,11 @@ function setupLavalinkEvents(client) {
     manager.on('trackError', async (player, track, payload) => {
         const errorMsg = payload?.exception?.message || 'Unknown error';
         console.error(`[Reso] ✗ Track error for "${track?.info?.title}":`, errorMsg);
+
+        // Mark current node as having encountered a track playback error
+        if (player?.node?.id) {
+            markNodeError(player.node.id);
+        }
 
         // Attempt retry before giving up
         const retried = await retryTrack(player, track, 'failed to load');

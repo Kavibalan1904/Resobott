@@ -124,24 +124,67 @@ function createProgressBar(position, duration, length = 15) {
     return `${formatMs(position)} ${bar} ${formatMs(duration)}`;
 }
 
+// Track recent node playback/connection failures (nodeId -> timestamp ms)
+const nodeErrorTimestamps = new Map();
+
+/**
+ * Record a node error timestamp to temporarily deprioritize it
+ */
+function markNodeError(nodeId) {
+    if (!nodeId) return;
+    nodeErrorTimestamps.set(nodeId, Date.now());
+}
+
+/**
+ * Get connected Lavalink nodes, prioritizing nodes without recent errors (< 10 minutes)
+ */
+function getHealthyNodes(manager, excludeNodeId = null) {
+    if (!manager || !manager.nodeManager) return [];
+
+    const now = Date.now();
+    const COOLDOWN_MS = 10 * 60 * 1000; // 10 minutes cooldown for errored nodes
+
+    const connected = Array.from(manager.nodeManager.nodes.values())
+        .filter(n => n.connected && n.id !== excludeNodeId);
+
+    if (connected.length === 0) return [];
+
+    // Filter nodes with no recent errors
+    const errorFree = connected.filter(n => {
+        const lastErr = nodeErrorTimestamps.get(n.id);
+        return !lastErr || (now - lastErr > COOLDOWN_MS);
+    });
+
+    // Prefer error-free nodes if available, otherwise fallback to any connected node
+    return errorFree.length > 0 ? errorFree : connected;
+}
+
 /**
  * Ensure player has a healthy, connected Lavalink node attached.
- * If the current node is null or disconnected, assigns an active connected node.
+ * If current node is disconnected or recently errored, assigns an active healthy node.
  */
 function ensurePlayerNode(player, client) {
     if (!player) return null;
-    if (player.node && player.node.connected) return player.node;
 
     const manager = client?.lavalink;
     if (!manager || !manager.nodeManager) return null;
 
-    const connected = Array.from(manager.nodeManager.nodes.values()).filter(n => n.connected);
-    if (connected.length === 0) return null;
+    const now = Date.now();
+    const COOLDOWN_MS = 10 * 60 * 1000;
+    const currentErr = player.node ? nodeErrorTimestamps.get(player.node.id) : null;
+    const currentIsHealthy = player.node && player.node.connected && (!currentErr || (now - currentErr > COOLDOWN_MS));
 
-    const healthyNode = connected[Math.floor(Math.random() * connected.length)];
-    player.node = healthyNode;
-    console.log(`[Reso] ↝ Assigned healthy node "${healthyNode.id}" to player (${player.guildId})`);
-    return healthyNode;
+    if (currentIsHealthy) return player.node;
+
+    const healthyNodes = getHealthyNodes(manager);
+    if (healthyNodes.length === 0) return player.node || null;
+
+    const chosenNode = healthyNodes[Math.floor(Math.random() * healthyNodes.length)];
+    if (player.node?.id !== chosenNode.id) {
+        console.log(`[Reso] ↝ Assigned healthy node "${chosenNode.id}" to player (${player.guildId})`);
+        player.node = chosenNode;
+    }
+    return chosenNode;
 }
 
 module.exports = {
@@ -156,4 +199,6 @@ module.exports = {
     paginate,
     createProgressBar,
     ensurePlayerNode,
+    markNodeError,
+    getHealthyNodes,
 };

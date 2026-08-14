@@ -9,17 +9,33 @@ module.exports = {
         .setDescription('Get YouTube-style song recommendations based on current track'),
 
     async execute(interaction, client) {
+        let deferred = false;
+        try {
+            await interaction.deferReply();
+            deferred = true;
+        } catch (deferErr) {
+            console.warn('[Reso] deferReply failed for /recommend:', deferErr.message);
+        }
+
         const voiceChannel = getVoiceChannel(interaction);
         if (!voiceChannel) {
-            return interaction.reply({ embeds: [errorEmbed('You need to be in a voice channel!')], ephemeral: true });
+            const embed = errorEmbed('You need to be in a voice channel!');
+            if (interaction.deferred || interaction.replied || deferred) {
+                return interaction.editReply({ embeds: [embed] }).catch(() => {});
+            } else {
+                return interaction.reply({ embeds: [embed], ephemeral: true }).catch(() => {});
+            }
         }
 
         const player = client.lavalink.getPlayer(interaction.guild.id);
         if (!player || !player.playing || !player.queue.current) {
-            return interaction.reply({ embeds: [errorEmbed('Nothing is playing right now.')], ephemeral: true });
+            const embed = errorEmbed('Nothing is playing right now.');
+            if (interaction.deferred || interaction.replied || deferred) {
+                return interaction.editReply({ embeds: [embed] }).catch(() => {});
+            } else {
+                return interaction.reply({ embeds: [embed], ephemeral: true }).catch(() => {});
+            }
         }
-
-        await interaction.deferReply();
 
         const currentTrack = player.queue.current;
         try {
@@ -53,9 +69,12 @@ module.exports = {
             });
         } catch (error) {
             console.error('[Reso] /recommend command error:', error);
-            return interaction.editReply({
-                embeds: [errorEmbed('Failed to generate recommendations.')],
-            });
+            const embed = errorEmbed('Failed to generate recommendations.');
+            if (interaction.deferred || interaction.replied) {
+                return interaction.editReply({ embeds: [embed] }).catch(() => {});
+            } else {
+                return interaction.reply({ embeds: [embed], ephemeral: true }).catch(() => {});
+            }
         }
     },
 };

@@ -339,6 +339,11 @@ async function main() {
             try {
                 await command.execute(interaction, client);
             } catch (error) {
+                // If interaction expired (code 10062 Unknown interaction), log a warning and return cleanly
+                if (error.code === 10062 || error.message?.includes('Unknown interaction')) {
+                    console.warn(`[Reso] Interaction for command "${interaction.commandName}" expired or invalid (10062)`);
+                    return;
+                }
                 console.error(`[Reso] Command error (${interaction.commandName}):`, error);
                 const errorMsg = {
                     content: '❌ An error occurred while executing this command.',
