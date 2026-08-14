@@ -120,16 +120,16 @@ function setupLavalinkEvents(client) {
 
                         console.log(`[Reso] ✓ Retry resolved from: ${resolvedSource} via ${retrySource.label} (node: ${searchNode.id})`);
 
-                        // ── Play on the ORIGINAL player node (which has the voice session) ──
-                        // If the original node can play this source, great. If not, we need
-                        // to send the voice state to the search node and update player.node.
-                        player.queue.add(resolvedTrack, 0);
+                        // ── Play the resolved track directly ──
+                        // Use player.play({ clientTrack }) instead of queue.add + skip
+                        // because autoSkip: true races with trackError — Lavalink sends
+                        // trackEnd(loadFailed) alongside trackException, and autoSkip
+                        // advances the queue before our skip() runs, causing silent playback.
 
                         // If the search resolved on a different node than the player's current node,
                         // we must transfer the voice session to that node before playing.
                         if (searchNode.id !== player.node?.id) {
                             console.log(`[Reso] ↝ Transferring player voice to node "${searchNode.id}" for playback`);
-                            // Send the existing voice state to the new node so it can produce audio
                             try {
                                 await searchNode.updatePlayer({
                                     guildId: player.guildId,
@@ -147,11 +147,11 @@ function setupLavalinkEvents(client) {
                                 player.node = searchNode;
                             } catch (transferErr) {
                                 console.warn(`[Reso] ⚠ Voice transfer to "${searchNode.id}" failed: ${transferErr.message}, trying to play on original node`);
-                                // Fall through — try playing on original node anyway
                             }
                         }
 
-                        await player.skip();
+                        // Directly play the resolved track — bypasses queue/skip race
+                        await player.play({ clientTrack: resolvedTrack });
 
                         // Notify the text channel
                         const channel = client.channels.cache.get(player.textChannelId);
