@@ -55,12 +55,23 @@ function setupLavalinkEvents(client) {
 
             if (!searchQuery) return false;
 
-            // If another healthy connected node exists, switch player to it to bypass YouTube rate-limits/issues on current node
-            const healthyNodes = getHealthyNodes(manager, player.node?.id);
-            if (healthyNodes.length > 0) {
-                const nextNode = healthyNodes[Math.floor(Math.random() * healthyNodes.length)];
-                console.log(`[Reso] m Switching player node "${player.node?.id || 'unknown'}" -> "${nextNode.id}" for retry`);
-                player.node = nextNode;
+            // ── Gather nodes to search on ──
+            // IMPORTANT: Do NOT switch player.node — the voice session lives on the
+            // original node. Switching player.node causes player.play()/skip() to
+            // send commands to a node that has no voice connection, so nothing plays.
+            // Instead, search on alternate nodes directly via node.search().
+            const originalNodeId = player.node?.id;
+            const alternateNodes = getHealthyNodes(manager, originalNodeId);
+
+            // Build ordered list of nodes to try: alternate healthy nodes first, then original
+            const searchNodes = [...alternateNodes];
+            if (player.node?.connected) {
+                searchNodes.push(player.node); // original node as last resort
+            }
+
+            if (searchNodes.length === 0) {
+                console.log(`[Reso] ✗ No connected nodes available for retry`);
+                return false;
             }
 
             // Determine retry search sources based on original source
@@ -68,7 +79,6 @@ function setupLavalinkEvents(client) {
             const retrySources = [];
 
             if (originalSource === 'spotify' || originalSource === 'spsearch') {
-                // Track was from Spotify — retry with spsearch first
                 if (isrc) retrySources.push({ source: 'spsearch', query: isrc, label: 'Spotify ISRC' });
                 retrySources.push({ source: 'spsearch', query: searchQuery, label: 'Spotify search' });
                 retrySources.push({ source: 'ytsearch', query: searchQuery, label: 'YouTube fallback' });
@@ -81,54 +91,86 @@ function setupLavalinkEvents(client) {
                 retrySources.push({ source: 'spsearch', query: searchQuery, label: 'Spotify fallback' });
                 retrySources.push({ source: 'ytsearch', query: searchQuery, label: 'YouTube fallback' });
             } else {
-                // Default: try Spotify first (better quality), then YouTube
+                // Default (YouTube failed): try Spotify first, then YouTube on a different node
                 retrySources.push({ source: 'spsearch', query: searchQuery, label: 'Spotify search' });
                 retrySources.push({ source: 'ytsearch', query: searchQuery, label: 'YouTube fallback' });
             }
 
-            // Try each source in priority order
+            // Try each source on each node until we find a playable track
             for (const retrySource of retrySources) {
-                try {
-                    console.log(`[Reso] ↻ Retrying "${title}" via ${retrySource.label} (reason: ${reason})`);
+                for (const searchNode of searchNodes) {
+                    try {
+                        console.log(`[Reso] ↻ Retrying "${title}" via ${retrySource.label} on node "${searchNode.id}" (reason: ${reason})`);
 
-                    const result = await player.search({
-                        query: retrySource.query,
-                        source: retrySource.source,
-                    }, track.requester);
+                        // Search directly on the node — NOT via player.search()
+                        const result = await searchNode.search({
+                            query: retrySource.query,
+                            source: retrySource.source,
+                        }, track.requester);
 
-                    if (!result.tracks || result.tracks.length === 0) {
-                        console.log(`[Reso] ✗ ${retrySource.label} found no results for "${title}"`);
-                        continue; // Try next source
+                        if (!result.tracks || result.tracks.length === 0) {
+                            console.log(`[Reso] ✗ ${retrySource.label} found no results on node "${searchNode.id}" for "${title}"`);
+                            continue; // Try next node for this source
+                        }
+
+                        // Pick the best match — first result
+                        const resolvedTrack = result.tracks[0];
+                        resolvedTrack.requester = track.requester;
+                        const resolvedSource = resolvedTrack?.info?.sourceName || 'unknown';
+
+                        console.log(`[Reso] ✓ Retry resolved from: ${resolvedSource} via ${retrySource.label} (node: ${searchNode.id})`);
+
+                        // ── Play on the ORIGINAL player node (which has the voice session) ──
+                        // If the original node can play this source, great. If not, we need
+                        // to send the voice state to the search node and update player.node.
+                        player.queue.add(resolvedTrack, 0);
+
+                        // If the search resolved on a different node than the player's current node,
+                        // we must transfer the voice session to that node before playing.
+                        if (searchNode.id !== player.node?.id) {
+                            console.log(`[Reso] ↝ Transferring player voice to node "${searchNode.id}" for playback`);
+                            // Send the existing voice state to the new node so it can produce audio
+                            try {
+                                await searchNode.updatePlayer({
+                                    guildId: player.guildId,
+                                    playerOptions: {
+                                        voice: player.voice,
+                                        volume: player.lavalinkVolume,
+                                        paused: false,
+                                    },
+                                    noReplace: false,
+                                });
+                                // Destroy the old player session on the previous node (cleanup)
+                                if (player.node?.connected) {
+                                    player.node.destroyPlayer(player.guildId).catch(() => {});
+                                }
+                                player.node = searchNode;
+                            } catch (transferErr) {
+                                console.warn(`[Reso] ⚠ Voice transfer to "${searchNode.id}" failed: ${transferErr.message}, trying to play on original node`);
+                                // Fall through — try playing on original node anyway
+                            }
+                        }
+
+                        await player.skip();
+
+                        // Notify the text channel
+                        const channel = client.channels.cache.get(player.textChannelId);
+                        if (channel) {
+                            const embed = warningEmbed(
+                                `Track **${truncate(title, 50)}** ${reason}. Retrying with **${resolvedSource}**...`
+                            );
+                            channel.send({ embeds: [embed] }).catch(() => {});
+                        }
+
+                        return true;
+                    } catch (err) {
+                        console.error(`[Reso] ✗ Retry via ${retrySource.label} on node "${searchNode.id}" failed:`, err.message);
+                        continue; // Try next node/source
                     }
-
-                    // Pick the best match — first result
-                    const resolvedTrack = result.tracks[0];
-                    resolvedTrack.requester = track.requester;
-                    const resolvedSource = resolvedTrack?.info?.sourceName || 'unknown';
-
-                    console.log(`[Reso] ✓ Retry resolved from: ${resolvedSource} via ${retrySource.label}`);
-
-                    // Insert at the front of the queue and play
-                    player.queue.add(resolvedTrack, 0);
-                    await player.skip();
-
-                    // Notify the text channel
-                    const channel = client.channels.cache.get(player.textChannelId);
-                    if (channel) {
-                        const embed = warningEmbed(
-                            `Track **${truncate(title, 50)}** ${reason}. Retrying with **${resolvedSource}**...`
-                        );
-                        channel.send({ embeds: [embed] }).catch(() => {});
-                    }
-
-                    return true;
-                } catch (err) {
-                    console.error(`[Reso] ✗ Retry via ${retrySource.label} failed:`, err.message);
-                    continue; // Try next source
                 }
             }
 
-            // All retry sources exhausted
+            // All retry sources and nodes exhausted
             console.log(`[Reso] ✗ All retry sources exhausted for "${title}"`);
             return false;
         } catch (err) {
