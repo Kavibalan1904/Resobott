@@ -3,7 +3,7 @@ const { errorEmbed, createEmbed, EMOJIS, capitalize } = require('../../utils/emb
 const { getVoiceChannel, truncate, formatMs, ensurePlayerNode } = require('../../utils/helpers');
 
 const SOURCE_MAP = {
-    auto: 'ytsearch',
+    auto: 'spsearch',        // Default to Spotify search; YouTube is fallback
     youtube: 'ytsearch',
     spotify: 'spsearch',
     soundcloud: 'scsearch',
@@ -21,10 +21,10 @@ module.exports = {
         )
         .addStringOption(option =>
             option.setName('source')
-                .setDescription('Where to search (default: auto)')
+                .setDescription('Where to search (default: Spotify)')
                 .setRequired(false)
                 .addChoices(
-                    { name: '🔍 Auto Detect', value: 'auto' },
+                    { name: '🟢 Auto (Spotify → YouTube)', value: 'auto' },
                     { name: '🔴 YouTube', value: 'youtube' },
                     { name: '🟢 Spotify', value: 'spotify' },
                     { name: '🟠 SoundCloud', value: 'soundcloud' },
@@ -54,7 +54,7 @@ module.exports = {
         const query = interaction.options.getString('query', true);
         const source = interaction.options.getString('source') || 'auto';
         const manager = interaction.client.lavalink;
-        const searchPlatform = SOURCE_MAP[source] || 'ytsearch';
+        const searchPlatform = SOURCE_MAP[source] || 'spsearch';
 
         try {
             // Create or get the player for searching
@@ -80,7 +80,7 @@ module.exports = {
             // ── Multi-platform search fallback ──
             // If the default source returned nothing (e.g. node lacks LavaSrc), try others
             if ((!result.tracks || result.tracks.length === 0) && source === 'auto') {
-                const fallbackSources = ['ytsearch', 'ytmsearch', 'scsearch'];
+                const fallbackSources = ['ytsearch', 'ytmsearch', 'scsearch', 'dzsearch'];
                 const toTry = fallbackSources.filter(s => s !== searchPlatform);
                 for (const fbSource of toTry) {
                     try {

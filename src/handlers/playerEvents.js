@@ -75,23 +75,30 @@ function setupLavalinkEvents(client) {
             }
 
             // Determine retry search sources based on original source
-            // Priority: original source → Spotify → YouTube (last resort)
+            // Priority: Spotify first (main player), YouTube only for YT-sourced tracks
             const retrySources = [];
 
-            if (originalSource === 'spotify' || originalSource === 'spsearch') {
+            if (originalSource === 'youtube' || originalSource === 'ytsearch' || originalSource === 'ytmsearch') {
+                // YouTube link/source: strictly retry YouTube first, then Spotify as last resort
+                retrySources.push({ source: 'ytsearch', query: searchQuery, label: 'YouTube search' });
+                retrySources.push({ source: 'ytmsearch', query: searchQuery, label: 'YouTube Music' });
+                retrySources.push({ source: 'spsearch', query: searchQuery, label: 'Spotify fallback' });
+            } else if (originalSource === 'spotify' || originalSource === 'spsearch') {
+                // Spotify source: retry Spotify (ISRC first), then YouTube as last resort
                 if (isrc) retrySources.push({ source: 'spsearch', query: isrc, label: 'Spotify ISRC' });
                 retrySources.push({ source: 'spsearch', query: searchQuery, label: 'Spotify search' });
                 retrySources.push({ source: 'ytsearch', query: searchQuery, label: 'YouTube fallback' });
             } else if (originalSource === 'soundcloud') {
+                retrySources.push({ source: 'spsearch', query: searchQuery, label: 'Spotify search' });
                 retrySources.push({ source: 'scsearch', query: searchQuery, label: 'SoundCloud search' });
-                retrySources.push({ source: 'spsearch', query: searchQuery, label: 'Spotify fallback' });
                 retrySources.push({ source: 'ytsearch', query: searchQuery, label: 'YouTube fallback' });
             } else if (originalSource === 'deezer') {
+                retrySources.push({ source: 'spsearch', query: searchQuery, label: 'Spotify search' });
                 retrySources.push({ source: 'dzsearch', query: searchQuery, label: 'Deezer search' });
-                retrySources.push({ source: 'spsearch', query: searchQuery, label: 'Spotify fallback' });
                 retrySources.push({ source: 'ytsearch', query: searchQuery, label: 'YouTube fallback' });
             } else {
-                // Default (YouTube failed): try Spotify first, then YouTube on a different node
+                // Default: Spotify is the main player, YouTube as last resort
+                if (isrc) retrySources.push({ source: 'spsearch', query: isrc, label: 'Spotify ISRC' });
                 retrySources.push({ source: 'spsearch', query: searchQuery, label: 'Spotify search' });
                 retrySources.push({ source: 'ytsearch', query: searchQuery, label: 'YouTube fallback' });
             }

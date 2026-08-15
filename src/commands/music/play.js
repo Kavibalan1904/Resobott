@@ -4,7 +4,7 @@ const { getVoiceChannel, truncate, formatMs, ensurePlayerNode } = require('../..
 
 // Map user-friendly source names to Lavalink search platforms
 const SOURCE_MAP = {
-    auto: 'ytsearch',        // Default to YouTube search (works on all nodes)
+    auto: 'spsearch',        // Default to Spotify search; YouTube is fallback
     youtube: 'ytsearch',
     spotify: 'spsearch',
     soundcloud: 'scsearch',
@@ -12,7 +12,7 @@ const SOURCE_MAP = {
 };
 
 const SOURCE_EMOJIS = {
-    auto: '🔍',
+    auto: '🟢',
     youtube: '🔴',
     spotify: '🟢',
     soundcloud: '🟠',
@@ -54,10 +54,10 @@ module.exports = {
         )
         .addStringOption(option =>
             option.setName('source')
-                .setDescription('Where to search (default: auto-detect)')
+                .setDescription('Where to search (default: Spotify)')
                 .setRequired(false)
                 .addChoices(
-                    { name: '🔍 Auto Detect (default)', value: 'auto' },
+                    { name: '🟢 Auto (Spotify → YouTube)', value: 'auto' },
                     { name: '🔴 YouTube', value: 'youtube' },
                     { name: '🟢 Spotify', value: 'spotify' },
                     { name: '🟠 SoundCloud', value: 'soundcloud' },
@@ -169,7 +169,7 @@ module.exports = {
             // If the default source (e.g. spsearch) returned nothing, try other platforms.
             // This handles free public nodes that don't have LavaSrc/Spotify configured.
             if ((!result.tracks || result.tracks.length === 0) && !isUrl && (source === 'auto')) {
-                const fallbackSources = ['ytsearch', 'ytmsearch', 'scsearch'];
+                const fallbackSources = ['ytsearch', 'ytmsearch', 'scsearch', 'dzsearch'];
                 // Remove the source we already tried
                 const alreadyTried = searchSource;
                 const toTry = fallbackSources.filter(s => s !== alreadyTried);
