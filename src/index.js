@@ -70,18 +70,17 @@ if (process.env.LAVALINK_HOST) {
         .replace(/\/.*$/, ''); // Remove trailing slashes or paths
     const port = parseInt(process.env.LAVALINK_PORT) || 443;
 
-        console.log(`[Reso] Loading primary Lavalink node from .env: ${host}:${port}`);
-        defaultNodes.push({
-            id: 'node-env-primary',
-            host: host,
-            port: port,
-            authorization: process.env.LAVALINK_PASSWORD ? process.env.LAVALINK_PASSWORD.trim() : 'youshallnotpass',
-            secure: String(process.env.LAVALINK_SECURE).toLowerCase() === 'true' || port === 443,
-            retryAmount: 15,
-            retryDelay: 5000,
-        });
-        addedHosts.add(`${host.toLowerCase()}:${port}`);
-    }
+    console.log(`[Reso] Loading primary Lavalink node from .env: ${host}:${port}`);
+    defaultNodes.push({
+        id: 'node-env-primary',
+        host: host,
+        port: port,
+        authorization: process.env.LAVALINK_PASSWORD ? process.env.LAVALINK_PASSWORD.trim() : 'youshallnotpass',
+        secure: String(process.env.LAVALINK_SECURE).toLowerCase() === 'true' || port === 443,
+        retryAmount: 15,
+        retryDelay: 5000,
+    });
+    addedHosts.add(`${host.toLowerCase()}:${port}`);
 }
 
 // 2. Backup / Default Nodes (deduplicated)
