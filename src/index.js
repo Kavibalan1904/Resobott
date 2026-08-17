@@ -12,15 +12,17 @@ const { loadCommands, registerSlashCommands } = require('./handlers/commandHandl
 const { setupLavalinkEvents } = require('./handlers/playerEvents');
 const { handlePlayerButton } = require('./handlers/buttonHandler');
 
-// ── Render.com / Cloud Health Check Server ─────────────────────
+// ── HTTP Health Check Server (Optional) ─────────────────────────
 const http = require('http');
-const PORT = process.env.PORT || 3000;
-http.createServer((req, res) => {
-    res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('Reso Music Bot is running 24/7!');
-}).listen(PORT, () => {
-    console.log(`[Reso] ✓ Health check server listening on port ${PORT}`);
-});
+const PORT = process.env.PORT;
+if (PORT) {
+    http.createServer((req, res) => {
+        res.writeHead(200, { 'Content-Type': 'text/plain' });
+        res.end('Reso Music Bot is running 24/7!');
+    }).listen(PORT, () => {
+        console.log(`[Reso] ✓ Health check listening on port ${PORT}`);
+    });
+}
 
 // ── Create Discord Client ──────────────────────────────────────
 const client = new Client({
@@ -68,12 +70,6 @@ if (process.env.LAVALINK_HOST) {
         .replace(/\/.*$/, ''); // Remove trailing slashes or paths
     const port = parseInt(process.env.LAVALINK_PORT) || 443;
 
-    const isCloudHost = !!(process.env.RENDER || process.env.RAILWAY_ENVIRONMENT || process.env.PORT);
-    const isLocalhost = ['localhost', '127.0.0.1', '::1', '0.0.0.0'].includes(host.toLowerCase());
-
-    if (isLocalhost && isCloudHost) {
-        console.log(`[Reso] ℹ Skipping env node (${host}:${port}) because localhost is not running inside the cloud container.`);
-    } else {
         console.log(`[Reso] Loading primary Lavalink node from .env: ${host}:${port}`);
         defaultNodes.push({
             id: 'node-env-primary',

@@ -1,5 +1,5 @@
 /**
- * Root Entry Point for Wispbyte & Game Panels (Pterodactyl / Wisp)
- * This file allows you to set either "index.js" OR "src/index.js" as the Main File on Wispbyte.
+ * Root Entry Point for bot-hosting.net (Pterodactyl Panel)
+ * Supports starting via "index.js" or "src/index.js"
  */
 require('./src/index.js');
