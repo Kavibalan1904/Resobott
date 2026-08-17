@@ -125,12 +125,13 @@ client.lavalink = new LavalinkManager({
     },
     playerOptions: {
         defaultSearchPlatform: 'ytsearch',
-        clientBasedPositionUpdate: true,
+        clientBasedPositionUpdate: false, // Use Lavalink native server positions to avoid timer lag
         onDisconnect: {
             autoReconnect: true,
             destroyPlayer: false,
         },
         useUnresolvedData: true,
+        applyVolumeAsFilter: false, // Direct hardware volume instead of heavy filter chain
     },
     advancedOptions: {
         enableDebugEvents: false,

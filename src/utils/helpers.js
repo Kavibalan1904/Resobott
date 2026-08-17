@@ -166,22 +166,22 @@ function getHealthyNodes(manager, excludeNodeId = null) {
 function ensurePlayerNode(player, client) {
     if (!player) return null;
 
-    const manager = client?.lavalink;
-    if (!manager || !manager.nodeManager) return null;
+    // If player already has a connected node, KEEP IT — switching player.node
+    // while a voice session is active breaks audio playback and causes stuttering!
+    if (player.node && player.node.connected) {
+        return player.node;
+    }
 
-    const now = Date.now();
-    const COOLDOWN_MS = 10 * 60 * 1000;
-    const currentErr = player.node ? nodeErrorTimestamps.get(player.node.id) : null;
-    const currentIsHealthy = player.node && player.node.connected && (!currentErr || (now - currentErr > COOLDOWN_MS));
-
-    if (currentIsHealthy) return player.node;
+    const manager = client?.lavalink || player.lavalinkManager;
+    if (!manager || !manager.nodeManager) return player.node || null;
 
     const healthyNodes = getHealthyNodes(manager);
     if (healthyNodes.length === 0) return player.node || null;
 
-    const chosenNode = healthyNodes[Math.floor(Math.random() * healthyNodes.length)];
+    // Pick first healthy node
+    const chosenNode = healthyNodes[0];
     if (player.node?.id !== chosenNode.id) {
-        console.log(`[Reso] ↝ Assigned healthy node "${chosenNode.id}" to player (${player.guildId})`);
+        console.log(`[Reso] ↝ Assigned connected node "${chosenNode.id}" to player (${player.guildId})`);
         player.node = chosenNode;
     }
     return chosenNode;

@@ -102,14 +102,16 @@ async function getRecommendations(player, currentTrack, limit = 5) {
     const recommendedTitles = new Set([rawTitle.toLowerCase(), meta.songName.toLowerCase()]);
     const finalRecommendations = [];
 
+    const searchNode = player.node || (player.lavalinkManager?.nodeManager?.nodes?.values()?.next()?.value);
+    if (!searchNode || !searchNode.connected) return [];
+
     /**
      * Helper to search and push unique track to results
      */
     async function fetchUniqueTrack(query, categoryLabel, count = 1) {
         let added = 0;
         try {
-            ensurePlayerNode(player, player.LavalinkManager?.client);
-            const searchResult = await player.search({
+            const searchResult = await searchNode.search({
                 query: query,
                 source: 'ytsearch',
             }, currentTrack.requester);
@@ -142,48 +144,19 @@ async function getRecommendations(player, currentTrack, limit = 5) {
                 added++;
             }
         } catch (e) {
-            console.log(`[Reso Recommendations] Category "${categoryLabel}" search error:`, e.message);
+            // Silently ignore recommendation errors so audio stream is unaffected
         }
         return added;
     }
 
-    // 1. Same Movie / Album (1 song)
-    if (meta.movieOrAlbum && meta.movieOrAlbum !== meta.songName) {
-        const movieQuery = `${meta.movieOrAlbum} song`;
-        await fetchUniqueTrack(movieQuery, `🎬 From ${truncate(meta.movieOrAlbum, 18)}`, 1);
-    } else {
-        const vibeQuery = `${meta.songName} ${meta.primaryArtist} song`;
-        await fetchUniqueTrack(vibeQuery, '🔥 Similar Vibe', 1);
-    }
+    // 1. Same Artist / Similar vibe (batch 3 tracks in 1 search)
+    const artistQuery = meta.primaryArtist ? `${meta.primaryArtist} popular songs` : `${meta.songName} song`;
+    await fetchUniqueTrack(artistQuery, `🎤 By ${truncate(meta.primaryArtist || 'Artist', 18)}`, 3);
 
-    // 2. Same Singer / Main Artist (2 songs)
-    const artistQuery = `${meta.primaryArtist} songs`;
-    await fetchUniqueTrack(artistQuery, `🎤 By ${truncate(meta.primaryArtist, 18)}`, 2);
-
-    // 3. Secondary Artist / Actor Other Songs (1 song)
-    if (meta.secondaryArtist && meta.secondaryArtist !== meta.primaryArtist) {
-        const secondaryQuery = `${meta.secondaryArtist} songs`;
-        await fetchUniqueTrack(secondaryQuery, `🎭 Featuring ${truncate(meta.secondaryArtist, 16)}`, 1);
-    } else {
-        const famousQuery = `${meta.primaryArtist} famous songs`;
-        await fetchUniqueTrack(famousQuery, '🎧 Similar Artist', 1);
-    }
-
-    // 4. Random Unrelated Discovery Song (1 song)
-    const randomPool = [
-        'top global viral hits 2026',
-        'trending acoustic chill hits',
-        'popular retro classic hits',
-        'top party dance hits',
-        'trending ambient relaxing music'
-    ];
-    const randomQuery = randomPool[Math.floor(Math.random() * randomPool.length)];
-    await fetchUniqueTrack(randomQuery, '🎲 Random Discovery', 1);
-
-    // Fallback if any category returned fewer tracks than 5 total
+    // 2. Discover/Similar tracks (batch 2 tracks in 1 search)
     if (finalRecommendations.length < limit) {
-        const remainingNeeded = limit - finalRecommendations.length;
-        await fetchUniqueTrack(`${meta.primaryArtist} top songs`, '🎵 Related Track', remainingNeeded);
+        const discoveryQuery = meta.movieOrAlbum ? `${meta.movieOrAlbum} songs` : `${meta.songName} remix mix`;
+        await fetchUniqueTrack(discoveryQuery, '✨ Similar Vibe', limit - finalRecommendations.length);
     }
 
     return finalRecommendations.slice(0, limit);

@@ -4,8 +4,9 @@ const { getVoiceChannel, truncate, formatMs, ensurePlayerNode } = require('../..
 
 // Map user-friendly source names to Lavalink search platforms
 const SOURCE_MAP = {
-    auto: 'ytsearch',        // Default to YouTube search (works on all nodes)
+    auto: 'ytsearch',
     youtube: 'ytsearch',
+    youtubemusic: 'ytmsearch',
     spotify: 'spsearch',
     soundcloud: 'scsearch',
     apple: 'amsearch',
@@ -14,6 +15,7 @@ const SOURCE_MAP = {
 const SOURCE_EMOJIS = {
     auto: '🔍',
     youtube: '🔴',
+    youtubemusic: '🎵',
     spotify: '🟢',
     soundcloud: '🟠',
     apple: '🍎',
@@ -58,9 +60,10 @@ module.exports = {
                 .setRequired(false)
                 .addChoices(
                     { name: '🔍 Auto Detect (default)', value: 'auto' },
-                    { name: '🔴 YouTube', value: 'youtube' },
+                    { name: '🎵 YouTube Music (Smooth Audio)', value: 'youtubemusic' },
+                    { name: '🟠 SoundCloud (Fast & Direct)', value: 'soundcloud' },
                     { name: '🟢 Spotify', value: 'spotify' },
-                    { name: '🟠 SoundCloud', value: 'soundcloud' },
+                    { name: '🔴 YouTube Video', value: 'youtube' },
                     { name: '🍎 Apple Music', value: 'apple' },
                 )
         ),
