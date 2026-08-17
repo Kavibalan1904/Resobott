@@ -1,4 +1,4 @@
-const { nowPlayingEmbed, createRecommendationComponents, createEmbed, errorEmbed, warningEmbed, EMOJIS } = require('../utils/embeds');
+const { nowPlayingEmbed, createRecommendationComponents, createPlayerControls, createDisabledControls, createEmbed, errorEmbed, warningEmbed, EMOJIS } = require('../utils/embeds');
 const { truncate, markNodeError, getHealthyNodes } = require('../utils/helpers');
 const { getRecommendations } = require('../utils/recommendations');
 
@@ -14,6 +14,9 @@ function setupLavalinkEvents(client) {
     // ── Track retry state per guild to prevent infinite retry loops ──
     // Key: guildId, Value: Set of track identifiers (uri or title) already retried
     const retriedTracks = new Map();
+
+    // ── Track the last Now Playing message per guild (for disabling buttons) ──
+    const lastNowPlayingMessage = new Map();
 
     /**
      * Attempt to re-resolve and replay a failed/stuck track once.
@@ -268,6 +271,14 @@ function setupLavalinkEvents(client) {
         const channel = client.channels.cache.get(player.textChannelId);
         if (!channel) return;
 
+        // ── Disable buttons on the previous Now Playing message ──
+        const prevMsg = lastNowPlayingMessage.get(player.guildId);
+        if (prevMsg) {
+            try {
+                await prevMsg.edit({ components: [createDisabledControls()] }).catch(() => {});
+            } catch { /* message may be deleted */ }
+        }
+
         // Fetch YouTube-style song recommendations matching vibe/artist/language
         let recommendations = [];
         try {
@@ -280,12 +291,23 @@ function setupLavalinkEvents(client) {
         }
 
         const embed = nowPlayingEmbed(track, player, client, recommendations);
-        const row = createRecommendationComponents(recommendations, player.guildId);
+        const controls = createPlayerControls(false);
+        const recRow = createRecommendationComponents(recommendations, player.guildId);
 
-        const msgOptions = { embeds: [embed] };
-        if (row) msgOptions.components = [row];
+        const msgOptions = {
+            embeds: [embed],
+            components: [controls], // Always include player controls
+        };
+        // Add recommendation dropdown as second row (max 5 components/rows per message)
+        if (recRow) msgOptions.components.push(recRow);
 
-        channel.send(msgOptions).catch(() => { });
+        try {
+            const sentMsg = await channel.send(msgOptions);
+            lastNowPlayingMessage.set(player.guildId, sentMsg);
+        } catch {
+            // Channel send failed, clear reference
+            lastNowPlayingMessage.delete(player.guildId);
+        }
     });
 
     // ── Track ends ─────────────────────────────────────────────
@@ -294,9 +316,18 @@ function setupLavalinkEvents(client) {
     });
 
     // ── Queue finished (all tracks done) ───────────────────────
-    manager.on('queueEnd', (player) => {
+    manager.on('queueEnd', async (player) => {
         // Clean up retry state for this guild
         retriedTracks.delete(player.guildId);
+
+        // ── Disable buttons on last Now Playing message ──
+        const prevMsg = lastNowPlayingMessage.get(player.guildId);
+        if (prevMsg) {
+            try {
+                await prevMsg.edit({ components: [createDisabledControls()] }).catch(() => {});
+            } catch { /* ignore */ }
+            lastNowPlayingMessage.delete(player.guildId);
+        }
 
         // Reset bot presence to idle (no elapsed timer)
         client.user.setPresence({
@@ -304,11 +335,48 @@ function setupLavalinkEvents(client) {
             status: 'online',
         });
 
+        // ── Autoplay: auto-queue similar songs when queue ends ──
+        if (client.autoplayGuilds?.has(player.guildId)) {
+            try {
+                const history = client.trackHistory?.get(player.guildId) || [];
+                const lastTrack = history[history.length - 1];
+
+                if (lastTrack) {
+                    console.log(`[Reso] 🔄 Autoplay: Finding next song based on "${truncate(lastTrack.info?.title, 40)}"`);
+
+                    const recs = await getRecommendations(player, lastTrack, 3);
+                    if (recs && recs.length > 0) {
+                        const nextTrack = recs[0];
+                        nextTrack.requester = { username: 'Autoplay', id: 'autoplay' };
+                        player.queue.add(nextTrack);
+                        await player.play();
+
+                        const channel = client.channels.cache.get(player.textChannelId);
+                        if (channel) {
+                            const embed = createEmbed('Autoplay')
+                                .setAuthor({ name: '🔄 Autoplay' })
+                                .setDescription(
+                                    `Queued **[${truncate(nextTrack.info?.title || 'Unknown', 50)}](${nextTrack.info?.uri || ''})**\n` +
+                                    `> Based on your recent listening • Use \`/autoplay\` to toggle`
+                                )
+                                .setThumbnail(nextTrack.info?.artworkUrl || null);
+                            channel.send({ embeds: [embed] }).catch(() => {});
+                        }
+
+                        console.log(`[Reso] 🔄 Autoplay: Queued "${truncate(nextTrack.info?.title, 40)}"`);
+                        return; // Don't show "queue ended" message
+                    }
+                }
+            } catch (e) {
+                console.error('[Reso] Autoplay error:', e.message);
+            }
+        }
+
         const channel = client.channels.cache.get(player.textChannelId);
         if (!channel) return;
 
         const embed = createEmbed('Info')
-            .setDescription(`${EMOJIS.music} Queue has ended. Add more songs to keep the party going!\n*I'll stay here until everyone leaves or you use \`/leave\`.*`);
+            .setDescription(`${EMOJIS.music} Queue has ended. Add more songs to keep the party going!\n*Use \`/autoplay\` to automatically queue similar songs!*\n*I'll stay here until everyone leaves or you use \`/leave\`.*`);
         channel.send({ embeds: [embed] }).catch(() => { });
     });
 
@@ -365,6 +433,7 @@ function setupLavalinkEvents(client) {
         // Clean up history and retry state
         client.trackHistory.delete(player.guildId);
         retriedTracks.delete(player.guildId);
+        lastNowPlayingMessage.delete(player.guildId);
 
         // Reset bot presence to idle (no elapsed timer)
         client.user.setPresence({

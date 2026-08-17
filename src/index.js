@@ -10,6 +10,7 @@ const { Client, GatewayIntentBits, Collection, MessageFlags } = require('discord
 const { LavalinkManager } = require('lavalink-client');
 const { loadCommands, registerSlashCommands } = require('./handlers/commandHandler');
 const { setupLavalinkEvents } = require('./handlers/playerEvents');
+const { handlePlayerButton } = require('./handlers/buttonHandler');
 
 // ── Render.com / Cloud Health Check Server ─────────────────────
 const http = require('http');
@@ -49,6 +50,12 @@ client.trackHistory = new Map();
 
 // ── Recommendation storage (guild ID → array of recommended tracks) ──
 client.recommendations = new Map();
+
+// ── Autoplay mode storage (guild ID set) ────────────────────────
+client.autoplayGuilds = new Set();
+
+// ── Vote skip storage (guild ID → { voters: Set, messageId }) ───
+client.voteSkips = new Map();
 
 // ── Create Lavalink Manager ────────────────────────────────────
 const defaultNodes = [];
@@ -249,6 +256,54 @@ async function main() {
 
         // Handle interactions
         client.on('interactionCreate', async (interaction) => {
+            // ── Handle player control buttons (⏮ ⏸ ⏭ 🔀 ⏹) ──
+            if (interaction.isButton() && interaction.customId?.startsWith('player_')) {
+                try {
+                    await handlePlayerButton(interaction, client);
+                } catch (err) {
+                    console.error('[Reso] Player button error:', err);
+                }
+                return;
+            }
+
+            // ── Handle vote skip buttons ──
+            if (interaction.isButton() && interaction.customId?.startsWith('voteskip_')) {
+                try {
+                    const guildId = interaction.guild?.id;
+                    const voteData = client.voteSkips?.get(guildId);
+                    if (!voteData) {
+                        return interaction.reply({ content: '🗳️ This vote has expired.', flags: MessageFlags.Ephemeral }).catch(() => {});
+                    }
+                    const memberVC = interaction.member?.voice?.channel;
+                    if (!memberVC) {
+                        return interaction.reply({ content: '❌ You need to be in a voice channel to vote!', flags: MessageFlags.Ephemeral }).catch(() => {});
+                    }
+                    if (voteData.voters.has(interaction.user.id)) {
+                        return interaction.reply({ content: '🗳️ You already voted!', flags: MessageFlags.Ephemeral }).catch(() => {});
+                    }
+                    voteData.voters.add(interaction.user.id);
+                    const humanCount = memberVC.members.filter(m => !m.user.bot).size;
+                    const needed = Math.ceil(humanCount / 2);
+                    const current = voteData.voters.size;
+
+                    if (current >= needed) {
+                        const player = client.lavalink.getPlayer(guildId);
+                        if (player) await player.skip();
+                        client.voteSkips.delete(guildId);
+                        await interaction.update({ content: `🗳️ Vote skip passed! (**${current}/${needed}** votes) ⏭️`, components: [] }).catch(() => {});
+                    } else {
+                        const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+                        const btn = new ActionRowBuilder().addComponents(
+                            new ButtonBuilder().setCustomId(`voteskip_${guildId}`).setLabel(`🗳️ Vote Skip (${current}/${needed})`).setStyle(ButtonStyle.Primary)
+                        );
+                        await interaction.update({ components: [btn] }).catch(() => {});
+                    }
+                } catch (err) {
+                    console.error('[Reso] Vote skip button error:', err);
+                }
+                return;
+            }
+
             // Handle recommendation dropdown select menu & button clicks
             const isRecSelect = interaction.isStringSelectMenu() && interaction.customId?.startsWith('rec_select_');
             const isRecButton = interaction.isButton() && interaction.customId?.startsWith('rec_add_');

@@ -1,5 +1,5 @@
 const { SlashCommandBuilder } = require('discord.js');
-const { errorEmbed, createEmbed, EMOJIS } = require('../../utils/embeds');
+const { errorEmbed, createEmbed, EMOJIS, getSourceBadge } = require('../../utils/embeds');
 const { truncate, paginate, formatMs } = require('../../utils/helpers');
 
 module.exports = {
@@ -25,18 +25,31 @@ module.exports = {
         const page = interaction.options.getInteger('page') || 1;
 
         const loopModes = ['Off', '🔂 Track', '🔁 Queue'];
+        const source = getSourceBadge(currentInfo.sourceName);
+
+        // Calculate total queue duration
+        let totalDurationMs = currentInfo.duration || 0;
+        for (const t of tracks) {
+            if (t.info?.duration && !t.info?.isStream) totalDurationMs += t.info.duration;
+        }
+        const totalDuration = formatMs(totalDurationMs);
+
+        // Autoplay status
+        const autoplayOn = interaction.client.autoplayGuilds?.has(interaction.guild.id);
 
         if (tracks.length === 0) {
             const embed = createEmbed('Queue')
-                .setAuthor({ name: `Queue for ${interaction.guild.name}`, iconURL: interaction.guild.iconURL() })
+                .setAuthor({ name: `📋 Queue — ${interaction.guild.name}`, iconURL: interaction.guild.iconURL() })
                 .setDescription(
-                    `**Now Playing:**\n` +
-                    `[${truncate(currentInfo.title, 55)}](${currentInfo.uri}) — \`${currentInfo.isStream ? 'Live' : formatMs(currentInfo.duration)}\`\n\n` +
+                    `### ▶ Now Playing\n` +
+                    `${source.color} **[${truncate(currentInfo.title, 50)}](${currentInfo.uri})** — \`${currentInfo.isStream ? 'Live' : formatMs(currentInfo.duration)}\`\n` +
+                    `> ${currentInfo.author || 'Unknown'} • Requested by ${currentTrack.requester || 'Unknown'}\n\n` +
                     `*No more tracks in queue. Use \`/play\` to add more!*`
                 )
                 .addFields(
-                    { name: 'Loop Mode', value: loopModes[player.repeatMode] || 'Off', inline: true },
-                    { name: 'Volume', value: `${player.volume}%`, inline: true },
+                    { name: '🔁 Loop', value: loopModes[player.repeatMode] || 'Off', inline: true },
+                    { name: '🔊 Volume', value: `\`${player.volume}%\``, inline: true },
+                    { name: '🔄 Autoplay', value: autoplayOn ? '✅ On' : '❌ Off', inline: true },
                 );
             return interaction.reply({ embeds: [embed] });
         }
@@ -47,22 +60,26 @@ module.exports = {
             const info = track.info || {};
             const position = (currentPage - 1) * 10 + index + 1;
             const dur = info.isStream ? 'Live' : formatMs(info.duration);
-            return `\`${position}.\` [${truncate(info.title, 45)}](${info.uri}) — \`${dur}\` | ${track.requester || 'Unknown'}`;
+            const src = getSourceBadge(info.sourceName);
+            return `\`${position}.\` ${src.color} **[${truncate(info.title, 42)}](${info.uri})** — \`${dur}\`\n　　 ${info.author || 'Unknown'} • ${track.requester || 'Unknown'}`;
         }).join('\n');
 
         const embed = createEmbed('Queue')
-            .setAuthor({ name: `Queue for ${interaction.guild.name}`, iconURL: interaction.guild.iconURL() })
+            .setAuthor({ name: `📋 Queue — ${interaction.guild.name}`, iconURL: interaction.guild.iconURL() })
             .setDescription(
-                `**${EMOJIS.music} Now Playing:**\n` +
-                `[${truncate(currentInfo.title, 55)}](${currentInfo.uri}) — \`${currentInfo.isStream ? 'Live' : formatMs(currentInfo.duration)}\` | ${currentTrack.requester || 'Unknown'}\n\n` +
-                `**${EMOJIS.queue} Up Next:**\n${trackList}`
+                `### ▶ Now Playing\n` +
+                `${source.color} **[${truncate(currentInfo.title, 50)}](${currentInfo.uri})** — \`${currentInfo.isStream ? 'Live' : formatMs(currentInfo.duration)}\`\n` +
+                `> ${currentInfo.author || 'Unknown'} • Requested by ${currentTrack.requester || 'Unknown'}\n\n` +
+                `### ${EMOJIS.queue} Up Next\n${trackList}`
             )
             .addFields(
-                { name: 'Total Tracks', value: `${totalItems + 1}`, inline: true },
-                { name: 'Loop Mode', value: loopModes[player.repeatMode] || 'Off', inline: true },
-                { name: 'Volume', value: `${player.volume}%`, inline: true },
+                { name: '🎵 Total', value: `\`${totalItems + 1} songs\``, inline: true },
+                { name: '⏱️ Duration', value: `\`${totalDuration}\``, inline: true },
+                { name: '🔁 Loop', value: loopModes[player.repeatMode] || 'Off', inline: true },
+                { name: '🔊 Volume', value: `\`${player.volume}%\``, inline: true },
+                { name: '🔄 Autoplay', value: autoplayOn ? '✅ On' : '❌ Off', inline: true },
             )
-            .setFooter({ text: `Reso • Page ${currentPage}/${totalPages} • ${totalItems} tracks in queue` });
+            .setFooter({ text: `Reso  ♪  Page ${currentPage}/${totalPages} • ${totalItems} tracks in queue` });
 
         return interaction.reply({ embeds: [embed] });
     },

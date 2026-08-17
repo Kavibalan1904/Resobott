@@ -1,10 +1,10 @@
 const { SlashCommandBuilder } = require('discord.js');
-const { errorEmbed, nowPlayingEmbed } = require('../../utils/embeds');
+const { errorEmbed, nowPlayingEmbed, createPlayerControls } = require('../../utils/embeds');
 
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('nowplaying')
-        .setDescription('Show the currently playing track with progress'),
+        .setDescription('Show the currently playing track with interactive controls'),
 
     async execute(interaction) {
         const player = interaction.client.lavalink.getPlayer(interaction.guild.id);
@@ -18,6 +18,11 @@ module.exports = {
         }
 
         const embed = nowPlayingEmbed(track, player, interaction.client);
-        return interaction.reply({ embeds: [embed] });
+        const controls = createPlayerControls(player.paused);
+
+        return interaction.reply({
+            embeds: [embed],
+            components: [controls],
+        });
     },
 };
