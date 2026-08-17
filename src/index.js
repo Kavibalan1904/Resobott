@@ -84,16 +84,7 @@ if (process.env.LAVALINK_HOST) {
 // 2. Backup / Default Nodes (deduplicated)
 // Only nodes confirmed working as of Aug 2026. Dead nodes removed to stop log spam.
 const backupNodes = [
-    // ── Confirmed Working ────────────────────────────────────────
-    {
-        id: 'node-serenetia-ssl',
-        host: 'lavalinkv4.serenetia.com',
-        port: 443,
-        authorization: 'https://seretia.link/discord',
-        secure: true,
-        retryAmount: 3,
-        retryDelay: 15000,
-    },
+    // ── Confirmed Working (Aug 2026) ────────────────────────────
     {
         id: 'node-kasawa',
         host: 'lava2.kasawa.pro',
@@ -103,16 +94,8 @@ const backupNodes = [
         retryAmount: 3,
         retryDelay: 15000,
     },
-    // ── Additional Backup Nodes ──────────────────────────────────
-    {
-        id: 'node-minecuta',
-        host: 'lavav4.minecuta.com',
-        port: 2333,
-        authorization: 'discord.gg/gKuXdHs',
-        secure: false,
-        retryAmount: 3,
-        retryDelay: 10000,
-    },
+    // NOTE: serenetia (lavalinkv4.serenetia.com:443) removed — returns Cloudflare HTML, not Lavalink
+    // NOTE: minecuta (lavav4.minecuta.com:2333) removed — connection times out
 ];
 
 for (const node of backupNodes) {

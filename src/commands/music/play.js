@@ -4,7 +4,7 @@ const { getVoiceChannel, truncate, formatMs, ensurePlayerNode } = require('../..
 
 // Map user-friendly source names to Lavalink search platforms
 const SOURCE_MAP = {
-    auto: 'spsearch',        // Default to Spotify search; YouTube is fallback
+    auto: 'ytsearch',        // Default to YouTube search (works on all nodes)
     youtube: 'ytsearch',
     spotify: 'spsearch',
     soundcloud: 'scsearch',
@@ -12,7 +12,7 @@ const SOURCE_MAP = {
 };
 
 const SOURCE_EMOJIS = {
-    auto: '🟢',
+    auto: '🔍',
     youtube: '🔴',
     spotify: '🟢',
     soundcloud: '🟠',
@@ -54,10 +54,10 @@ module.exports = {
         )
         .addStringOption(option =>
             option.setName('source')
-                .setDescription('Where to search (default: Spotify)')
+                .setDescription('Where to search (default: auto-detect)')
                 .setRequired(false)
                 .addChoices(
-                    { name: '🟢 Auto (Spotify → YouTube)', value: 'auto' },
+                    { name: '🔍 Auto Detect (default)', value: 'auto' },
                     { name: '🔴 YouTube', value: 'youtube' },
                     { name: '🟢 Spotify', value: 'spotify' },
                     { name: '🟠 SoundCloud', value: 'soundcloud' },
@@ -79,9 +79,9 @@ module.exports = {
         if (!voiceChannel) {
             const embed = errorEmbed('You need to be in a voice channel!');
             if (interaction.deferred || interaction.replied || deferred) {
-                return interaction.editReply({ embeds: [embed] }).catch(() => {});
+                return interaction.editReply({ embeds: [embed] }).catch(() => { });
             } else {
-                return interaction.reply({ embeds: [embed], ephemeral: true }).catch(() => {});
+                return interaction.reply({ embeds: [embed], ephemeral: true }).catch(() => { });
             }
         }
 
@@ -133,6 +133,17 @@ module.exports = {
         }
 
         try {
+            // ── Pre-flight: ensure at least one Lavalink node is connected ──
+            const connectedNodes = Array.from(manager.nodeManager.nodes.values()).filter(n => n.connected);
+            if (connectedNodes.length === 0) {
+                const embed = errorEmbed(
+                    '🔌 **No music server available**\n\n' +
+                    'All Lavalink nodes are currently offline or reconnecting.\n' +
+                    'Please wait a moment and try again — nodes usually reconnect within 30 seconds.'
+                );
+                return interaction.editReply({ embeds: [embed] });
+            }
+
             // Create or get the player
             let player = manager.getPlayer(interaction.guild.id);
             if (!player) {
@@ -142,6 +153,7 @@ module.exports = {
                     textChannelId: interaction.channel.id,
                     selfDeaf: true,
                     volume: parseInt(process.env.DEFAULT_VOLUME) || 50,
+                    node: connectedNodes[0].id, // Explicitly assign a connected node
                 });
             }
 
@@ -169,7 +181,7 @@ module.exports = {
             // If the default source (e.g. spsearch) returned nothing, try other platforms.
             // This handles free public nodes that don't have LavaSrc/Spotify configured.
             if ((!result.tracks || result.tracks.length === 0) && !isUrl && (source === 'auto')) {
-                const fallbackSources = ['ytsearch', 'ytmsearch', 'scsearch', 'dzsearch'];
+                const fallbackSources = ['ytsearch', 'ytmsearch', 'scsearch'];
                 // Remove the source we already tried
                 const alreadyTried = searchSource;
                 const toTry = fallbackSources.filter(s => s !== alreadyTried);
@@ -224,7 +236,7 @@ module.exports = {
             if (!result.tracks || result.tracks.length === 0) {
                 const sourceLabel = source === 'auto' ? 'any platform' : capitalize(source);
                 let tipMessage = '\n\nTry a different search term or valid link.';
-                
+
                 if (isUrl && isSpotifyUrl(rawQuery)) {
                     tipMessage = '\n\n💡 **Tip**: Spotify URLs require the Lavalink server to have the **LavaSrc plugin** with Spotify credentials configured. Try using `/play` with just the song name instead.';
                 } else if (isUrl && query.includes('youtube.com')) {
@@ -300,9 +312,9 @@ module.exports = {
             console.error('[Reso] Play error:', error);
             const embed = errorEmbed(`Could not play: ${truncate(error.message, 100)}`);
             if (interaction.deferred || interaction.replied) {
-                return interaction.editReply({ embeds: [embed] }).catch(() => {});
+                return interaction.editReply({ embeds: [embed] }).catch(() => { });
             } else {
-                return interaction.reply({ embeds: [embed], ephemeral: true }).catch(() => {});
+                return interaction.reply({ embeds: [embed], ephemeral: true }).catch(() => { });
             }
         }
     },

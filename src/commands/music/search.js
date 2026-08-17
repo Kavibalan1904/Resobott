@@ -3,7 +3,7 @@ const { errorEmbed, createEmbed, EMOJIS, capitalize } = require('../../utils/emb
 const { getVoiceChannel, truncate, formatMs, ensurePlayerNode } = require('../../utils/helpers');
 
 const SOURCE_MAP = {
-    auto: 'spsearch',        // Default to Spotify search; YouTube is fallback
+    auto: 'ytsearch',
     youtube: 'ytsearch',
     spotify: 'spsearch',
     soundcloud: 'scsearch',
@@ -21,10 +21,10 @@ module.exports = {
         )
         .addStringOption(option =>
             option.setName('source')
-                .setDescription('Where to search (default: Spotify)')
+                .setDescription('Where to search (default: auto)')
                 .setRequired(false)
                 .addChoices(
-                    { name: '🟢 Auto (Spotify → YouTube)', value: 'auto' },
+                    { name: '🔍 Auto Detect', value: 'auto' },
                     { name: '🔴 YouTube', value: 'youtube' },
                     { name: '🟢 Spotify', value: 'spotify' },
                     { name: '🟠 SoundCloud', value: 'soundcloud' },
@@ -45,16 +45,16 @@ module.exports = {
         if (!voiceChannel) {
             const embed = errorEmbed('You need to be in a voice channel!');
             if (interaction.deferred || interaction.replied || deferred) {
-                return interaction.editReply({ embeds: [embed] }).catch(() => {});
+                return interaction.editReply({ embeds: [embed] }).catch(() => { });
             } else {
-                return interaction.reply({ embeds: [embed], ephemeral: true }).catch(() => {});
+                return interaction.reply({ embeds: [embed], ephemeral: true }).catch(() => { });
             }
         }
 
         const query = interaction.options.getString('query', true);
         const source = interaction.options.getString('source') || 'auto';
         const manager = interaction.client.lavalink;
-        const searchPlatform = SOURCE_MAP[source] || 'spsearch';
+        const searchPlatform = SOURCE_MAP[source] || 'ytsearch';
 
         try {
             // Create or get the player for searching
@@ -80,7 +80,7 @@ module.exports = {
             // ── Multi-platform search fallback ──
             // If the default source returned nothing (e.g. node lacks LavaSrc), try others
             if ((!result.tracks || result.tracks.length === 0) && source === 'auto') {
-                const fallbackSources = ['ytsearch', 'ytmsearch', 'scsearch', 'dzsearch'];
+                const fallbackSources = ['ytsearch', 'ytmsearch', 'scsearch'];
                 const toTry = fallbackSources.filter(s => s !== searchPlatform);
                 for (const fbSource of toTry) {
                     try {
@@ -186,16 +186,16 @@ module.exports = {
                 // Selection timed out
                 const timeoutEmbed = createEmbed('Warning')
                     .setDescription(`${EMOJIS.warning} Search selection timed out. Use \`/play\` to play directly.`);
-                await interaction.editReply({ embeds: [timeoutEmbed], components: [] }).catch(() => {});
+                await interaction.editReply({ embeds: [timeoutEmbed], components: [] }).catch(() => { });
             }
 
         } catch (error) {
             console.error('[Reso] Search error:', error);
             const embed = errorEmbed(`Search failed: ${truncate(error.message, 100)}`);
             if (interaction.deferred || interaction.replied) {
-                return interaction.editReply({ embeds: [embed] }).catch(() => {});
+                return interaction.editReply({ embeds: [embed] }).catch(() => { });
             } else {
-                return interaction.reply({ embeds: [embed], ephemeral: true }).catch(() => {});
+                return interaction.reply({ embeds: [embed], ephemeral: true }).catch(() => { });
             }
         }
     },

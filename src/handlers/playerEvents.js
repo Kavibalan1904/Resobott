@@ -75,30 +75,23 @@ function setupLavalinkEvents(client) {
             }
 
             // Determine retry search sources based on original source
-            // Priority: Spotify first (main player), YouTube only for YT-sourced tracks
+            // Priority: original source → Spotify → YouTube (last resort)
             const retrySources = [];
 
-            if (originalSource === 'youtube' || originalSource === 'ytsearch' || originalSource === 'ytmsearch') {
-                // YouTube link/source: strictly retry YouTube first, then Spotify as last resort
-                retrySources.push({ source: 'ytsearch', query: searchQuery, label: 'YouTube search' });
-                retrySources.push({ source: 'ytmsearch', query: searchQuery, label: 'YouTube Music' });
-                retrySources.push({ source: 'spsearch', query: searchQuery, label: 'Spotify fallback' });
-            } else if (originalSource === 'spotify' || originalSource === 'spsearch') {
-                // Spotify source: retry Spotify (ISRC first), then YouTube as last resort
+            if (originalSource === 'spotify' || originalSource === 'spsearch') {
                 if (isrc) retrySources.push({ source: 'spsearch', query: isrc, label: 'Spotify ISRC' });
                 retrySources.push({ source: 'spsearch', query: searchQuery, label: 'Spotify search' });
                 retrySources.push({ source: 'ytsearch', query: searchQuery, label: 'YouTube fallback' });
             } else if (originalSource === 'soundcloud') {
-                retrySources.push({ source: 'spsearch', query: searchQuery, label: 'Spotify search' });
                 retrySources.push({ source: 'scsearch', query: searchQuery, label: 'SoundCloud search' });
+                retrySources.push({ source: 'spsearch', query: searchQuery, label: 'Spotify fallback' });
                 retrySources.push({ source: 'ytsearch', query: searchQuery, label: 'YouTube fallback' });
             } else if (originalSource === 'deezer') {
-                retrySources.push({ source: 'spsearch', query: searchQuery, label: 'Spotify search' });
                 retrySources.push({ source: 'dzsearch', query: searchQuery, label: 'Deezer search' });
+                retrySources.push({ source: 'spsearch', query: searchQuery, label: 'Spotify fallback' });
                 retrySources.push({ source: 'ytsearch', query: searchQuery, label: 'YouTube fallback' });
             } else {
-                // Default: Spotify is the main player, YouTube as last resort
-                if (isrc) retrySources.push({ source: 'spsearch', query: isrc, label: 'Spotify ISRC' });
+                // Default (YouTube failed): try Spotify first, then YouTube on a different node
                 retrySources.push({ source: 'spsearch', query: searchQuery, label: 'Spotify search' });
                 retrySources.push({ source: 'ytsearch', query: searchQuery, label: 'YouTube fallback' });
             }
@@ -149,7 +142,7 @@ function setupLavalinkEvents(client) {
                                 });
                                 // Destroy the old player session on the previous node (cleanup)
                                 if (player.node?.connected) {
-                                    player.node.destroyPlayer(player.guildId).catch(() => {});
+                                    player.node.destroyPlayer(player.guildId).catch(() => { });
                                 }
                                 player.node = searchNode;
                             } catch (transferErr) {
@@ -166,7 +159,7 @@ function setupLavalinkEvents(client) {
                             const embed = warningEmbed(
                                 `Track **${truncate(title, 50)}** ${reason}. Retrying with **${resolvedSource}**...`
                             );
-                            channel.send({ embeds: [embed] }).catch(() => {});
+                            channel.send({ embeds: [embed] }).catch(() => { });
                         }
 
                         return true;
@@ -292,7 +285,7 @@ function setupLavalinkEvents(client) {
         const msgOptions = { embeds: [embed] };
         if (row) msgOptions.components = [row];
 
-        channel.send(msgOptions).catch(() => {});
+        channel.send(msgOptions).catch(() => { });
     });
 
     // ── Track ends ─────────────────────────────────────────────
@@ -316,7 +309,7 @@ function setupLavalinkEvents(client) {
 
         const embed = createEmbed('Info')
             .setDescription(`${EMOJIS.music} Queue has ended. Add more songs to keep the party going!\n*I'll stay here until everyone leaves or you use \`/leave\`.*`);
-        channel.send({ embeds: [embed] }).catch(() => {});
+        channel.send({ embeds: [embed] }).catch(() => { });
     });
 
     // ── Track error ────────────────────────────────────────────
@@ -340,7 +333,7 @@ function setupLavalinkEvents(client) {
         const embed = errorEmbed(
             `Failed to play **${truncate(track?.info?.title, 50)}**\n\`\`\`${truncate(payload?.exception?.message || 'Unknown error', 200)}\`\`\``
         );
-        channel.send({ embeds: [embed] }).catch(() => {});
+        channel.send({ embeds: [embed] }).catch(() => { });
     });
 
     // ── Track stuck ────────────────────────────────────────────
@@ -356,9 +349,9 @@ function setupLavalinkEvents(client) {
         if (!channel) return;
 
         const embed = errorEmbed(`Track **${truncate(track?.info?.title, 50)}** got stuck. Skipping...`);
-        channel.send({ embeds: [embed] }).catch(() => {});
+        channel.send({ embeds: [embed] }).catch(() => { });
 
-        player.skip().catch(() => {});
+        player.skip().catch(() => { });
     });
 
     // ── Player created ─────────────────────────────────────────
