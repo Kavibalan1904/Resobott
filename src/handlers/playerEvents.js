@@ -84,19 +84,19 @@ function setupLavalinkEvents(client) {
             if (originalSource === 'spotify' || originalSource === 'spsearch') {
                 if (isrc) retrySources.push({ source: 'spsearch', query: isrc, label: 'Spotify ISRC' });
                 retrySources.push({ source: 'spsearch', query: searchQuery, label: 'Spotify search' });
-                retrySources.push({ source: 'ytsearch', query: searchQuery, label: 'YouTube fallback' });
+                retrySources.push({ source: 'ytmsearch', query: searchQuery, label: 'YouTube Music fallback' });
             } else if (originalSource === 'soundcloud') {
                 retrySources.push({ source: 'scsearch', query: searchQuery, label: 'SoundCloud search' });
                 retrySources.push({ source: 'spsearch', query: searchQuery, label: 'Spotify fallback' });
-                retrySources.push({ source: 'ytsearch', query: searchQuery, label: 'YouTube fallback' });
+                retrySources.push({ source: 'ytmsearch', query: searchQuery, label: 'YouTube Music fallback' });
             } else if (originalSource === 'deezer') {
                 retrySources.push({ source: 'dzsearch', query: searchQuery, label: 'Deezer search' });
                 retrySources.push({ source: 'spsearch', query: searchQuery, label: 'Spotify fallback' });
-                retrySources.push({ source: 'ytsearch', query: searchQuery, label: 'YouTube fallback' });
+                retrySources.push({ source: 'ytmsearch', query: searchQuery, label: 'YouTube Music fallback' });
             } else {
-                // Default (YouTube failed): try Spotify first, then YouTube on a different node
+                // Default: try YouTube Music studio audio first, then Spotify
+                retrySources.push({ source: 'ytmsearch', query: searchQuery, label: 'YouTube Music fallback' });
                 retrySources.push({ source: 'spsearch', query: searchQuery, label: 'Spotify search' });
-                retrySources.push({ source: 'ytsearch', query: searchQuery, label: 'YouTube fallback' });
             }
 
             // Try each source on each node until we find a playable track
