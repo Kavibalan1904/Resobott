@@ -4,7 +4,7 @@ const { getVoiceChannel, truncate, formatMs, ensurePlayerNode, getHealthyNodes }
 
 // Map user-friendly source names to Lavalink search platforms
 const SOURCE_MAP = {
-    auto: 'ytsearch',
+    auto: 'ytmsearch',
     youtube: 'ytsearch',
     youtubemusic: 'ytmsearch',
     spotify: 'spsearch',

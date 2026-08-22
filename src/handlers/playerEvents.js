@@ -130,24 +130,11 @@ function setupLavalinkEvents(client) {
                         // advances the queue before our skip() runs, causing silent playback.
 
                         // If the search resolved on a different node than the player's current node,
-                        // we must transfer the voice session to that node before playing.
+                        // use player.changeNode() to seamlessly migrate the voice session
                         if (searchNode.id !== player.node?.id) {
                             console.log(`[Reso] ↝ Transferring player voice to node "${searchNode.id}" for playback`);
                             try {
-                                await searchNode.updatePlayer({
-                                    guildId: player.guildId,
-                                    playerOptions: {
-                                        voice: player.voice,
-                                        volume: player.lavalinkVolume,
-                                        paused: false,
-                                    },
-                                    noReplace: false,
-                                });
-                                // Destroy the old player session on the previous node (cleanup)
-                                if (player.node?.connected) {
-                                    player.node.destroyPlayer(player.guildId).catch(() => { });
-                                }
-                                player.node = searchNode;
+                                await player.changeNode(searchNode.id);
                             } catch (transferErr) {
                                 console.warn(`[Reso] ⚠ Voice transfer to "${searchNode.id}" failed: ${transferErr.message}, trying to play on original node`);
                             }
@@ -447,20 +434,20 @@ function setupLavalinkEvents(client) {
  * When a node goes down, attempt to move its active players to another healthy node.
  * This prevents 1006 disconnects from silently killing all playback.
  */
-function migratePlayersFromDeadNode(manager, deadNode) {
+async function migratePlayersFromDeadNode(manager, deadNode) {
     try {
-        const healthyNode = Array.from(manager.nodeManager.nodes.values())
-            .find(n => n.connected && n.id !== deadNode.id);
+        const healthyNodes = getHealthyNodes(manager, deadNode.id);
+        const healthyNode = healthyNodes[0] || Array.from(manager.nodeManager.nodes.values()).find(n => n.connected && n.id !== deadNode.id);
 
         if (!healthyNode) return; // No healthy node available — retries will handle it
 
         for (const [, player] of manager.players) {
             if (player.node?.id === deadNode.id) {
                 try {
-                    player.node = healthyNode;
-                    console.log(`[Reso] ↝ Migrated player (guild: ${player.guildId}) from "${deadNode.id}" → "${healthyNode.id}"`);
-                } catch {
-                    // Migration failed — the player will be picked up when the dead node reconnects
+                    await player.changeNode(healthyNode.id);
+                    console.log(`[Reso] ↝ Migrated player (guild: ${player.guildId}) seamlessly from "${deadNode.id}" → "${healthyNode.id}"`);
+                } catch (err) {
+                    console.warn(`[Reso] Player migration error (guild: ${player.guildId}):`, err.message);
                 }
             }
         }
