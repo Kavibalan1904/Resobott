@@ -77,8 +77,8 @@ if (process.env.LAVALINK_HOST) {
         port: port,
         authorization: process.env.LAVALINK_PASSWORD ? process.env.LAVALINK_PASSWORD.trim() : 'youshallnotpass',
         secure: String(process.env.LAVALINK_SECURE).toLowerCase() === 'true' || port === 443,
-        retryAmount: 15,
-        retryDelay: 5000,
+        retryAmount: Infinity, // Never give up reconnecting — prevents "No Lavalink Node" after idle
+        retryDelay: 10000,     // Retry every 10 seconds
     });
     addedHosts.add(`${host.toLowerCase()}:${port}`);
 }
@@ -93,7 +93,7 @@ const backupNodes = [
         port: 2334,
         authorization: 'youshallnotpass',
         secure: false,
-        retryAmount: 3,
+        retryAmount: Infinity, // Never give up reconnecting
         retryDelay: 15000,
     },
     // NOTE: serenetia (lavalinkv4.serenetia.com:443) removed — returns Cloudflare HTML, not Lavalink
@@ -146,6 +146,28 @@ setInterval(() => {
         }
     }
 }, WS_PING_INTERVAL_MS);
+
+// ── Node Health Monitor (force-reconnect dead nodes that exhausted retries) ──
+// This is the safety net: even with retryAmount: Infinity, if the library
+// silently stops retrying (bug, error, etc.), this will catch it and reconnect.
+const NODE_HEALTH_CHECK_MS = 30_000; // Check every 30 seconds
+setInterval(() => {
+    for (const node of client.lavalink.nodeManager.nodes.values()) {
+        if (!node.connected) {
+            // Check if the node has stopped trying to reconnect
+            // (reconnecting flag is false AND socket is not open)
+            const socketAlive = node.socket?.readyState === 0 || node.socket?.readyState === 1; // CONNECTING or OPEN
+            if (!socketAlive) {
+                console.log(`[Reso] 🔄 Health monitor: Node "${node.id}" is dead and not reconnecting. Force-reconnecting...`);
+                try {
+                    node.connect();
+                } catch (err) {
+                    console.error(`[Reso] ✗ Force-reconnect of node "${node.id}" failed:`, err.message);
+                }
+            }
+        }
+    }
+}, NODE_HEALTH_CHECK_MS);
 
 // ── Forward raw Discord events to Lavalink ─────────────────────
 client.on('raw', (data) => client.lavalink.sendRawData(data));
