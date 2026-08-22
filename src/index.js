@@ -158,7 +158,7 @@ client.lavalink = new LavalinkManager({
     },
     playerOptions: {
         defaultSearchPlatform: 'ytmsearch', // YouTube Music official album audio (100% clean studio track, NO video dialogues/skits)
-        clientBasedPositionUpdate: false, // Use Lavalink native server positions to avoid timer lag
+        clientBasedPositionUpdateInterval: 500, // Update player position smoothly every 500ms instead of aggressive 100ms timer
         onDisconnect: {
             autoReconnect: true,
             destroyPlayer: false,
@@ -170,42 +170,6 @@ client.lavalink = new LavalinkManager({
         enableDebugEvents: false,
     },
 });
-
-// ── WebSocket Keep-Alive Ping (prevents 1006 from idle proxy/firewall timeouts) ──
-const WS_PING_INTERVAL_MS = 30_000; // 30 seconds
-setInterval(() => {
-    for (const node of client.lavalink.nodeManager.nodes.values()) {
-        if (node.connected && node.socket?.readyState === 1) {
-            try {
-                node.socket.ping();
-            } catch {
-                // Ignore — if the socket is dead the reconnect handler will take over
-            }
-        }
-    }
-}, WS_PING_INTERVAL_MS);
-
-// ── Node Health Monitor (force-reconnect dead nodes that exhausted retries) ──
-// This is the safety net: even with retryAmount: Infinity, if the library
-// silently stops retrying (bug, error, etc.), this will catch it and reconnect.
-const NODE_HEALTH_CHECK_MS = 30_000; // Check every 30 seconds
-setInterval(() => {
-    for (const node of client.lavalink.nodeManager.nodes.values()) {
-        if (!node.connected) {
-            // Check if the node has stopped trying to reconnect
-            // (reconnecting flag is false AND socket is not open)
-            const socketAlive = node.socket?.readyState === 0 || node.socket?.readyState === 1; // CONNECTING or OPEN
-            if (!socketAlive) {
-                console.log(`[Reso] 🔄 Health monitor: Node "${node.id}" is dead and not reconnecting. Force-reconnecting...`);
-                try {
-                    node.connect();
-                } catch (err) {
-                    console.error(`[Reso] ✗ Force-reconnect of node "${node.id}" failed:`, err.message);
-                }
-            }
-        }
-    }
-}, NODE_HEALTH_CHECK_MS);
 
 // ── Forward raw Discord events to Lavalink ─────────────────────
 client.on('raw', (data) => client.lavalink.sendRawData(data));
