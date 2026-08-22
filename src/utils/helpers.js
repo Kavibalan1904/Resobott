@@ -182,7 +182,11 @@ function ensurePlayerNode(player, client) {
     const chosenNode = healthyNodes[0];
     if (player.node?.id !== chosenNode.id) {
         console.log(`[Reso] ↝ Assigned connected node "${chosenNode.id}" to player (${player.guildId})`);
-        player.node = chosenNode;
+        if (typeof player.changeNode === 'function') {
+            player.changeNode(chosenNode.id).catch(() => {});
+        } else {
+            player.node = chosenNode;
+        }
     }
     return chosenNode;
 }

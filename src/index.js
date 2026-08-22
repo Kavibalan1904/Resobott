@@ -106,7 +106,17 @@ const backupNodes = [
         retryAmount: Infinity,
         retryDelay: 15000,
     },
-    // ── Rank 3: Jirayu SSL — ~830ms (SSL Backup) ─────────────────
+    // ── Rank 3: Millohost SSL — ~280ms (SSL Node) ──────────────
+    {
+        id: 'node-millohost',
+        host: 'lava-v4.millohost.my.id',
+        port: 443,
+        authorization: 'https://discord.gg/mjS5J2K3ep',
+        secure: true,
+        retryAmount: Infinity,
+        retryDelay: 15000,
+    },
+    // ── Rank 4: Jirayu SSL — ~830ms (SSL Backup) ─────────────────
     {
         id: 'node-jirayu-ssl',
         host: 'lavalink.jirayu.net',
@@ -116,7 +126,7 @@ const backupNodes = [
         retryAmount: Infinity,
         retryDelay: 15000,
     },
-    // ── Rank 4: Serenetia — ~1670ms (High Latency Last Resort) ────
+    // ── Rank 5: Serenetia — ~1670ms (High Latency Last Resort) ────
     {
         id: 'node-serenetia',
         host: 'lavalink.serenetia.com',
