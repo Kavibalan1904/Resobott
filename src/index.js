@@ -83,60 +83,8 @@ if (process.env.LAVALINK_HOST) {
     addedHosts.add(`${host.toLowerCase()}:${port}`);
 }
 
-// 2. Backup / Default Nodes (ordered strictly by LOWEST LATENCY first)
-// Verified active & tested as of Aug 2026
-const backupNodes = [
-    // ── Rank 1: Kasawa (#2) — ~480ms (Fast & reliable) ──────────
-    {
-        id: 'node-kasawa-2',
-        host: 'lava2.kasawa.pro',
-        port: 2334,
-        authorization: 'youshallnotpass',
-        secure: false,
-        retryAmount: Infinity,
-        retryDelay: 15000,
-    },
-    // ── Rank 2: Jirayu Direct — ~650ms (LavaSrc + YouTube) ───────
-    {
-        id: 'node-jirayu-direct',
-        host: 'lavalink.jirayu.net',
-        port: 13592,
-        authorization: 'youshallnotpass',
-        secure: false,
-        retryAmount: Infinity,
-        retryDelay: 15000,
-    },
-    // ── Rank 3: Millohost SSL — ~280ms (SSL Node) ──────────────
-    {
-        id: 'node-millohost',
-        host: 'lava-v4.millohost.my.id',
-        port: 443,
-        authorization: 'https://discord.gg/mjS5J2K3ep',
-        secure: true,
-        retryAmount: Infinity,
-        retryDelay: 15000,
-    },
-    // ── Rank 4: Jirayu SSL — ~830ms (SSL Backup) ─────────────────
-    {
-        id: 'node-jirayu-ssl',
-        host: 'lavalink.jirayu.net',
-        port: 443,
-        authorization: 'youshallnotpass',
-        secure: true,
-        retryAmount: Infinity,
-        retryDelay: 15000,
-    },
-    // ── Rank 5: Serenetia — ~1670ms (High Latency Last Resort) ────
-    {
-        id: 'node-serenetia',
-        host: 'lavalink.serenetia.com',
-        port: 443,
-        authorization: 'youshallnotpass',
-        secure: true,
-        retryAmount: Infinity,
-        retryDelay: 20000,
-    },
-];
+// 2. Backup / Default Nodes (Disabled — using strictly 1 dedicated private node)
+const backupNodes = [];
 
 for (const node of backupNodes) {
     const key = `${node.host.toLowerCase()}:${node.port}`;
