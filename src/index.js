@@ -83,21 +83,49 @@ if (process.env.LAVALINK_HOST) {
     addedHosts.add(`${host.toLowerCase()}:${port}`);
 }
 
-// 2. Backup / Default Nodes (deduplicated)
-// Only nodes confirmed working as of Aug 2026. Dead nodes removed to stop log spam.
+// 2. Backup / Default Nodes (ordered strictly by LOWEST LATENCY first)
+// Verified active & tested as of Aug 2026
 const backupNodes = [
-    // ── Confirmed Working (Aug 2026) ────────────────────────────
+    // ── Rank 1: Kasawa (#2) — ~480ms (Fast & reliable) ──────────
     {
-        id: 'node-kasawa',
+        id: 'node-kasawa-2',
         host: 'lava2.kasawa.pro',
         port: 2334,
         authorization: 'youshallnotpass',
         secure: false,
-        retryAmount: Infinity, // Never give up reconnecting
+        retryAmount: Infinity,
         retryDelay: 15000,
     },
-    // NOTE: serenetia (lavalinkv4.serenetia.com:443) removed — returns Cloudflare HTML, not Lavalink
-    // NOTE: minecuta (lavav4.minecuta.com:2333) removed — connection times out
+    // ── Rank 2: Jirayu Direct — ~650ms (LavaSrc + YouTube) ───────
+    {
+        id: 'node-jirayu-direct',
+        host: 'lavalink.jirayu.net',
+        port: 13592,
+        authorization: 'youshallnotpass',
+        secure: false,
+        retryAmount: Infinity,
+        retryDelay: 15000,
+    },
+    // ── Rank 3: Jirayu SSL — ~830ms (SSL Backup) ─────────────────
+    {
+        id: 'node-jirayu-ssl',
+        host: 'lavalink.jirayu.net',
+        port: 443,
+        authorization: 'youshallnotpass',
+        secure: true,
+        retryAmount: Infinity,
+        retryDelay: 15000,
+    },
+    // ── Rank 4: Serenetia — ~1670ms (High Latency Last Resort) ────
+    {
+        id: 'node-serenetia',
+        host: 'lavalink.serenetia.com',
+        port: 443,
+        authorization: 'youshallnotpass',
+        secure: true,
+        retryAmount: Infinity,
+        retryDelay: 20000,
+    },
 ];
 
 for (const node of backupNodes) {

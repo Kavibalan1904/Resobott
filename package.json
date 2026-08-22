@@ -24,5 +24,8 @@
     "dotenv": "^16.4.5",
     "genius-lyrics": "^4.4.7",
     "lavalink-client": "^2.4.4"
+  },
+  "devDependencies": {
+    "sharp": "^0.34.5"
   }
 }

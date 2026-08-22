@@ -1,6 +1,6 @@
 const { SlashCommandBuilder } = require('discord.js');
 const { errorEmbed, createEmbed, EMOJIS, capitalize } = require('../../utils/embeds');
-const { getVoiceChannel, truncate, formatMs, ensurePlayerNode } = require('../../utils/helpers');
+const { getVoiceChannel, truncate, formatMs, ensurePlayerNode, getHealthyNodes } = require('../../utils/helpers');
 
 // Map user-friendly source names to Lavalink search platforms
 const SOURCE_MAP = {
@@ -83,7 +83,10 @@ module.exports = {
                 });
             }
 
-            // Create or get the player
+            // Create or get the player (assigning lowest-latency healthy node)
+            const healthyNodes = getHealthyNodes(manager);
+            const initialNode = healthyNodes[0] || connectedNodes[0];
+
             let player = manager.getPlayer(interaction.guild.id);
             if (!player) {
                 player = manager.createPlayer({
@@ -92,7 +95,7 @@ module.exports = {
                     textChannelId: interaction.channel.id,
                     selfDeaf: true,
                     volume: parseInt(process.env.DEFAULT_VOLUME) || 50,
-                    node: connectedNodes[0].id,
+                    node: initialNode.id,
                 });
             }
 

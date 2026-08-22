@@ -147,7 +147,10 @@ module.exports = {
                 return interaction.editReply({ embeds: [embed] });
             }
 
-            // Create or get the player
+            // Create or get the player (assigning the lowest-latency healthy node)
+            const healthyNodes = getHealthyNodes(manager);
+            const initialNode = healthyNodes[0] || connectedNodes[0];
+
             let player = manager.getPlayer(interaction.guild.id);
             if (!player) {
                 player = manager.createPlayer({
@@ -156,7 +159,7 @@ module.exports = {
                     textChannelId: interaction.channel.id,
                     selfDeaf: true,
                     volume: parseInt(process.env.DEFAULT_VOLUME) || 50,
-                    node: connectedNodes[0].id, // Explicitly assign a connected node
+                    node: initialNode.id,
                 });
             }
 
