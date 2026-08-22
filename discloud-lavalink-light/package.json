@@ -1,0 +1,12 @@
+{
+  "name": "reso-lavalink",
+  "version": "1.0.0",
+  "description": "24/7 Lavalink node for Reso bot on Discloud",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}
