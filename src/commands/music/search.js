@@ -3,11 +3,11 @@ const { errorEmbed, createEmbed, EMOJIS, capitalize } = require('../../utils/emb
 const { getVoiceChannel, truncate, formatMs, ensurePlayerNode } = require('../../utils/helpers');
 
 const SOURCE_MAP = {
-    auto: 'ytsearch',
-    youtube: 'ytsearch',
-    youtubemusic: 'ytmsearch',
+    auto: 'spsearch',
     spotify: 'spsearch',
+    youtubemusic: 'ytmsearch',
     soundcloud: 'scsearch',
+    youtube: 'ytsearch',
     apple: 'amsearch',
 };
 
@@ -22,13 +22,13 @@ module.exports = {
         )
         .addStringOption(option =>
             option.setName('source')
-                .setDescription('Where to search (default: auto)')
+                .setDescription('Where to search (default: Spotify)')
                 .setRequired(false)
                 .addChoices(
-                    { name: '🔍 Auto Detect', value: 'auto' },
+                    { name: '🟢 Spotify (Default - High Quality)', value: 'spotify' },
+                    { name: '🔍 Auto Detect (Spotify first)', value: 'auto' },
                     { name: '🎵 YouTube Music (Smooth Audio)', value: 'youtubemusic' },
                     { name: '🟠 SoundCloud (Fast & Direct)', value: 'soundcloud' },
-                    { name: '🟢 Spotify', value: 'spotify' },
                     { name: '🔴 YouTube Video', value: 'youtube' },
                     { name: '🍎 Apple Music', value: 'apple' },
                 )
@@ -56,7 +56,7 @@ module.exports = {
         const query = interaction.options.getString('query', true);
         const source = interaction.options.getString('source') || 'auto';
         const manager = interaction.client.lavalink;
-        const searchPlatform = SOURCE_MAP[source] || 'ytsearch';
+        const searchPlatform = SOURCE_MAP[source] || 'spsearch';
 
         try {
             // Create or get the player for searching

@@ -157,7 +157,7 @@ client.lavalink = new LavalinkManager({
         username: 'Reso',
     },
     playerOptions: {
-        defaultSearchPlatform: 'ytmsearch', // YouTube Music audio stream (stable & high quality, prevents YouTube CDN throttling)
+        defaultSearchPlatform: 'spsearch', // Spotify primary search (high quality metadata & audio)
         clientBasedPositionUpdate: false, // Use Lavalink native server positions to avoid timer lag
         onDisconnect: {
             autoReconnect: true,

@@ -4,11 +4,11 @@ const { getVoiceChannel, truncate, formatMs, ensurePlayerNode, getHealthyNodes }
 
 // Map user-friendly source names to Lavalink search platforms
 const SOURCE_MAP = {
-    auto: 'ytsearch',
-    youtube: 'ytsearch',
-    youtubemusic: 'ytmsearch',
+    auto: 'spsearch',
     spotify: 'spsearch',
+    youtubemusic: 'ytmsearch',
     soundcloud: 'scsearch',
+    youtube: 'ytsearch',
     apple: 'amsearch',
 };
 
@@ -30,13 +30,13 @@ module.exports = {
         )
         .addStringOption(option =>
             option.setName('source')
-                .setDescription('Where to search (default: auto)')
+                .setDescription('Where to search (default: Spotify)')
                 .setRequired(false)
                 .addChoices(
-                    { name: '🔍 Auto Detect', value: 'auto' },
+                    { name: '🟢 Spotify (Default - High Quality)', value: 'spotify' },
+                    { name: '🔍 Auto Detect (Spotify first)', value: 'auto' },
                     { name: '🎵 YouTube Music (Smooth Audio)', value: 'youtubemusic' },
                     { name: '🟠 SoundCloud (Fast & Direct)', value: 'soundcloud' },
-                    { name: '🟢 Spotify', value: 'spotify' },
                     { name: '🔴 YouTube Video', value: 'youtube' },
                     { name: '🍎 Apple Music', value: 'apple' },
                 )
@@ -72,7 +72,7 @@ module.exports = {
             query = `https://${query}`;
         }
 
-        const searchSource = queryIsUrl ? undefined : (SOURCE_MAP[source] || 'ytsearch');
+        const searchSource = queryIsUrl ? undefined : (SOURCE_MAP[source] || 'spsearch');
 
         try {
             // Pre-flight: ensure at least one Lavalink node is connected

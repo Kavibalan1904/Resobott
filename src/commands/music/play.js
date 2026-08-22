@@ -4,20 +4,20 @@ const { getVoiceChannel, truncate, formatMs, ensurePlayerNode, getHealthyNodes }
 
 // Map user-friendly source names to Lavalink search platforms
 const SOURCE_MAP = {
-    auto: 'ytmsearch',
-    youtube: 'ytsearch',
-    youtubemusic: 'ytmsearch',
+    auto: 'spsearch',
     spotify: 'spsearch',
+    youtubemusic: 'ytmsearch',
     soundcloud: 'scsearch',
+    youtube: 'ytsearch',
     apple: 'amsearch',
 };
 
 const SOURCE_EMOJIS = {
-    auto: '🔍',
-    youtube: '🔴',
-    youtubemusic: '🎵',
+    auto: '🟢',
     spotify: '🟢',
+    youtubemusic: '🎵',
     soundcloud: '🟠',
+    youtube: '🔴',
     apple: '🍎',
 };
 
@@ -56,13 +56,13 @@ module.exports = {
         )
         .addStringOption(option =>
             option.setName('source')
-                .setDescription('Where to search (default: auto-detect)')
+                .setDescription('Where to search (default: Spotify)')
                 .setRequired(false)
                 .addChoices(
-                    { name: '🔍 Auto Detect (default)', value: 'auto' },
+                    { name: '🟢 Spotify (Default - High Quality)', value: 'spotify' },
+                    { name: '🔍 Auto Detect (Spotify first)', value: 'auto' },
                     { name: '🎵 YouTube Music (Smooth Audio)', value: 'youtubemusic' },
                     { name: '🟠 SoundCloud (Fast & Direct)', value: 'soundcloud' },
-                    { name: '🟢 Spotify', value: 'spotify' },
                     { name: '🔴 YouTube Video', value: 'youtube' },
                     { name: '🍎 Apple Music', value: 'apple' },
                 )
@@ -186,8 +186,8 @@ module.exports = {
             // ── Multi-platform search fallback for text queries ──
             // If the default source (e.g. spsearch) returned nothing, try other platforms.
             // This handles free public nodes that don't have LavaSrc/Spotify configured.
-            if ((!result.tracks || result.tracks.length === 0) && !isUrl && (source === 'auto')) {
-                const fallbackSources = ['ytsearch', 'ytmsearch', 'scsearch'];
+            if ((!result.tracks || result.tracks.length === 0) && !isUrl && (source === 'auto' || source === 'spotify')) {
+                const fallbackSources = ['spsearch', 'ytmsearch', 'scsearch', 'ytsearch'];
                 // Remove the source we already tried
                 const alreadyTried = searchSource;
                 const toTry = fallbackSources.filter(s => s !== alreadyTried);
