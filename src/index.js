@@ -157,13 +157,13 @@ client.lavalink = new LavalinkManager({
         username: 'Reso',
     },
     playerOptions: {
-        defaultSearchPlatform: 'spsearch', // Spotify primary search (high quality metadata & audio)
+        defaultSearchPlatform: 'ytmsearch', // YouTube Music official album audio (100% clean studio track, NO video dialogues/skits)
         clientBasedPositionUpdate: false, // Use Lavalink native server positions to avoid timer lag
         onDisconnect: {
             autoReconnect: true,
             destroyPlayer: false,
         },
-        useUnresolvedData: true,
+        useUnresolvedData: false, // Ensure tracks resolve directly to pure audio streams rather than dialogue videos
         applyVolumeAsFilter: false, // Direct hardware volume instead of heavy filter chain
     },
     advancedOptions: {

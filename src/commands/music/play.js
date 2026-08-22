@@ -3,19 +3,20 @@ const { errorEmbed, successEmbed, createEmbed, EMOJIS, capitalize } = require('.
 const { getVoiceChannel, truncate, formatMs, ensurePlayerNode, getHealthyNodes } = require('../../utils/helpers');
 
 // Map user-friendly source names to Lavalink search platforms
+// ytmsearch = YouTube Music (pure studio audio tracks with 0 movie dialogues/video skits)
 const SOURCE_MAP = {
-    auto: 'spsearch',
-    spotify: 'spsearch',
+    auto: 'ytmsearch',
     youtubemusic: 'ytmsearch',
+    spotify: 'spsearch',
     soundcloud: 'scsearch',
     youtube: 'ytsearch',
     apple: 'amsearch',
 };
 
 const SOURCE_EMOJIS = {
-    auto: '🟢',
-    spotify: '🟢',
+    auto: '🎵',
     youtubemusic: '🎵',
+    spotify: '🟢',
     soundcloud: '🟠',
     youtube: '🔴',
     apple: '🍎',
@@ -56,14 +57,13 @@ module.exports = {
         )
         .addStringOption(option =>
             option.setName('source')
-                .setDescription('Where to search (default: Spotify)')
+                .setDescription('Where to search (default: Clean Studio Audio)')
                 .setRequired(false)
                 .addChoices(
-                    { name: '🟢 Spotify (Default - High Quality)', value: 'spotify' },
-                    { name: '🔍 Auto Detect (Spotify first)', value: 'auto' },
-                    { name: '🎵 YouTube Music (Smooth Audio)', value: 'youtubemusic' },
+                    { name: '🎵 YouTube Music (Default - Clean Studio Audio)', value: 'auto' },
+                    { name: '🟢 Spotify (Official Tracks)', value: 'spotify' },
                     { name: '🟠 SoundCloud (Fast & Direct)', value: 'soundcloud' },
-                    { name: '🔴 YouTube Video', value: 'youtube' },
+                    { name: '🔴 YouTube Video (Music Videos)', value: 'youtube' },
                     { name: '🍎 Apple Music', value: 'apple' },
                 )
         ),

@@ -3,9 +3,9 @@ const { errorEmbed, createEmbed, EMOJIS, capitalize } = require('../../utils/emb
 const { getVoiceChannel, truncate, formatMs, ensurePlayerNode } = require('../../utils/helpers');
 
 const SOURCE_MAP = {
-    auto: 'spsearch',
-    spotify: 'spsearch',
+    auto: 'ytmsearch',
     youtubemusic: 'ytmsearch',
+    spotify: 'spsearch',
     soundcloud: 'scsearch',
     youtube: 'ytsearch',
     apple: 'amsearch',
@@ -22,14 +22,13 @@ module.exports = {
         )
         .addStringOption(option =>
             option.setName('source')
-                .setDescription('Where to search (default: Spotify)')
+                .setDescription('Where to search (default: Clean Studio Audio)')
                 .setRequired(false)
                 .addChoices(
-                    { name: '🟢 Spotify (Default - High Quality)', value: 'spotify' },
-                    { name: '🔍 Auto Detect (Spotify first)', value: 'auto' },
-                    { name: '🎵 YouTube Music (Smooth Audio)', value: 'youtubemusic' },
+                    { name: '🎵 YouTube Music (Default - Clean Studio Audio)', value: 'auto' },
+                    { name: '🟢 Spotify (Official Tracks)', value: 'spotify' },
                     { name: '🟠 SoundCloud (Fast & Direct)', value: 'soundcloud' },
-                    { name: '🔴 YouTube Video', value: 'youtube' },
+                    { name: '🔴 YouTube Video (Music Videos)', value: 'youtube' },
                     { name: '🍎 Apple Music', value: 'apple' },
                 )
         ),
