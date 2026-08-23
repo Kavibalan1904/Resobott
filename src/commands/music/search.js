@@ -3,10 +3,10 @@ const { errorEmbed, createEmbed, EMOJIS, capitalize } = require('../../utils/emb
 const { getVoiceChannel, truncate, formatMs, ensurePlayerNode } = require('../../utils/helpers');
 
 const SOURCE_MAP = {
-    auto: 'ytmsearch',
-    youtubemusic: 'ytmsearch',
+    auto: 'spsearch',
     spotify: 'spsearch',
     soundcloud: 'scsearch',
+    youtubemusic: 'ytmsearch',
     youtube: 'ytsearch',
     apple: 'amsearch',
 };

@@ -94,9 +94,11 @@ function setupLavalinkEvents(client) {
                 retrySources.push({ source: 'spsearch', query: searchQuery, label: 'Spotify fallback' });
                 retrySources.push({ source: 'ytmsearch', query: searchQuery, label: 'YouTube Music fallback' });
             } else {
-                // Default: try YouTube Music studio audio first, then Spotify
+                // If YouTube playback failed (e.g. datacenter IP block), try Spotify, SoundCloud & Deezer first
+                retrySources.push({ source: 'spsearch', query: searchQuery, label: 'Spotify fallback' });
+                retrySources.push({ source: 'scsearch', query: searchQuery, label: 'SoundCloud fallback' });
+                retrySources.push({ source: 'dzsearch', query: searchQuery, label: 'Deezer fallback' });
                 retrySources.push({ source: 'ytmsearch', query: searchQuery, label: 'YouTube Music fallback' });
-                retrySources.push({ source: 'spsearch', query: searchQuery, label: 'Spotify search' });
             }
 
             // Try each source on each node until we find a playable track

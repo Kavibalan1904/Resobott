@@ -105,7 +105,7 @@ client.lavalink = new LavalinkManager({
         username: 'Reso',
     },
     playerOptions: {
-        defaultSearchPlatform: 'ytmsearch', // YouTube Music official album audio (100% clean studio track, NO video dialogues/skits)
+        defaultSearchPlatform: 'spsearch', // Spotify search (bypasses YouTube datacenter IP login blocks)
         clientBasedPositionUpdateInterval: 500, // Update player position smoothly every 500ms instead of aggressive 100ms timer
         onDisconnect: {
             autoReconnect: true,
