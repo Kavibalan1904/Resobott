@@ -56,8 +56,6 @@ plugins:
       - MWEB
       - WEBEMBEDDED
       - WEB
-    oauth:
-      enabled: false
 
 logging:
   level:
