@@ -83,8 +83,103 @@ if (process.env.LAVALINK_HOST) {
     addedHosts.add(`${host.toLowerCase()}:${port}`);
 }
 
-// 2. Backup / Default Nodes (Disabled — using strictly 1 dedicated private node)
-const backupNodes = [];
+// 2. Backup / Fallback Public Nodes (Lavalink v4 — SSL-first for reliability)
+//    These activate automatically if the primary .env node goes down.
+//    Curated from community lists — SSL nodes (port 443) are prioritized.
+const backupNodes = [
+    // ── SSL Nodes (Port 443 — Most Reliable) ───────────────────
+    {
+        id: 'backup-ssl-1-jirayu',
+        host: 'lavalink.jirayu.net',
+        port: 443,
+        authorization: 'youshallnotpass',
+        secure: true,
+        retryAmount: Infinity,
+        retryDelay: 15000,
+    },
+    {
+        id: 'backup-ssl-2-horizxon',
+        host: 'v4.lavalink.rocks',
+        port: 443,
+        authorization: 'horizxon.tech',
+        secure: true,
+        retryAmount: Infinity,
+        retryDelay: 15000,
+    },
+    {
+        id: 'backup-ssl-3-trinium',
+        host: 'lavalink-v4.triniumhost.com',
+        port: 443,
+        authorization: 'free',
+        secure: true,
+        retryAmount: Infinity,
+        retryDelay: 15000,
+    },
+    {
+        id: 'backup-ssl-4-catfein',
+        host: 'lavalink.alfari.id',
+        port: 443,
+        authorization: 'catfein',
+        secure: true,
+        retryAmount: Infinity,
+        retryDelay: 15000,
+    },
+    {
+        id: 'backup-ssl-5-akshat',
+        host: 'lava.akshat.tech',
+        port: 443,
+        authorization: 'admin',
+        secure: true,
+        retryAmount: Infinity,
+        retryDelay: 15000,
+    },
+    {
+        id: 'backup-ssl-6-serenetia',
+        host: 'lavalinkv4.serenetia.com',
+        port: 443,
+        authorization: 'https://seretia.link/discord',
+        secure: true,
+        retryAmount: Infinity,
+        retryDelay: 15000,
+    },
+    // ── Non-SSL Fallback Nodes ──────────────────────────────────
+    {
+        id: 'backup-nossl-1-g3v',
+        host: 'lava.g3v.co.uk',
+        port: 9008,
+        authorization: 'lavalinklol',
+        secure: false,
+        retryAmount: Infinity,
+        retryDelay: 15000,
+    },
+    {
+        id: 'backup-nossl-2-nexcloud',
+        host: 'n3.nexcloud.in',
+        port: 2026,
+        authorization: 'nexcloud',
+        secure: false,
+        retryAmount: Infinity,
+        retryDelay: 15000,
+    },
+    {
+        id: 'backup-nossl-3-nyc',
+        host: 'nyc01.jxshua.dev',
+        port: 4000,
+        authorization: 'youshallnotpass',
+        secure: false,
+        retryAmount: Infinity,
+        retryDelay: 15000,
+    },
+    {
+        id: 'backup-nossl-4-rudra',
+        host: 'lavalink.rudracloud.com',
+        port: 2333,
+        authorization: 'RudraCloud.com',
+        secure: false,
+        retryAmount: Infinity,
+        retryDelay: 15000,
+    },
+];
 
 for (const node of backupNodes) {
     const key = `${node.host.toLowerCase()}:${node.port}`;
