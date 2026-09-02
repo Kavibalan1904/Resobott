@@ -1,6 +1,6 @@
 const { nowPlayingEmbed, createRecommendationComponents, createPlayerControls, createDisabledControls, createEmbed, errorEmbed, warningEmbed, EMOJIS } = require('../utils/embeds');
 const { truncate, markNodeError, getHealthyNodes } = require('../utils/helpers');
-const { getRecommendations } = require('../utils/recommendations');
+const { getRecommendations, getAutoplayTrack } = require('../utils/recommendations');
 
 /**
  * Setup all Lavalink event listeners on the LavalinkManager
@@ -271,7 +271,8 @@ function setupLavalinkEvents(client) {
         // Fetch YouTube-style song recommendations matching vibe/artist/language
         let recommendations = [];
         try {
-            recommendations = await getRecommendations(player, track, 5);
+            const sessionHistory = client.trackHistory?.get(player.guildId) || [];
+            recommendations = await getRecommendations(player, track, 5, sessionHistory);
             if (client.recommendations) {
                 client.recommendations.set(player.guildId, recommendations);
             }
@@ -327,34 +328,29 @@ function setupLavalinkEvents(client) {
         // ── Autoplay: auto-queue similar songs when queue ends ──
         if (client.autoplayGuilds?.has(player.guildId)) {
             try {
-                const history = client.trackHistory?.get(player.guildId) || [];
-                const lastTrack = history[history.length - 1];
+                console.log(`[Reso] 🔄 Autoplay: Finding next song using session history (${(client.trackHistory?.get(player.guildId) || []).length} tracks)`);
 
-                if (lastTrack) {
-                    console.log(`[Reso] 🔄 Autoplay: Finding next song based on "${truncate(lastTrack.info?.title, 40)}"`);
+                const nextTrack = await getAutoplayTrack(player, client.trackHistory);
+                if (nextTrack) {
+                    nextTrack.requester = { username: 'Autoplay', id: 'autoplay' };
+                    player.queue.add(nextTrack);
+                    await player.play();
 
-                    const recs = await getRecommendations(player, lastTrack, 3);
-                    if (recs && recs.length > 0) {
-                        const nextTrack = recs[0];
-                        nextTrack.requester = { username: 'Autoplay', id: 'autoplay' };
-                        player.queue.add(nextTrack);
-                        await player.play();
-
-                        const channel = client.channels.cache.get(player.textChannelId);
-                        if (channel) {
-                            const embed = createEmbed('Autoplay')
-                                .setAuthor({ name: '🔄 Autoplay' })
-                                .setDescription(
-                                    `Queued **[${truncate(nextTrack.info?.title || 'Unknown', 50)}](${nextTrack.info?.uri || ''})**\n` +
-                                    `> Based on your recent listening • Use \`/autoplay\` to toggle`
-                                )
-                                .setThumbnail(nextTrack.info?.artworkUrl || null);
-                            channel.send({ embeds: [embed] }).catch(() => {});
-                        }
-
-                        console.log(`[Reso] 🔄 Autoplay: Queued "${truncate(nextTrack.info?.title, 40)}"`);
-                        return; // Don't show "queue ended" message
+                    const categoryTag = nextTrack.categoryLabel || '🎵 Recommended';
+                    const channel = client.channels.cache.get(player.textChannelId);
+                    if (channel) {
+                        const embed = createEmbed('Autoplay')
+                            .setAuthor({ name: '🔄 Autoplay' })
+                            .setDescription(
+                                `Queued **[${truncate(nextTrack.info?.title || 'Unknown', 50)}](${nextTrack.info?.uri || ''})**\n` +
+                                `> ${categoryTag} • Based on your session • Use \`/autoplay\` to toggle`
+                            )
+                            .setThumbnail(nextTrack.info?.artworkUrl || null);
+                        channel.send({ embeds: [embed] }).catch(() => {});
                     }
+
+                    console.log(`[Reso] 🔄 Autoplay: Queued "${truncate(nextTrack.info?.title, 40)}" [${categoryTag}]`);
+                    return; // Don't show "queue ended" message
                 }
             } catch (e) {
                 console.error('[Reso] Autoplay error:', e.message);

@@ -271,11 +271,12 @@ function createRecommendationComponents(recommendations = [], guildId = '') {
         const dur = rInfo.isStream ? 'Live' : formatMs(rInfo.duration || 0);
 
         let emoji = '🎵';
-        if (badge.startsWith('🎬')) emoji = '🎬';
-        else if (badge.startsWith('🎤')) emoji = '🎤';
+        if (badge.startsWith('🎬')) emoji = '🎬';       // Tier 2: Same Movie/Album
+        else if (badge.startsWith('🎤')) emoji = '🎤';   // Tier 3: Same Singer/Artist
+        else if (badge.startsWith('🎧')) emoji = '🎧';   // Tier 1: Composer Collab
+        else if (badge.startsWith('🔥')) emoji = '🔥';   // Tier 4: Genre Match
+        else if (badge.startsWith('✨')) emoji = '✨';    // Tier 5: Discovery/Trending
         else if (badge.startsWith('🎭')) emoji = '🎭';
-        else if (badge.startsWith('🔥')) emoji = '🔥';
-        else if (badge.startsWith('🎧')) emoji = '🎧';
         else if (badge.startsWith('🎲')) emoji = '🎲';
 
         return {
