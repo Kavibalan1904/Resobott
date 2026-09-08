@@ -385,14 +385,14 @@ function ensurePlayerNode(player, client) {
 
 /**
  * Start a background interval that probes all node latencies periodically.
- * Call once during bot startup. Probes every 2 minutes.
+ * Call once during bot startup. Probes every 60 seconds for fast switching.
  * @param {object} manager - LavalinkManager
  * @returns {NodeJS.Timer} interval ID (for cleanup if needed)
  */
 function startNodeHealthMonitor(manager) {
     if (!manager || !manager.nodeManager) return null;
 
-    const PROBE_INTERVAL_MS = 2 * 60 * 1000; // Every 2 minutes
+    const PROBE_INTERVAL_MS = 60 * 1000; // Every 60 seconds
 
     // Initial probe after 10 seconds (let nodes connect first)
     setTimeout(async () => {
