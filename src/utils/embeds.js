@@ -115,12 +115,12 @@ function getVolumeEmoji(volume) {
 
 // ── Loop Mode Label ────────────────────────────────────────────
 function getLoopLabel(repeatMode) {
-    const modes = [
-        { emoji: '▬', label: 'Off' },
-        { emoji: '🔂', label: 'Track' },
-        { emoji: '🔁', label: 'Queue' },
-    ];
-    return modes[repeatMode] || modes[0];
+    const modes = {
+        'off': { emoji: '▬', label: 'Off' },
+        'track': { emoji: '🔂', label: 'Track' },
+        'queue': { emoji: '🔁', label: 'Queue' },
+    };
+    return modes[repeatMode] || modes['off'];
 }
 
 /**

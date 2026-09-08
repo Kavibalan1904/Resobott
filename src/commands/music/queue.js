@@ -24,7 +24,11 @@ module.exports = {
         const tracks = player.queue.tracks;
         const page = interaction.options.getInteger('page') || 1;
 
-        const loopModes = ['Off', '🔂 Track', '🔁 Queue'];
+        const loopModes = {
+            off: 'Off',
+            track: '🔂 Track',
+            queue: '🔁 Queue',
+        };
         const source = getSourceBadge(currentInfo.sourceName);
 
         // Calculate total queue duration

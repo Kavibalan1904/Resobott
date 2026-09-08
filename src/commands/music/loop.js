@@ -24,18 +24,11 @@ module.exports = {
         }
 
         const player = interaction.client.lavalink.getPlayer(interaction.guild.id);
-        if (!player || !player.playing) {
+        if (!player || (!player.playing && !player.paused) || !player.queue.current) {
             return interaction.reply({ embeds: [errorEmbed('Nothing is playing right now.')], ephemeral: true });
         }
 
         const mode = interaction.options.getString('mode', true);
-
-        // lavalink-client repeat modes: 0 = off, 1 = track, 2 = queue
-        const modeMap = {
-            'off': 0,
-            'track': 1,
-            'queue': 2,
-        };
 
         const modeLabels = {
             'off': `${EMOJIS.error} Loop is now **Off**`,
@@ -43,7 +36,8 @@ module.exports = {
             'queue': `${EMOJIS.loop} Now looping the **entire queue**`,
         };
 
-        player.setRepeatMode(modeMap[mode]);
+        // lavalink-client setRepeatMode expects 'off' | 'track' | 'queue'
+        await player.setRepeatMode(mode);
         return interaction.reply({ embeds: [successEmbed(modeLabels[mode])] });
     },
 };
