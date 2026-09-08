@@ -89,15 +89,6 @@ if (process.env.LAVALINK_HOST) {
 const backupNodes = [
     // ── SSL Nodes (Port 443) — Verified ALIVE ──────────────────
     {
-        id: 'backup-ssl-1-jirayu',
-        host: 'lavalink.jirayu.net',
-        port: 443,
-        authorization: 'youshallnotpass',
-        secure: true,
-        retryAmount: 5,
-        retryDelay: 15000,
-    },
-    {
         id: 'backup-ssl-2-serenetia',
         host: 'lavalinkv4.serenetia.com',
         port: 443,
