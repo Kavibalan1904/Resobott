@@ -127,6 +127,9 @@ function createProgressBar(position, duration, length = 15) {
 // Track recent node playback/connection failures (nodeId -> timestamp ms)
 const nodeErrorTimestamps = new Map();
 
+// Track measured HTTP probe latencies (nodeId -> { latencyMs, timestamp })
+const nodeProbeLatencies = new Map();
+
 /**
  * Record a node error timestamp to temporarily deprioritize it
  */
@@ -136,32 +139,222 @@ function markNodeError(nodeId) {
 }
 
 /**
- * Get connected Lavalink nodes, prioritizing nodes without recent errors (< 10 minutes)
+ * Probe a single node's latency by doing a timed HTTP GET to /v4/info.
+ * Falls back to heartBeatPing if the HTTP probe fails.
+ * @param {object} node - LavalinkNode instance
+ * @returns {Promise<number>} latency in ms, or Infinity if unreachable
+ */
+async function probeNodeLatency(node) {
+    if (!node || !node.connected) return Infinity;
+
+    try {
+        const protocol = node.options?.secure ? 'https' : 'http';
+        const host = node.options?.host || 'localhost';
+        const port = node.options?.port || 2333;
+        const auth = node.options?.authorization || 'youshallnotpass';
+
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 4000); // 4s timeout
+
+        const start = performance.now();
+        const res = await fetch(`${protocol}://${host}:${port}/v4/info`, {
+            method: 'GET',
+            headers: { Authorization: auth },
+            signal: controller.signal,
+        });
+        const latency = Math.round(performance.now() - start);
+        clearTimeout(timeout);
+
+        if (res.ok) {
+            nodeProbeLatencies.set(node.id, { latencyMs: latency, timestamp: Date.now() });
+            return latency;
+        }
+        // Non-OK but reachable — use a penalty but still better than unreachable
+        nodeProbeLatencies.set(node.id, { latencyMs: latency + 500, timestamp: Date.now() });
+        return latency + 500;
+    } catch {
+        // Probe failed — mark as very high latency
+        nodeProbeLatencies.set(node.id, { latencyMs: Infinity, timestamp: Date.now() });
+        return Infinity;
+    }
+}
+
+/**
+ * Probe all connected nodes in parallel and return sorted results.
+ * @param {object} manager - LavalinkManager
+ * @returns {Promise<Array<{node, latencyMs}>>} nodes sorted by latency (lowest first)
+ */
+async function probeAllNodes(manager) {
+    if (!manager || !manager.nodeManager) return [];
+
+    const nodes = Array.from(manager.nodeManager.nodes.values()).filter(n => n.connected);
+    const results = await Promise.all(
+        nodes.map(async (node) => {
+            const latencyMs = await probeNodeLatency(node);
+            return { node, latencyMs };
+        })
+    );
+
+    return results
+        .filter(r => r.latencyMs < Infinity)
+        .sort((a, b) => a.latencyMs - b.latencyMs);
+}
+
+/**
+ * Compute a composite health score for a Lavalink node (lower = better).
+ *
+ * Factors (weighted):
+ *   - Latency:      heartBeatPing or HTTP probe latency (weight: 1.0)
+ *   - Frame health:  nulled + deficit frame ratio penalty (weight: 300)
+ *   - CPU load:      system + lavalink CPU load (weight: 50)
+ *   - Player load:   number of playing players (weight: 3 per player)
+ *   - Error penalty:  +2000 if node had a recent error (< 10 min cooldown)
+ *
+ * @param {object} node - LavalinkNode
+ * @returns {number} composite score (lower is better)
+ */
+function computeNodeScore(node) {
+    if (!node || !node.connected) return Infinity;
+
+    const now = Date.now();
+    const COOLDOWN_MS = 10 * 60 * 1000;
+    let score = 0;
+
+    // ── 1. Latency (primary factor) ──
+    // Prefer WebSocket heartbeat ping (most accurate real-time measure)
+    let latency = node.heartBeatPing;
+    if (!latency || latency <= 0 || latency > 30000) {
+        // Fall back to cached HTTP probe latency
+        const probe = nodeProbeLatencies.get(node.id);
+        if (probe && probe.latencyMs < Infinity && (now - probe.timestamp < 5 * 60 * 1000)) {
+            latency = probe.latencyMs;
+        } else {
+            latency = 500; // Unknown — assume moderate latency
+        }
+    }
+    score += latency; // 1:1 weight — ms directly as points
+
+    // ── 2. Frame health ──
+    const frames = node.stats?.frameStats;
+    if (frames && frames.sent > 0) {
+        const nulledRatio = (frames.nulled || 0) / frames.sent;
+        const deficitRatio = (frames.deficit || 0) / frames.sent;
+        score += (nulledRatio + deficitRatio) * 300; // Heavy penalty for frame drops
+    }
+
+    // ── 3. CPU load ──
+    const cpu = node.stats?.cpu;
+    if (cpu) {
+        const systemLoad = cpu.systemLoad || 0;
+        const lavalinkLoad = cpu.lavalinkLoad || 0;
+        score += (systemLoad + lavalinkLoad) * 50; // 0–100 scale → 0–5000 points
+    }
+
+    // ── 4. Player load (prefer less loaded nodes) ──
+    const playingPlayers = node.stats?.playingPlayers || 0;
+    score += playingPlayers * 3;
+
+    // ── 5. Recent error penalty ──
+    const lastErr = nodeErrorTimestamps.get(node.id);
+    if (lastErr && (now - lastErr < COOLDOWN_MS)) {
+        // Decaying penalty: full penalty right after error, reduces over time
+        const elapsed = now - lastErr;
+        const penaltyFactor = 1 - (elapsed / COOLDOWN_MS);
+        score += 2000 * penaltyFactor;
+    }
+
+    return score;
+}
+
+/**
+ * Get connected Lavalink nodes, sorted by composite health score (best first).
+ * Considers latency, frame health, CPU load, player count, and recent errors.
+ *
+ * @param {object} manager - LavalinkManager
+ * @param {string|null} excludeNodeId - Optional node ID to exclude
+ * @returns {Array} Connected nodes sorted best-first
  */
 function getHealthyNodes(manager, excludeNodeId = null) {
     if (!manager || !manager.nodeManager) return [];
-
-    const now = Date.now();
-    const COOLDOWN_MS = 10 * 60 * 1000; // 10 minutes cooldown for errored nodes
 
     const connected = Array.from(manager.nodeManager.nodes.values())
         .filter(n => n.connected && n.id !== excludeNodeId);
 
     if (connected.length === 0) return [];
 
-    // Filter nodes with no recent errors
-    const errorFree = connected.filter(n => {
-        const lastErr = nodeErrorTimestamps.get(n.id);
-        return !lastErr || (now - lastErr > COOLDOWN_MS);
-    });
+    // Score and sort all connected nodes
+    const scored = connected.map(node => ({
+        node,
+        score: computeNodeScore(node),
+    }));
 
-    // Prefer error-free nodes if available, otherwise fallback to any connected node
-    return errorFree.length > 0 ? errorFree : connected;
+    scored.sort((a, b) => a.score - b.score);
+
+    // Log selection on first call or when best node changes (avoid spam)
+    if (scored.length > 1) {
+        const best = scored[0];
+        const latency = best.node.heartBeatPing || nodeProbeLatencies.get(best.node.id)?.latencyMs || '?';
+        console.log(`[Reso] 🏓 Best node: "${best.node.id}" (score: ${best.score.toFixed(0)}, latency: ${latency}ms, ${scored.length} nodes available)`);
+    }
+
+    return scored.map(s => s.node);
+}
+
+/**
+ * Get the single best node (convenience wrapper).
+ * @param {object} manager - LavalinkManager
+ * @param {string|null} excludeNodeId - Optional node ID to exclude
+ * @returns {object|null} Best node or null
+ */
+function getBestNode(manager, excludeNodeId = null) {
+    const nodes = getHealthyNodes(manager, excludeNodeId);
+    return nodes[0] || null;
+}
+
+/**
+ * Get a summary of all node health data for display (e.g. /ping command).
+ * @param {object} manager - LavalinkManager
+ * @returns {Array<{id, host, connected, latencyMs, score, players, cpu, frameHealth}>}
+ */
+function getNodeHealthSummary(manager) {
+    if (!manager || !manager.nodeManager) return [];
+
+    const nodes = Array.from(manager.nodeManager.nodes.values());
+    return nodes.map(node => {
+        const score = node.connected ? computeNodeScore(node) : Infinity;
+        const probe = nodeProbeLatencies.get(node.id);
+        const heartbeat = node.heartBeatPing;
+        const latency = (heartbeat && heartbeat > 0 && heartbeat < 30000) ? heartbeat
+            : (probe && probe.latencyMs < Infinity) ? probe.latencyMs
+            : null;
+        const frames = node.stats?.frameStats;
+        const cpu = node.stats?.cpu;
+
+        return {
+            id: node.id,
+            host: `${node.options?.host || '?'}:${node.options?.port || '?'}`,
+            connected: node.connected,
+            latencyMs: latency,
+            score: score === Infinity ? null : Math.round(score),
+            players: node.stats?.playingPlayers || 0,
+            totalPlayers: node.stats?.players || 0,
+            cpuLoad: cpu ? Math.round((cpu.systemLoad || 0) * 100) : null,
+            frameHealth: frames && frames.sent > 0
+                ? Math.round(((frames.sent - (frames.nulled || 0) - (frames.deficit || 0)) / frames.sent) * 100)
+                : null,
+            uptime: node.stats?.uptime || 0,
+            hasRecentError: !!nodeErrorTimestamps.get(node.id) && (Date.now() - nodeErrorTimestamps.get(node.id) < 10 * 60 * 1000),
+        };
+    }).sort((a, b) => {
+        // Connected first, then by score
+        if (a.connected !== b.connected) return a.connected ? -1 : 1;
+        return (a.score || Infinity) - (b.score || Infinity);
+    });
 }
 
 /**
  * Ensure player has a healthy, connected Lavalink node attached.
- * If current node is disconnected or recently errored, assigns an active healthy node.
+ * If current node is disconnected or recently errored, assigns the best-scoring active node.
  */
 function ensurePlayerNode(player, client) {
     if (!player) return null;
@@ -175,20 +368,57 @@ function ensurePlayerNode(player, client) {
     const manager = client?.lavalink || player.lavalinkManager;
     if (!manager || !manager.nodeManager) return player.node || null;
 
-    const healthyNodes = getHealthyNodes(manager);
-    if (healthyNodes.length === 0) return player.node || null;
+    const bestNode = getBestNode(manager);
+    if (!bestNode) return player.node || null;
 
-    // Pick first healthy node
-    const chosenNode = healthyNodes[0];
-    if (player.node?.id !== chosenNode.id) {
-        console.log(`[Reso] ↝ Assigned connected node "${chosenNode.id}" to player (${player.guildId})`);
+    if (player.node?.id !== bestNode.id) {
+        const latency = bestNode.heartBeatPing || nodeProbeLatencies.get(bestNode.id)?.latencyMs || '?';
+        console.log(`[Reso] ↝ Assigned best node "${bestNode.id}" to player (${player.guildId}) — latency: ${latency}ms`);
         if (typeof player.changeNode === 'function') {
-            player.changeNode(chosenNode.id).catch(() => {});
+            player.changeNode(bestNode.id).catch(() => {});
         } else {
-            player.node = chosenNode;
+            player.node = bestNode;
         }
     }
-    return chosenNode;
+    return bestNode;
+}
+
+/**
+ * Start a background interval that probes all node latencies periodically.
+ * Call once during bot startup. Probes every 2 minutes.
+ * @param {object} manager - LavalinkManager
+ * @returns {NodeJS.Timer} interval ID (for cleanup if needed)
+ */
+function startNodeHealthMonitor(manager) {
+    if (!manager || !manager.nodeManager) return null;
+
+    const PROBE_INTERVAL_MS = 2 * 60 * 1000; // Every 2 minutes
+
+    // Initial probe after 10 seconds (let nodes connect first)
+    setTimeout(async () => {
+        try {
+            const results = await probeAllNodes(manager);
+            if (results.length > 0) {
+                console.log(`[Reso] 🏓 Initial node latency probe: ${results.map(r => `${r.node.id}=${r.latencyMs}ms`).join(', ')}`);
+            }
+        } catch { /* safety net */ }
+    }, 10000);
+
+    // Recurring probe
+    const interval = setInterval(async () => {
+        try {
+            const results = await probeAllNodes(manager);
+            if (results.length > 0) {
+                const summary = results.map(r => `${r.node.id}=${r.latencyMs}ms`).join(', ');
+                console.log(`[Reso] 🏓 Node latency probe: ${summary}`);
+            }
+        } catch { /* safety net */ }
+    }, PROBE_INTERVAL_MS);
+
+    // Don't prevent Node.js from exiting
+    if (interval.unref) interval.unref();
+
+    return interval;
 }
 
 module.exports = {
@@ -205,4 +435,9 @@ module.exports = {
     ensurePlayerNode,
     markNodeError,
     getHealthyNodes,
+    getBestNode,
+    getNodeHealthSummary,
+    probeNodeLatency,
+    probeAllNodes,
+    startNodeHealthMonitor,
 };
