@@ -352,18 +352,120 @@ function getNodeHealthSummary(manager) {
     });
 }
 
+// Track when each player's node was last switched to prevent flapping (oscillations)
+const playerLastSwitch = new Map(); // guildId -> timestamp
+
+/**
+ * Check all active players and seamlessly migrate any player whose current node
+ * is laggy, degraded, or significantly worse than the best available healthy node.
+ *
+ * Switching criteria:
+ * 1. Current node is disconnected or missing -> switch immediately
+ * 2. Current node has recent errors -> switch immediately
+ * 3. Best node is SIGNIFICANTLY lower latency (>= 100ms lower) or score (>= 150 points lower),
+ *    OR current node is dropping frames, AND the player hasn't been switched in the last 2 minutes.
+ *
+ * @param {object} manager - LavalinkManager
+ * @returns {Promise<number>} number of players migrated
+ */
+async function optimizeActivePlayers(manager) {
+    if (!manager || !manager.players || manager.players.size === 0) return 0;
+
+    const healthyNodes = getHealthyNodes(manager);
+    if (healthyNodes.length === 0) return 0;
+    const bestNode = healthyNodes[0];
+    const bestScore = computeNodeScore(bestNode);
+    const bestProbe = nodeProbeLatencies.get(bestNode.id);
+    const bestLatency = (bestNode.heartBeatPing && bestNode.heartBeatPing > 0 && bestNode.heartBeatPing < 30000)
+        ? bestNode.heartBeatPing
+        : (bestProbe?.latencyMs < Infinity ? bestProbe.latencyMs : null);
+
+    const now = Date.now();
+    const MIN_SWITCH_INTERVAL_MS = 2 * 60 * 1000; // 2-minute cooldown between switches per player
+    let switchedCount = 0;
+
+    for (const [guildId, player] of manager.players) {
+        // Only optimize players with active or queued tracks
+        if (!player || (!player.playing && !player.paused && !player.queue.current)) continue;
+
+        const currentNode = player.node;
+
+        // Case 1: Player has no node or current node is disconnected -> emergency switch
+        if (!currentNode || !currentNode.connected) {
+            console.log(`[Reso] 🚨 Emergency switch: Player (${guildId}) node is disconnected. Switching to best node "${bestNode.id}"...`);
+            try {
+                await player.changeNode(bestNode.id, false);
+                playerLastSwitch.set(guildId, now);
+                switchedCount++;
+            } catch (err) {
+                console.warn(`[Reso] ⚠ Emergency node switch failed (${guildId}):`, err.message);
+            }
+            continue;
+        }
+
+        // Already on the best node -> nothing to do
+        if (currentNode.id === bestNode.id) continue;
+
+        // Case 2: Current node had a recent playback error -> switch immediately
+        const hasRecentError = !!nodeErrorTimestamps.get(currentNode.id) && (now - nodeErrorTimestamps.get(currentNode.id) < 10 * 60 * 1000);
+        if (hasRecentError) {
+            console.log(`[Reso] ⚠️ Node error cooldown: Player (${guildId}) current node "${currentNode.id}" had recent errors. Migrating to "${bestNode.id}"...`);
+            try {
+                await player.changeNode(bestNode.id, false);
+                playerLastSwitch.set(guildId, now);
+                switchedCount++;
+            } catch (err) {
+                console.warn(`[Reso] ⚠ Error migration failed (${guildId}):`, err.message);
+            }
+            continue;
+        }
+
+        // Case 3: Performance optimization (latency & composite score)
+        // Respect cooldown to prevent rapid bouncing between similarly performing nodes
+        const lastSwitch = playerLastSwitch.get(guildId) || 0;
+        if (now - lastSwitch < MIN_SWITCH_INTERVAL_MS) continue;
+
+        const currentScore = computeNodeScore(currentNode);
+        const currentProbe = nodeProbeLatencies.get(currentNode.id);
+        const currentLatency = (currentNode.heartBeatPing && currentNode.heartBeatPing > 0 && currentNode.heartBeatPing < 30000)
+            ? currentNode.heartBeatPing
+            : (currentProbe?.latencyMs < Infinity ? currentProbe.latencyMs : null);
+
+        // Frame drops check: if current node is dropping frames and best node is not
+        const currentFrames = currentNode.stats?.frameStats;
+        const hasFrameDrops = currentFrames && ((currentFrames.nulled || 0) > 0 || (currentFrames.deficit || 0) > 0);
+
+        // Significant improvement threshold:
+        // Latency difference >= 100ms OR composite score difference >= 150 points OR frame drops on current node
+        const isMuchBetter = (
+            (currentLatency && bestLatency && (currentLatency - bestLatency >= 100)) ||
+            (currentScore - bestScore >= 150) ||
+            hasFrameDrops
+        );
+
+        if (isMuchBetter) {
+            const currentLatencyStr = currentLatency ? `${currentLatency}ms` : 'high';
+            const bestLatencyStr = bestLatency ? `${bestLatency}ms` : 'low';
+            console.log(`[Reso] 🔀 Auto-switching player (${guildId}) to lower-latency node: "${currentNode.id}" (${currentLatencyStr}, score ${currentScore.toFixed(0)}) → "${bestNode.id}" (${bestLatencyStr}, score ${bestScore.toFixed(0)})`);
+            try {
+                await player.changeNode(bestNode.id, false);
+                playerLastSwitch.set(guildId, now);
+                switchedCount++;
+            } catch (err) {
+                console.warn(`[Reso] ⚠ Auto-switch to "${bestNode.id}" failed (${guildId}):`, err.message);
+            }
+        }
+    }
+
+    return switchedCount;
+}
+
 /**
  * Ensure player has a healthy, connected Lavalink node attached.
- * If current node is disconnected or recently errored, assigns the best-scoring active node.
+ * If current node is disconnected or idle on a suboptimal node, migrates to the best active node.
  */
-function ensurePlayerNode(player, client) {
+async function ensurePlayerNode(player, client) {
     if (!player) return null;
-
-    // If player already has a connected node, KEEP IT — switching player.node
-    // while a voice session is active breaks audio playback and causes stuttering!
-    if (player.node && player.node.connected) {
-        return player.node;
-    }
 
     const manager = client?.lavalink || player.lavalinkManager;
     if (!manager || !manager.nodeManager) return player.node || null;
@@ -371,21 +473,34 @@ function ensurePlayerNode(player, client) {
     const bestNode = getBestNode(manager);
     if (!bestNode) return player.node || null;
 
-    if (player.node?.id !== bestNode.id) {
-        const latency = bestNode.heartBeatPing || nodeProbeLatencies.get(bestNode.id)?.latencyMs || '?';
-        console.log(`[Reso] ↝ Assigned best node "${bestNode.id}" to player (${player.guildId}) — latency: ${latency}ms`);
-        if (typeof player.changeNode === 'function') {
-            player.changeNode(bestNode.id).catch(() => {});
-        } else {
-            player.node = bestNode;
+    // If player has no node or current node is disconnected, switch immediately
+    if (!player.node || !player.node.connected) {
+        try {
+            await player.changeNode(bestNode.id, false);
+            console.log(`[Reso] ↝ Switched disconnected player (${player.guildId}) to healthy node "${bestNode.id}"`);
+        } catch (e) {
+            console.warn(`[Reso] Failed to switch disconnected player to "${bestNode.id}":`, e.message);
+        }
+        return player.node;
+    }
+
+    // If player is idle and current node is not the best, migrate before next playback starts
+    if (player.node.id !== bestNode.id && !player.playing && !player.paused) {
+        try {
+            await player.changeNode(bestNode.id, false);
+            console.log(`[Reso] ↝ Switched idle player (${player.guildId}) to lowest-latency node "${bestNode.id}"`);
+        } catch (e) {
+            console.warn(`[Reso] Failed to switch idle player to "${bestNode.id}":`, e.message);
         }
     }
-    return bestNode;
+
+    return player.node;
 }
 
 /**
- * Start a background interval that probes all node latencies periodically.
- * Call once during bot startup. Probes every 60 seconds for fast switching.
+ * Start a background interval that probes all node latencies periodically
+ * and actively switches any players on laggy nodes to the lowest-latency node.
+ *
  * @param {object} manager - LavalinkManager
  * @returns {NodeJS.Timer} interval ID (for cleanup if needed)
  */
@@ -400,17 +515,24 @@ function startNodeHealthMonitor(manager) {
             const results = await probeAllNodes(manager);
             if (results.length > 0) {
                 console.log(`[Reso] 🏓 Initial node latency probe: ${results.map(r => `${r.node.id}=${r.latencyMs}ms`).join(', ')}`);
+                // Auto-switch any active players to the best node right after initial probe
+                await optimizeActivePlayers(manager);
             }
         } catch { /* safety net */ }
     }, 10000);
 
-    // Recurring probe
+    // Recurring probe + dynamic auto-switch
     const interval = setInterval(async () => {
         try {
             const results = await probeAllNodes(manager);
             if (results.length > 0) {
                 const summary = results.map(r => `${r.node.id}=${r.latencyMs}ms`).join(', ');
                 console.log(`[Reso] 🏓 Node latency probe: ${summary}`);
+                // Actively check and switch any players on suboptimal/laggy nodes
+                const switched = await optimizeActivePlayers(manager);
+                if (switched > 0) {
+                    console.log(`[Reso] 🚀 Auto-switched ${switched} player(s) to lower-latency healthy node(s)`);
+                }
             }
         } catch { /* safety net */ }
     }, PROBE_INTERVAL_MS);
@@ -439,5 +561,7 @@ module.exports = {
     getNodeHealthSummary,
     probeNodeLatency,
     probeAllNodes,
+    computeNodeScore,
+    optimizeActivePlayers,
     startNodeHealthMonitor,
 };

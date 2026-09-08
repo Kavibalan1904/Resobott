@@ -102,7 +102,7 @@ module.exports = {
                 await player.connect();
             }
 
-            ensurePlayerNode(player, interaction.client);
+            await ensurePlayerNode(player, interaction.client);
 
             // Search
             const result = await player.search({

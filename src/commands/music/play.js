@@ -168,8 +168,8 @@ module.exports = {
                 await player.connect();
             }
 
-            // Ensure player is connected to a healthy, active Lavalink node
-            ensurePlayerNode(player, interaction.client);
+            // Ensure player is connected to the lowest-latency healthy Lavalink node
+            await ensurePlayerNode(player, interaction.client);
 
             // Search for the track or playlist
             let result = await player.search({

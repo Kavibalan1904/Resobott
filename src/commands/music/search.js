@@ -70,8 +70,8 @@ module.exports = {
                 });
             }
 
-            // Ensure player is connected to a healthy, active Lavalink node
-            ensurePlayerNode(player, interaction.client);
+            // Ensure player is connected to the lowest-latency healthy Lavalink node
+            await ensurePlayerNode(player, interaction.client);
 
             let result = await player.search({
                 query: query,

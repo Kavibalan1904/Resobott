@@ -1,5 +1,5 @@
 const { nowPlayingEmbed, createRecommendationComponents, createPlayerControls, createDisabledControls, createEmbed, errorEmbed, warningEmbed, EMOJIS } = require('../utils/embeds');
-const { truncate, markNodeError, getHealthyNodes } = require('../utils/helpers');
+const { truncate, markNodeError, getHealthyNodes, getBestNode, computeNodeScore } = require('../utils/helpers');
 const { getRecommendations, getAutoplayTrack } = require('../utils/recommendations');
 
 /**
@@ -301,8 +301,24 @@ function setupLavalinkEvents(client) {
     });
 
     // ── Track ends ─────────────────────────────────────────────
-    manager.on('trackEnd', (player, track, payload) => {
-        // Track ended normally, nothing extra needed
+    manager.on('trackEnd', async (player, track, payload) => {
+        // Between tracks is the cleanest time to switch to the lowest-latency node (0 audio interruption)
+        if (player && player.queue.tracks.length > 0 && player.repeatMode !== 'track') {
+            try {
+                const bestNode = getBestNode(manager);
+                if (bestNode && player.node && player.node.id !== bestNode.id && bestNode.connected) {
+                    const currentScore = computeNodeScore(player.node);
+                    const bestScore = computeNodeScore(bestNode);
+                    // Noticeable improvement: at least 60ms / 60 points better
+                    if (currentScore - bestScore >= 60) {
+                        console.log(`[Reso] 🔀 Between-track switch (${player.guildId}): moving to lower-latency node "${player.node.id}" → "${bestNode.id}" (score: ${bestScore.toFixed(0)} vs ${currentScore.toFixed(0)})`);
+                        await player.changeNode(bestNode.id, false);
+                    }
+                }
+            } catch {
+                // If migration fails, player seamlessly continues on its current node
+            }
+        }
     });
 
     // ── Queue finished (all tracks done) ───────────────────────
@@ -442,7 +458,7 @@ async function migratePlayersFromDeadNode(manager, deadNode) {
         for (const [, player] of manager.players) {
             if (player.node?.id === deadNode.id) {
                 try {
-                    await player.changeNode(healthyNode.id);
+                    await player.changeNode(healthyNode.id, false);
                     console.log(`[Reso] ↝ Migrated player (guild: ${player.guildId}) seamlessly from "${deadNode.id}" → "${healthyNode.id}"`);
                 } catch (err) {
                     console.warn(`[Reso] Player migration error (guild: ${player.guildId}):`, err.message);
