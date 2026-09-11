@@ -252,7 +252,7 @@ client.lavalink = new LavalinkManager({
     },
     playerOptions: {
         defaultSearchPlatform: 'spsearch', // Spotify search (bypasses YouTube datacenter IP login blocks)
-        clientBasedPositionUpdateInterval: 250, // Smooth 250ms local position tracking (pure math, no network cost)
+        clientBasedPositionUpdateInterval: 500, // Smooth 500ms local position tracking
         volumeDecrementer: 0.75, // 100% client volume → 75% Lavalink volume (headroom, prevents clipping)
         onDisconnect: {
             autoReconnect: true,

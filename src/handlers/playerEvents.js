@@ -280,9 +280,13 @@ function setupLavalinkEvents(client) {
             lastNowPlayingMessage.delete(player.guildId);
         }
 
-        // ── BACKGROUND: Fetch recommendations and edit message to add them ──
+        // ── BACKGROUND: Fetch recommendations after audio buffer fills ──
+        // Wait 4 seconds before fetching so the audio stream begins smoothly with zero CPU contention
         (async () => {
             try {
+                await new Promise(resolve => setTimeout(resolve, 4000));
+                if (!player.playing || !sentMsg) return;
+
                 const sessionHistory = client.trackHistory?.get(player.guildId) || [];
                 const recommendations = await getRecommendations(player, track, 5, sessionHistory);
                 if (client.recommendations) {
@@ -301,52 +305,22 @@ function setupLavalinkEvents(client) {
                 console.log('[Reso] Failed to fetch recommendations for nowPlaying:', e.message);
             }
         })();
-
-        // ── BACKGROUND: Preemptively resolve the next track in queue ──
-        // If the next track is unresolved (e.g. Spotify/LavaSrc), resolve it now
-        // so it's ready to play instantly when the current track ends (gapless transition).
-        (async () => {
-            try {
-                const nextTrack = player.queue.tracks[0];
-                if (nextTrack && !nextTrack.info?.uri && nextTrack.encoded) {
-                    // Track is encoded but unresolved — trigger resolution
-                    const searchNode = player.node;
-                    if (searchNode && searchNode.connected) {
-                        const searchQuery = `${nextTrack.info?.title || ''} ${nextTrack.info?.author || ''}`.trim();
-                        if (searchQuery) {
-                            const result = await searchNode.search({
-                                query: searchQuery,
-                                source: 'spsearch',
-                            }, nextTrack.requester);
-                            if (result?.tracks?.[0]) {
-                                // Pre-resolved — lavalink-client will use this on next play
-                                console.log(`[Reso] ⚡ Pre-resolved next track: "${truncate(nextTrack.info?.title, 40)}"`);
-                            }
-                        }
-                    }
-                }
-            } catch { /* pre-resolution is best-effort, never block playback */ }
-        })();
     });
-
 
     // ── Track ends ─────────────────────────────────────────────
     manager.on('trackEnd', async (player, track, payload) => {
-        // Between tracks is the cleanest time to switch to the lowest-latency node (0 audio interruption)
-        if (player && player.queue.tracks.length > 0 && player.repeatMode !== 'track') {
+        // Continuous playback: NEVER switch nodes between tracks if the current node is connected.
+        // Node switching reconnects Discord voice gateway and causes noticeable audio breaks.
+        // Only failover if the current node actually disconnected:
+        if (player && (!player.node || !player.node.connected) && player.queue.tracks.length > 0) {
             try {
                 const bestNode = getBestNode(manager);
-                if (bestNode && player.node && player.node.id !== bestNode.id && bestNode.connected) {
-                    const currentScore = computeNodeScore(player.node);
-                    const bestScore = computeNodeScore(bestNode);
-                    // Noticeable improvement: at least 60ms / 60 points better
-                    if (currentScore - bestScore >= 60) {
-                        console.log(`[Reso] 🔀 Between-track switch (${player.guildId}): moving to lower-latency node "${player.node.id}" → "${bestNode.id}" (score: ${bestScore.toFixed(0)} vs ${currentScore.toFixed(0)})`);
-                        await player.changeNode(bestNode.id, false);
-                    }
+                if (bestNode && bestNode.connected) {
+                    console.log(`[Reso] 🔀 Migrating player (${player.guildId}) from disconnected node to "${bestNode.id}"`);
+                    await player.changeNode(bestNode.id, false);
                 }
-            } catch {
-                // If migration fails, player seamlessly continues on its current node
+            } catch (err) {
+                console.warn(`[Reso] Node failover on trackEnd failed (${player.guildId}):`, err.message);
             }
         }
     });

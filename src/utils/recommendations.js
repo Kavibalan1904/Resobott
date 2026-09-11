@@ -422,14 +422,28 @@ async function getRecommendations(player, currentTrack, limit = 5, sessionHistor
         if (t.info?.title) excludedTitles.add(t.info.title.toLowerCase());
     }
 
-    // ── Step 3: Get search node ──
-    const searchNode = player.node || (player.lavalinkManager?.nodeManager?.nodes?.values()?.next()?.value);
+    // ── Step 3: Get search node (prefer an idle node to protect audio streaming) ──
+    let searchNode = null;
+    const allNodes = player.lavalinkManager?.nodeManager?.nodes;
+    if (allNodes && allNodes.size > 1) {
+        // Find another connected node so the streaming node doesn't spend CPU searching
+        for (const [, n] of allNodes) {
+            if (n.connected && (!player.node || n.id !== player.node.id)) {
+                searchNode = n;
+                break;
+            }
+        }
+    }
+    // Fallback to player's current node if it's the only one
+    if (!searchNode) {
+        searchNode = player.node || (allNodes?.values()?.next()?.value);
+    }
     if (!searchNode || !searchNode.connected) return [];
 
-    // ── Step 4: Build 5-tier queries ──
-    const queries = buildSearchQueries(meta, langGenre);
+    // ── Step 4: Build search queries (capped at top 3 to prevent CPU spikes) ──
+    const queries = buildSearchQueries(meta, langGenre).slice(0, 3);
 
-    // ── Step 5: Fire all searches in parallel ──
+    // ── Step 5: Fire searches in parallel ──
     const searchPromises = queries.map(async (q) => {
         try {
             const result = await searchNode.search({

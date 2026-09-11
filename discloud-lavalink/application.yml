@@ -31,10 +31,10 @@ lavalink:
       rotation: true
       channelMix: true
       lowPass: true
-    bufferDurationMs: 600 # 600ms buffer — fast time-to-first-audio while still covering GC pauses
-    frameBufferDurationMs: 5000
-    opusEncodingQuality: 10
-    resamplingQuality: HIGH
+    bufferDurationMs: 1000 # 1000ms NAS buffer — protects against GC pauses on free-tier hosting
+    frameBufferDurationMs: 8000 # 8s frame buffer — large cushion against network jitter and GC spikes
+    opusEncodingQuality: 8 # Crisp audio with significantly lower CPU load
+    resamplingQuality: MEDIUM # Balanced resampling avoiding CPU spikes
     trackStuckThresholdMs: 5000 # Detect stuck tracks in 5s instead of 10s for faster retry
     useSeekGhosting: true
     youtubePlaylistLoadLimit: 100
