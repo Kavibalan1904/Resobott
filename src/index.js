@@ -6,7 +6,7 @@ if (dns.setDefaultResultOrder) {
     dns.setDefaultResultOrder('ipv4first');
 }
 
-const { Client, GatewayIntentBits, Collection, MessageFlags } = require('discord.js');
+const { Client, GatewayIntentBits, Collection, MessageFlags, Options } = require('discord.js');
 const { LavalinkManager } = require('lavalink-client');
 const { loadCommands, registerSlashCommands } = require('./handlers/commandHandler');
 const { setupLavalinkEvents } = require('./handlers/playerEvents');
@@ -34,6 +34,13 @@ const client = new Client({
     rest: {
         timeout: 15000, // 15 seconds timeout instead of hanging forever
     },
+    // ── Memory optimization: limit caches to only what's needed ──
+    makeCache: Options.cacheWithLimits({
+        MessageManager: 50,      // Cap at 50 messages per channel (default: unlimited)
+        PresenceManager: 0,      // Bot doesn't need presence data
+        ReactionManager: 0,      // Bot doesn't use reactions
+        GuildMemberManager: 200, // Cap member cache per guild
+    }),
     sweepers: {
         messages: {
             interval: 3600, // Sweep messages every hour
@@ -245,10 +252,14 @@ client.lavalink = new LavalinkManager({
     },
     playerOptions: {
         defaultSearchPlatform: 'spsearch', // Spotify search (bypasses YouTube datacenter IP login blocks)
-        clientBasedPositionUpdateInterval: 500, // Update player position smoothly every 500ms instead of aggressive 100ms timer
+        clientBasedPositionUpdateInterval: 250, // Smooth 250ms local position tracking (pure math, no network cost)
+        volumeDecrementer: 0.75, // 100% client volume → 75% Lavalink volume (headroom, prevents clipping)
         onDisconnect: {
             autoReconnect: true,
             destroyPlayer: false,
+        },
+        onEmptyQueue: {
+            destroyAfterMs: 300_000, // Auto-cleanup idle players after 5 minutes (24/7 mode overrides this)
         },
         useUnresolvedData: false, // Ensure tracks resolve directly to pure audio streams rather than dialogue videos
         applyVolumeAsFilter: false, // Direct hardware volume instead of heavy filter chain
@@ -315,8 +326,10 @@ client.on('voiceStateUpdate', (oldState, newState) => {
 client.on('error', (err) => console.error('[Reso Discord Error]:', err));
 client.on('warn', (msg) => console.warn('[Reso Discord Warning]:', msg));
 client.on('debug', (info) => {
-    // Filter out routine heartbeat messages to keep console clean
-    if (info.toLowerCase().includes('heartbeat')) return;
+    // Filter out noisy debug events to reduce console I/O overhead
+    const lower = info.toLowerCase();
+    if (lower.includes('heartbeat') || lower.includes('session') || lower.includes('gateway')
+        || lower.includes('shard') || lower.includes('identify') || lower.includes('connecting to')) return;
     console.log('[Reso Discord Debug]:', info);
 });
 client.rest.on('rateLimited', (info) => {

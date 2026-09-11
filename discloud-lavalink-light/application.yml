@@ -31,14 +31,14 @@ lavalink:
       rotation: true
       channelMix: true
       lowPass: true
-    bufferDurationMs: 1000
+    bufferDurationMs: 600 # 600ms buffer — fast time-to-first-audio while still covering GC pauses
     frameBufferDurationMs: 5000
     opusEncodingQuality: 10
     resamplingQuality: HIGH
-    trackStuckThresholdMs: 10000
+    trackStuckThresholdMs: 5000 # Detect stuck tracks in 5s instead of 10s for faster retry
     useSeekGhosting: true
     youtubePlaylistLoadLimit: 100
-    playerUpdateInterval: 1
+    playerUpdateInterval: 5 # Client tracks position locally; 5s server sync is plenty
     youtubeSearchEnabled: true
     soundcloudSearchEnabled: true
 

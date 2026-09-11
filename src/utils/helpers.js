@@ -290,13 +290,6 @@ function getHealthyNodes(manager, excludeNodeId = null) {
 
     scored.sort((a, b) => a.score - b.score);
 
-    // Log selection on first call or when best node changes (avoid spam)
-    if (scored.length > 1) {
-        const best = scored[0];
-        const latency = best.node.heartBeatPing || nodeProbeLatencies.get(best.node.id)?.latencyMs || '?';
-        console.log(`[Reso] 🏓 Best node: "${best.node.id}" (score: ${best.score.toFixed(0)}, latency: ${latency}ms, ${scored.length} nodes available)`);
-    }
-
     return scored.map(s => s.node);
 }
 

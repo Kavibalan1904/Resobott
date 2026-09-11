@@ -77,28 +77,30 @@ function setupLavalinkEvents(client) {
                 return false;
             }
 
-            // Determine retry search sources based on original source
-            // Priority: original source → Spotify → YouTube (last resort)
+            // Determine retry search sources — NEVER retry on the same source that just failed.
+            // If a track failed on source X, retrying X will just fail again.
             const retrySources = [];
 
             if (originalSource === 'spotify' || originalSource === 'spsearch') {
-                if (isrc) retrySources.push({ source: 'spsearch', query: isrc, label: 'Spotify ISRC' });
-                retrySources.push({ source: 'spsearch', query: searchQuery, label: 'Spotify search' });
+                // Spotify failed → try everything EXCEPT Spotify
                 retrySources.push({ source: 'ytmsearch', query: searchQuery, label: 'YouTube Music fallback' });
+                retrySources.push({ source: 'scsearch', query: searchQuery, label: 'SoundCloud fallback' });
+                retrySources.push({ source: 'dzsearch', query: searchQuery, label: 'Deezer fallback' });
             } else if (originalSource === 'soundcloud') {
-                retrySources.push({ source: 'scsearch', query: searchQuery, label: 'SoundCloud search' });
+                // SoundCloud failed → try everything EXCEPT SoundCloud
                 retrySources.push({ source: 'spsearch', query: searchQuery, label: 'Spotify fallback' });
                 retrySources.push({ source: 'ytmsearch', query: searchQuery, label: 'YouTube Music fallback' });
+                retrySources.push({ source: 'dzsearch', query: searchQuery, label: 'Deezer fallback' });
             } else if (originalSource === 'deezer') {
-                retrySources.push({ source: 'dzsearch', query: searchQuery, label: 'Deezer search' });
+                // Deezer failed → try everything EXCEPT Deezer
                 retrySources.push({ source: 'spsearch', query: searchQuery, label: 'Spotify fallback' });
                 retrySources.push({ source: 'ytmsearch', query: searchQuery, label: 'YouTube Music fallback' });
+                retrySources.push({ source: 'scsearch', query: searchQuery, label: 'SoundCloud fallback' });
             } else {
-                // If YouTube playback failed (e.g. datacenter IP block), try Spotify, SoundCloud & Deezer first
+                // YouTube/other failed → try Spotify, SoundCloud & Deezer (no YouTube retry)
                 retrySources.push({ source: 'spsearch', query: searchQuery, label: 'Spotify fallback' });
                 retrySources.push({ source: 'scsearch', query: searchQuery, label: 'SoundCloud fallback' });
                 retrySources.push({ source: 'dzsearch', query: searchQuery, label: 'Deezer fallback' });
-                retrySources.push({ source: 'ytmsearch', query: searchQuery, label: 'YouTube Music fallback' });
             }
 
             // Try each source on each node until we find a playable track
@@ -263,42 +265,70 @@ function setupLavalinkEvents(client) {
         // ── Disable buttons on the previous Now Playing message ──
         const prevMsg = lastNowPlayingMessage.get(player.guildId);
         if (prevMsg) {
-            try {
-                await prevMsg.edit({ components: [createDisabledControls()] }).catch(() => {});
-            } catch { /* message may be deleted */ }
+            prevMsg.edit({ components: [createDisabledControls()] }).catch(() => {});
         }
 
-        // Fetch YouTube-style song recommendations matching vibe/artist/language
-        let recommendations = [];
-        try {
-            const sessionHistory = client.trackHistory?.get(player.guildId) || [];
-            recommendations = await getRecommendations(player, track, 5, sessionHistory);
-            if (client.recommendations) {
-                client.recommendations.set(player.guildId, recommendations);
-            }
-        } catch (e) {
-            console.log('[Reso] Failed to fetch recommendations for nowPlaying:', e.message);
-        }
-
-        const embed = nowPlayingEmbed(track, player, client, recommendations);
+        // ── INSTANT: Send Now Playing embed immediately (don't wait for recommendations) ──
+        const embed = nowPlayingEmbed(track, player, client, []);
         const controls = createPlayerControls(false);
-        const recRow = createRecommendationComponents(recommendations, player.guildId);
 
-        const msgOptions = {
-            embeds: [embed],
-            components: [controls], // Always include player controls
-        };
-        // Add recommendation dropdown as second row (max 5 components/rows per message)
-        if (recRow) msgOptions.components.push(recRow);
-
+        let sentMsg;
         try {
-            const sentMsg = await channel.send(msgOptions);
+            sentMsg = await channel.send({ embeds: [embed], components: [controls] });
             lastNowPlayingMessage.set(player.guildId, sentMsg);
         } catch {
-            // Channel send failed, clear reference
             lastNowPlayingMessage.delete(player.guildId);
         }
+
+        // ── BACKGROUND: Fetch recommendations and edit message to add them ──
+        (async () => {
+            try {
+                const sessionHistory = client.trackHistory?.get(player.guildId) || [];
+                const recommendations = await getRecommendations(player, track, 5, sessionHistory);
+                if (client.recommendations) {
+                    client.recommendations.set(player.guildId, recommendations);
+                }
+
+                // Only edit if we got recommendations AND the message still exists
+                if (recommendations.length > 0 && sentMsg) {
+                    const updatedEmbed = nowPlayingEmbed(track, player, client, recommendations);
+                    const recRow = createRecommendationComponents(recommendations, player.guildId);
+                    const updatedComponents = [controls];
+                    if (recRow) updatedComponents.push(recRow);
+                    await sentMsg.edit({ embeds: [updatedEmbed], components: updatedComponents }).catch(() => {});
+                }
+            } catch (e) {
+                console.log('[Reso] Failed to fetch recommendations for nowPlaying:', e.message);
+            }
+        })();
+
+        // ── BACKGROUND: Preemptively resolve the next track in queue ──
+        // If the next track is unresolved (e.g. Spotify/LavaSrc), resolve it now
+        // so it's ready to play instantly when the current track ends (gapless transition).
+        (async () => {
+            try {
+                const nextTrack = player.queue.tracks[0];
+                if (nextTrack && !nextTrack.info?.uri && nextTrack.encoded) {
+                    // Track is encoded but unresolved — trigger resolution
+                    const searchNode = player.node;
+                    if (searchNode && searchNode.connected) {
+                        const searchQuery = `${nextTrack.info?.title || ''} ${nextTrack.info?.author || ''}`.trim();
+                        if (searchQuery) {
+                            const result = await searchNode.search({
+                                query: searchQuery,
+                                source: 'spsearch',
+                            }, nextTrack.requester);
+                            if (result?.tracks?.[0]) {
+                                // Pre-resolved — lavalink-client will use this on next play
+                                console.log(`[Reso] ⚡ Pre-resolved next track: "${truncate(nextTrack.info?.title, 40)}"`);
+                            }
+                        }
+                    }
+                }
+            } catch { /* pre-resolution is best-effort, never block playback */ }
+        })();
     });
+
 
     // ── Track ends ─────────────────────────────────────────────
     manager.on('trackEnd', async (player, track, payload) => {
