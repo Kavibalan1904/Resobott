@@ -157,17 +157,15 @@ async function handlePlayerButton(interaction, client) {
                 player.queue.clear();
                 await player.destroy();
 
-                // Update the original message to disable buttons
+                // Delete the Now Playing message to keep channel clean
                 try {
-                    await interaction.update({
-                        components: [], // Remove all buttons
-                    }).catch(() => {});
-                } catch {
-                    await interaction.reply({
-                        embeds: [successEmbed('⏹️ Stopped playback and cleared queue.')],
-                        flags: MessageFlags.Ephemeral,
-                    }).catch(() => {});
-                }
+                    await interaction.message?.delete().catch(() => {});
+                } catch { /* ignore */ }
+
+                await interaction.reply({
+                    embeds: [successEmbed('⏹️ Stopped playback and cleared queue.')],
+                    flags: MessageFlags.Ephemeral,
+                }).catch(() => {});
                 break;
             }
 

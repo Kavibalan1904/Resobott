@@ -66,6 +66,9 @@ client.autoplayGuilds = new Set();
 // ── Vote skip storage (guild ID → { voters: Set, messageId }) ───
 client.voteSkips = new Map();
 
+// ── Now Playing message storage (guild ID → message) ─────────
+client.lastNowPlayingMessage = new Map();
+
 // ── Create Lavalink Manager ────────────────────────────────────
 const defaultNodes = [];
 const addedHosts = new Set();

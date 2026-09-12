@@ -20,9 +20,20 @@ module.exports = {
         const embed = nowPlayingEmbed(track, player, interaction.client);
         const controls = createPlayerControls(player.paused);
 
-        return interaction.reply({
+        // Delete previous Now Playing message so only one active message exists
+        const prevMsg = interaction.client.lastNowPlayingMessage?.get(interaction.guild.id);
+        if (prevMsg) {
+            prevMsg.delete().catch(() => {});
+            interaction.client.lastNowPlayingMessage?.delete(interaction.guild.id);
+        }
+
+        const reply = await interaction.reply({
             embeds: [embed],
             components: [controls],
+            fetchReply: true,
         });
+
+        interaction.client.lastNowPlayingMessage?.set(interaction.guild.id, reply);
+        return reply;
     },
 };

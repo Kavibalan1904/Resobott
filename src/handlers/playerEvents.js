@@ -15,8 +15,8 @@ function setupLavalinkEvents(client) {
     // Key: guildId, Value: Set of track identifiers (uri or title) already retried
     const retriedTracks = new Map();
 
-    // ── Track the last Now Playing message per guild (for disabling buttons) ──
-    const lastNowPlayingMessage = new Map();
+    // ── Track the last Now Playing message per guild (for single active message) ──
+    const lastNowPlayingMessage = client.lastNowPlayingMessage || (client.lastNowPlayingMessage = new Map());
 
     /**
      * Attempt to re-resolve and replay a failed/stuck track once.
@@ -262,10 +262,13 @@ function setupLavalinkEvents(client) {
         const channel = client.channels.cache.get(player.textChannelId);
         if (!channel) return;
 
-        // ── Disable buttons on the previous Now Playing message ──
+        // ── Delete previous Now Playing message so only one active message exists ──
         const prevMsg = lastNowPlayingMessage.get(player.guildId);
         if (prevMsg) {
-            prevMsg.edit({ components: [createDisabledControls()] }).catch(() => {});
+            try {
+                await prevMsg.delete().catch(() => {});
+            } catch { /* ignore */ }
+            lastNowPlayingMessage.delete(player.guildId);
         }
 
         // ── INSTANT: Send Now Playing embed immediately (don't wait for recommendations) ──
@@ -330,11 +333,11 @@ function setupLavalinkEvents(client) {
         // Clean up retry state for this guild
         retriedTracks.delete(player.guildId);
 
-        // ── Disable buttons on last Now Playing message ──
+        // ── Clean up last Now Playing message ──
         const prevMsg = lastNowPlayingMessage.get(player.guildId);
         if (prevMsg) {
             try {
-                await prevMsg.edit({ components: [createDisabledControls()] }).catch(() => {});
+                await prevMsg.delete().catch(() => {});
             } catch { /* ignore */ }
             lastNowPlayingMessage.delete(player.guildId);
         }
@@ -438,7 +441,11 @@ function setupLavalinkEvents(client) {
         // Clean up history and retry state
         client.trackHistory.delete(player.guildId);
         retriedTracks.delete(player.guildId);
-        lastNowPlayingMessage.delete(player.guildId);
+        const prevMsg = lastNowPlayingMessage.get(player.guildId);
+        if (prevMsg) {
+            prevMsg.delete().catch(() => {});
+            lastNowPlayingMessage.delete(player.guildId);
+        }
 
         // Reset bot presence to idle (no elapsed timer)
         client.user.setPresence({
