@@ -67,7 +67,7 @@ module.exports = {
             .setDescription(
                 `Hey there! I'm **Reso**, your high-quality music companion.\n` +
                 `Use \`/help <command>\` for detailed info on a specific command.\n\n` +
-                `**Supported Sources:** YouTube, Spotify, SoundCloud, Apple Music & more`
+                `**Supported Sources:** YouTube, Spotify, SoundCloud, Apple Music & Audio File Uploads`
             )
             .setThumbnail(client.user.displayAvatarURL({ size: 256 }));
 

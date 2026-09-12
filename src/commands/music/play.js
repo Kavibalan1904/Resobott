@@ -1,3 +1,4 @@
+const path = require('path');
 const { SlashCommandBuilder } = require('discord.js');
 const { errorEmbed, successEmbed, createEmbed, EMOJIS, capitalize } = require('../../utils/embeds');
 const { getVoiceChannel, truncate, formatMs, ensurePlayerNode, getHealthyNodes } = require('../../utils/helpers');
@@ -20,6 +21,7 @@ const SOURCE_EMOJIS = {
     soundcloud: '🟠',
     youtube: '🔴',
     apple: '🍎',
+    file: '📁',
 };
 
 /**
@@ -49,12 +51,23 @@ function isSoundCloudUrl(query) {
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('play')
-        .setDescription('Play a song or playlist by name, URL, or link')
+        .setDescription('Play a song or playlist by name, URL, or audio file')
         .addStringOption(option =>
             option.setName('query')
-                .setDescription('Song name, URL, or playlist link (just type a song name!)')
-                .setRequired(true)
+                .setDescription('Song name, URL, or playlist link (or upload an audio file below)')
+                .setRequired(false)
         )
+        .addAttachmentOption(option => {
+            option.setName('file')
+                .setDescription('Upload an audio file to play (mp3, wav, flac, ogg, m4a)')
+                .setRequired(false);
+            const originalToJSON = option.toJSON.bind(option);
+            option.toJSON = () => ({
+                ...originalToJSON(),
+                file_types: ['audio'],
+            });
+            return option;
+        })
         .addStringOption(option =>
             option.setName('source')
                 .setDescription('Where to search (default: Clean Studio Audio)')
@@ -88,31 +101,67 @@ module.exports = {
             }
         }
 
-        const rawQuery = interaction.options.getString('query', true).trim();
+        const rawStringQuery = interaction.options.getString('query')?.trim();
+        const attachment = interaction.options.getAttachment('file');
         const source = interaction.options.getString('source') || 'auto';
         const manager = interaction.client.lavalink;
 
-        // Detect URLs, Spotify URIs, and domain-only links
-        const isUrlPattern = /^(https?:\/\/|spotify:|www\.|open\.spotify\.com|music\.youtube\.com|youtube\.com|youtu\.be|soundcloud\.com)/i;
-        let isUrl = isUrlPattern.test(rawQuery);
-        let query = rawQuery;
-
-        if (isUrl && !/^https?:\/\//i.test(query) && !query.startsWith('spotify:')) {
-            query = `https://${query}`;
+        if (!rawStringQuery && !attachment) {
+            const embed = errorEmbed('Please provide either a song name/link in `query` or upload an audio file in `file`!');
+            return interaction.editReply({ embeds: [embed] });
         }
 
-        // Normalize youtube.com to www.youtube.com for Lavalink plugin compatibility
-        if (isUrl) {
-            query = query.replace(/^https?:\/\/youtube\.com\//i, 'https://www.youtube.com/');
+        let isAttachment = false;
+        let isUrl = false;
+        let query;
+        let rawQuery;
+
+        if (attachment) {
+            isAttachment = true;
+            rawQuery = attachment.name || 'Audio File';
+            query = attachment.url;
+            isUrl = true;
+
+            // Extra client-side validation for audio file types
+            const ext = path.extname(attachment.name || '').toLowerCase();
+            const allowedExts = ['.mp3', '.wav', '.flac', '.ogg', '.opus', '.m4a', '.aac', '.webm', '.mp4'];
+            const isAudio = allowedExts.includes(ext) || (attachment.contentType && attachment.contentType.startsWith('audio/'));
+
+            if (!isAudio) {
+                return interaction.editReply({
+                    embeds: [errorEmbed('Please upload a valid audio file (`.mp3`, `.wav`, `.flac`, `.ogg`, `.m4a`).')]
+                });
+            }
+
+            console.log(`[Reso] 📁 Audio file attachment detected: ${attachment.name}`);
+        } else {
+            rawQuery = rawStringQuery;
+            query = rawStringQuery;
+
+            // Detect URLs, Spotify URIs, and domain-only links
+            const isUrlPattern = /^(https?:\/\/|spotify:|www\.|open\.spotify\.com|music\.youtube\.com|youtube\.com|youtu\.be|soundcloud\.com)/i;
+            isUrl = isUrlPattern.test(rawQuery);
+
+            if (isUrl && !/^https?:\/\//i.test(query) && !query.startsWith('spotify:')) {
+                query = `https://${query}`;
+            }
+
+            // Normalize youtube.com to www.youtube.com for Lavalink plugin compatibility
+            if (isUrl) {
+                query = query.replace(/^https?:\/\/youtube\.com\//i, 'https://www.youtube.com/');
+            }
         }
 
         // ── Determine the search source intelligently ──
-        // For URLs: let Lavalink auto-detect the source plugin (LavaSrc for Spotify, etc.)
+        // For URLs and files: let Lavalink load them directly
         // For text queries: use the user-selected source or default to Spotify
         let searchSource;
         let detectedPlatform = source; // Track what platform we detected for logging
 
-        if (isUrl) {
+        if (isAttachment) {
+            searchSource = undefined;
+            detectedPlatform = 'file';
+        } else if (isUrl) {
             // URLs should be loaded directly — Lavalink/LavaSrc will handle them natively
             searchSource = undefined;
 
@@ -240,6 +289,12 @@ module.exports = {
             }
 
             if (!result.tracks || result.tracks.length === 0) {
+                if (isAttachment) {
+                    return interaction.editReply({
+                        embeds: [errorEmbed(`Could not play **${truncate(rawQuery, 50)}**. Make sure the uploaded file is a valid, uncorrupted audio format.`)]
+                    });
+                }
+
                 const sourceLabel = source === 'auto' ? 'any platform' : capitalize(source);
                 let tipMessage = '\n\nTry a different search term or valid link.';
 
@@ -294,6 +349,16 @@ module.exports = {
             // Single track
             let track = result.tracks[0];
             track.requester = interaction.user;
+
+            if (isAttachment) {
+                if (!track.info.title || track.info.title === 'Unknown title' || track.info.title.startsWith('http')) {
+                    track.info.title = attachment.name.replace(/\.[^/.]+$/, '');
+                }
+                if (!track.info.author || track.info.author === 'Unknown author') {
+                    track.info.author = interaction.member?.displayName || interaction.user.displayName || interaction.user.username;
+                }
+            }
+
             player.queue.add(track);
 
             if (!player.playing) {
@@ -302,11 +367,11 @@ module.exports = {
 
             const info = track.info || {};
             const sourceEmoji = SOURCE_EMOJIS[detectedPlatform] || SOURCE_EMOJIS[source] || '🔍';
-            const matchedSource = info.sourceName ? capitalize(info.sourceName) : 'Unknown';
+            const matchedSource = isAttachment ? 'Audio Upload' : (info.sourceName ? capitalize(info.sourceName) : 'Unknown');
 
             const embed = createEmbed('Success')
                 .setDescription(
-                    `${sourceEmoji} Found on **${matchedSource}**\n\n` +
+                    `${sourceEmoji} ${isAttachment ? 'Loaded from' : 'Found on'} **${matchedSource}**\n\n` +
                     `**[${truncate(info.title || 'Unknown Track', 55)}](${info.uri || ''})**\n` +
                     `${EMOJIS.clock} \`${info.isStream ? 'Live' : formatMs(info.duration)}\` • Requested by ${interaction.user}`
                 )

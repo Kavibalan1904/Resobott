@@ -1,3 +1,4 @@
+const path = require('path');
 const { SlashCommandBuilder } = require('discord.js');
 const { errorEmbed, createEmbed, EMOJIS, capitalize } = require('../../utils/embeds');
 const { getVoiceChannel, truncate, formatMs, ensurePlayerNode, getHealthyNodes } = require('../../utils/helpers');
@@ -22,12 +23,23 @@ function isUrl(query) {
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('playnext')
-        .setDescription('Add a song to play next (inserts at front of queue)')
+        .setDescription('Add a song or audio file to play next (inserts at front of queue)')
         .addStringOption(option =>
             option.setName('query')
-                .setDescription('Song name or URL to play next')
-                .setRequired(true)
+                .setDescription('Song name or URL to play next (or upload an audio file below)')
+                .setRequired(false)
         )
+        .addAttachmentOption(option => {
+            option.setName('file')
+                .setDescription('Upload an audio file to play next (mp3, wav, flac, ogg, m4a)')
+                .setRequired(false);
+            const originalToJSON = option.toJSON.bind(option);
+            option.toJSON = () => ({
+                ...originalToJSON(),
+                file_types: ['audio'],
+            });
+            return option;
+        })
         .addStringOption(option =>
             option.setName('source')
                 .setDescription('Where to search (default: Clean Studio Audio)')
@@ -60,18 +72,50 @@ module.exports = {
             }
         }
 
-        const rawQuery = interaction.options.getString('query', true).trim();
+        const rawStringQuery = interaction.options.getString('query')?.trim();
+        const attachment = interaction.options.getAttachment('file');
         const source = interaction.options.getString('source') || 'auto';
         const manager = interaction.client.lavalink;
 
-        let query = rawQuery;
-        const queryIsUrl = isUrl(rawQuery);
-
-        if (queryIsUrl && !/^https?:\/\//i.test(query) && !query.startsWith('spotify:')) {
-            query = `https://${query}`;
+        if (!rawStringQuery && !attachment) {
+            return interaction.editReply({
+                embeds: [errorEmbed('Please provide either a song name/link in `query` or upload an audio file in `file`!')]
+            });
         }
 
-        const searchSource = queryIsUrl ? undefined : (SOURCE_MAP[source] || 'spsearch');
+        let isAttachment = false;
+        let query;
+        let rawQuery;
+        let searchSource;
+
+        if (attachment) {
+            isAttachment = true;
+            rawQuery = attachment.name || 'Audio File';
+            query = attachment.url;
+            searchSource = undefined;
+
+            const ext = path.extname(attachment.name || '').toLowerCase();
+            const allowedExts = ['.mp3', '.wav', '.flac', '.ogg', '.opus', '.m4a', '.aac', '.webm', '.mp4'];
+            const isAudio = allowedExts.includes(ext) || (attachment.contentType && attachment.contentType.startsWith('audio/'));
+
+            if (!isAudio) {
+                return interaction.editReply({
+                    embeds: [errorEmbed('Please upload a valid audio file (`.mp3`, `.wav`, `.flac`, `.ogg`, `.m4a`).')]
+                });
+            }
+
+            console.log(`[Reso] 📁 PlayNext audio attachment detected: ${attachment.name}`);
+        } else {
+            rawQuery = rawStringQuery;
+            query = rawStringQuery;
+            const queryIsUrl = isUrl(rawQuery);
+
+            if (queryIsUrl && !/^https?:\/\//i.test(query) && !query.startsWith('spotify:')) {
+                query = `https://${query}`;
+            }
+
+            searchSource = queryIsUrl ? undefined : (SOURCE_MAP[source] || 'spsearch');
+        }
 
         try {
             // Pre-flight: ensure at least one Lavalink node is connected
@@ -111,6 +155,11 @@ module.exports = {
             }, interaction.user);
 
             if (!result.tracks || result.tracks.length === 0) {
+                if (isAttachment) {
+                    return interaction.editReply({
+                        embeds: [errorEmbed(`Could not play **${truncate(rawQuery, 50)}**. Make sure the uploaded file is a valid, uncorrupted audio format.`)]
+                    });
+                }
                 return interaction.editReply({
                     embeds: [errorEmbed(`No results found for **${truncate(rawQuery, 50)}**`)]
                 });
@@ -120,6 +169,15 @@ module.exports = {
             const track = result.tracks[0];
             track.requester = interaction.user;
 
+            if (isAttachment) {
+                if (!track.info.title || track.info.title === 'Unknown title' || track.info.title.startsWith('http')) {
+                    track.info.title = attachment.name.replace(/\.[^/.]+$/, '');
+                }
+                if (!track.info.author || track.info.author === 'Unknown author') {
+                    track.info.author = interaction.member?.displayName || interaction.user.displayName || interaction.user.username;
+                }
+            }
+
             // Insert at position 0 (front of queue) — this is the key difference from /play
             player.queue.add(track, 0);
 
@@ -128,11 +186,12 @@ module.exports = {
             }
 
             const info = track.info || {};
+            const sourceDisplay = isAttachment ? 'Audio Upload' : capitalize(info.sourceName || 'Unknown');
             const embed = createEmbed('Success')
                 .setDescription(
                     `${EMOJIS.playnext} **Playing Next:**\n\n` +
                     `**[${truncate(info.title || 'Unknown', 55)}](${info.uri || ''})**\n` +
-                    `> ${info.author || 'Unknown Artist'} • ${capitalize(info.sourceName || 'Unknown')}\n` +
+                    `> ${info.author || 'Unknown Artist'} • ${sourceDisplay}\n` +
                     `> ${EMOJIS.clock} \`${info.isStream ? 'Live' : formatMs(info.duration)}\` • Requested by ${interaction.user}`
                 )
                 .setThumbnail(info.artworkUrl || null);
