@@ -73,21 +73,21 @@ client.lastNowPlayingMessage = new Map();
 const defaultNodes = [];
 const addedHosts = new Set();
 
-// 1. Region-Optimized Node from .env (Highest Priority)
+// 1. PRIMARY / Main Node from .env (ALWAYS preferred — only use backups if this is DOWN)
 if (process.env.LAVALINK_HOST) {
     const host = process.env.LAVALINK_HOST.trim()
         .replace(/^(https?|wss?):\/\//i, '') // Remove http://, https://, ws://, wss://
         .replace(/\/.*$/, ''); // Remove trailing slashes or paths
     const port = parseInt(process.env.LAVALINK_PORT) || 443;
 
-    console.log(`[Reso] Loading primary Lavalink node from .env: ${host}:${port}`);
+    console.log(`[Reso] Loading PRIMARY Lavalink node from .env: ${host}:${port}`);
     defaultNodes.push({
-        id: 'node-env-primary',
+        id: 'primary-main',
         host: host,
         port: port,
         authorization: process.env.LAVALINK_PASSWORD ? process.env.LAVALINK_PASSWORD.trim() : 'youshallnotpass',
         secure: String(process.env.LAVALINK_SECURE).toLowerCase() === 'true' || port === 443,
-        retryAmount: Infinity, // Never give up reconnecting — prevents "No Lavalink Node" after idle
+        retryAmount: Infinity, // Never give up reconnecting — this is our MAIN node
         retryDelay: 10000,     // Retry every 10 seconds
     });
     addedHosts.add(`${host.toLowerCase()}:${port}`);

@@ -124,6 +124,11 @@ function createProgressBar(position, duration, length = 15) {
     return `${formatMs(position)} ${bar} ${formatMs(duration)}`;
 }
 
+// ── PRIMARY NODE ID — this is the "sticky" main node ──
+// Players should ALWAYS use this node when it's connected.
+// Backup nodes are only used when the primary is DOWN.
+const PRIMARY_NODE_ID = 'primary-main';
+
 // Track recent node playback/connection failures (nodeId -> timestamp ms)
 const nodeErrorTimestamps = new Map();
 
@@ -220,6 +225,14 @@ function computeNodeScore(node) {
     const COOLDOWN_MS = 10 * 60 * 1000;
     let score = 0;
 
+    // ── PRIMARY NODE BONUS ──
+    // The primary-main node gets a massive score bonus (-10000) so it ALWAYS
+    // wins the selection unless it's disconnected. This ensures backup nodes
+    // are only used when the primary is genuinely down.
+    if (node.id === PRIMARY_NODE_ID) {
+        score -= 10000;
+    }
+
     // ── 1. Latency (primary factor) ──
     // Prefer WebSocket heartbeat ping (most accurate real-time measure)
     let latency = node.heartBeatPing;
@@ -295,11 +308,24 @@ function getHealthyNodes(manager, excludeNodeId = null) {
 
 /**
  * Get the single best node (convenience wrapper).
+ * ALWAYS returns the primary node if it's connected and not excluded.
+ * Falls back to the best healthy backup node only when primary is down.
  * @param {object} manager - LavalinkManager
  * @param {string|null} excludeNodeId - Optional node ID to exclude
  * @returns {object|null} Best node or null
  */
 function getBestNode(manager, excludeNodeId = null) {
+    if (!manager || !manager.nodeManager) return null;
+
+    // Fast path: if primary node is connected and not excluded, always prefer it
+    if (excludeNodeId !== PRIMARY_NODE_ID) {
+        const primaryNode = manager.nodeManager.nodes.get(PRIMARY_NODE_ID);
+        if (primaryNode && primaryNode.connected) {
+            return primaryNode;
+        }
+    }
+
+    // Primary is down — fall back to scored ranking of backup nodes
     const nodes = getHealthyNodes(manager, excludeNodeId);
     return nodes[0] || null;
 }
@@ -373,6 +399,10 @@ async function optimizeActivePlayers(manager) {
         ? bestNode.heartBeatPing
         : (bestProbe?.latencyMs < Infinity ? bestProbe.latencyMs : null);
 
+    // Check if the primary node is back online
+    const primaryNode = manager.nodeManager.nodes.get(PRIMARY_NODE_ID);
+    const primaryIsOnline = primaryNode && primaryNode.connected;
+
     const now = Date.now();
     const MIN_SWITCH_INTERVAL_MS = 2 * 60 * 1000; // 2-minute cooldown between switches per player
     let switchedCount = 0;
@@ -385,13 +415,29 @@ async function optimizeActivePlayers(manager) {
 
         // Case 1: Player has no node or current node is disconnected -> emergency switch
         if (!currentNode || !currentNode.connected) {
-            console.log(`[Reso] 🚨 Emergency switch: Player (${guildId}) node is disconnected. Switching to best node "${bestNode.id}"...`);
+            const targetNode = primaryIsOnline ? primaryNode : bestNode;
+            console.log(`[Reso] 🚨 Emergency switch: Player (${guildId}) node is disconnected. Switching to ${targetNode.id === PRIMARY_NODE_ID ? 'PRIMARY' : 'best'} node "${targetNode.id}"...`);
             try {
-                await player.changeNode(bestNode.id, false);
+                await player.changeNode(targetNode.id, false);
                 playerLastSwitch.set(guildId, now);
                 switchedCount++;
             } catch (err) {
                 console.warn(`[Reso] ⚠ Emergency node switch failed (${guildId}):`, err.message);
+            }
+            continue;
+        }
+
+        // ── STICKY PRIMARY: If primary is online but player is on a backup, migrate BACK ──
+        // This is the core "change node only if primary is down" logic.
+        // When primary recovers, all players return to it immediately (no cooldown).
+        if (primaryIsOnline && currentNode.id !== PRIMARY_NODE_ID) {
+            console.log(`[Reso] 🏠 Primary node is BACK ONLINE! Migrating player (${guildId}) from backup "${currentNode.id}" → PRIMARY "${PRIMARY_NODE_ID}"...`);
+            try {
+                await player.changeNode(PRIMARY_NODE_ID, false);
+                playerLastSwitch.set(guildId, now);
+                switchedCount++;
+            } catch (err) {
+                console.warn(`[Reso] ⚠ Migration back to primary failed (${guildId}):`, err.message);
             }
             continue;
         }
@@ -402,9 +448,10 @@ async function optimizeActivePlayers(manager) {
         // Case 2: Current node had a recent playback error -> switch immediately
         const hasRecentError = !!nodeErrorTimestamps.get(currentNode.id) && (now - nodeErrorTimestamps.get(currentNode.id) < 10 * 60 * 1000);
         if (hasRecentError) {
-            console.log(`[Reso] ⚠️ Node error cooldown: Player (${guildId}) current node "${currentNode.id}" had recent errors. Migrating to "${bestNode.id}"...`);
+            const targetNode = primaryIsOnline ? primaryNode : bestNode;
+            console.log(`[Reso] ⚠️ Node error cooldown: Player (${guildId}) current node "${currentNode.id}" had recent errors. Migrating to "${targetNode.id}"...`);
             try {
-                await player.changeNode(bestNode.id, false);
+                await player.changeNode(targetNode.id, false);
                 playerLastSwitch.set(guildId, now);
                 switchedCount++;
             } catch (err) {
@@ -414,6 +461,10 @@ async function optimizeActivePlayers(manager) {
         }
 
         // Case 3: Performance optimization (latency & composite score)
+        // Only relevant when player is on primary but a backup is somehow much better —
+        // since we want sticky primary, we SKIP this if player is already on primary.
+        if (currentNode.id === PRIMARY_NODE_ID) continue;
+
         // Respect cooldown to prevent rapid bouncing between similarly performing nodes
         const lastSwitch = playerLastSwitch.get(guildId) || 0;
         if (now - lastSwitch < MIN_SWITCH_INTERVAL_MS) continue;
@@ -463,27 +514,41 @@ async function ensurePlayerNode(player, client) {
     const manager = client?.lavalink || player.lavalinkManager;
     if (!manager || !manager.nodeManager) return player.node || null;
 
-    const bestNode = getBestNode(manager);
-    if (!bestNode) return player.node || null;
+    // Always prefer the primary node if it's connected
+    const primaryNode = manager.nodeManager.nodes.get(PRIMARY_NODE_ID);
+    const primaryIsOnline = primaryNode && primaryNode.connected;
+    const targetNode = primaryIsOnline ? primaryNode : getBestNode(manager);
+    if (!targetNode) return player.node || null;
 
     // If player has no node or current node is disconnected, switch immediately
     if (!player.node || !player.node.connected) {
         try {
-            await player.changeNode(bestNode.id, false);
-            console.log(`[Reso] ↝ Switched disconnected player (${player.guildId}) to healthy node "${bestNode.id}"`);
+            await player.changeNode(targetNode.id, false);
+            console.log(`[Reso] ↝ Switched disconnected player (${player.guildId}) to ${targetNode.id === PRIMARY_NODE_ID ? 'PRIMARY' : 'healthy'} node "${targetNode.id}"`);
         } catch (e) {
-            console.warn(`[Reso] Failed to switch disconnected player to "${bestNode.id}":`, e.message);
+            console.warn(`[Reso] Failed to switch disconnected player to "${targetNode.id}":`, e.message);
+        }
+        return player.node;
+    }
+
+    // If primary is online but player is on a backup, migrate back to primary
+    if (primaryIsOnline && player.node.id !== PRIMARY_NODE_ID) {
+        try {
+            await player.changeNode(PRIMARY_NODE_ID, false);
+            console.log(`[Reso] ↝ Migrated player (${player.guildId}) back to PRIMARY node "${PRIMARY_NODE_ID}"`);
+        } catch (e) {
+            console.warn(`[Reso] Failed to migrate player back to primary:`, e.message);
         }
         return player.node;
     }
 
     // If player is idle and current node is not the best, migrate before next playback starts
-    if (player.node.id !== bestNode.id && !player.playing && !player.paused) {
+    if (player.node.id !== targetNode.id && !player.playing && !player.paused) {
         try {
-            await player.changeNode(bestNode.id, false);
-            console.log(`[Reso] ↝ Switched idle player (${player.guildId}) to lowest-latency node "${bestNode.id}"`);
+            await player.changeNode(targetNode.id, false);
+            console.log(`[Reso] ↝ Switched idle player (${player.guildId}) to ${targetNode.id === PRIMARY_NODE_ID ? 'PRIMARY' : 'best'} node "${targetNode.id}"`);
         } catch (e) {
-            console.warn(`[Reso] Failed to switch idle player to "${bestNode.id}":`, e.message);
+            console.warn(`[Reso] Failed to switch idle player to "${targetNode.id}":`, e.message);
         }
     }
 
