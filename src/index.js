@@ -528,9 +528,37 @@ async function main() {
             }
         });
 
-        // Login
-        console.log('[Reso] Attempting to connect to Discord Gateway...');
-        await client.login(process.env.DISCORD_TOKEN);
+        // Login with retry logic (handles transient Discord Gateway 503 errors)
+        const MAX_LOGIN_RETRIES = 5;
+        let loginAttempt = 0;
+
+        while (loginAttempt < MAX_LOGIN_RETRIES) {
+            try {
+                loginAttempt++;
+                console.log(`[Reso] Attempting to connect to Discord Gateway... (attempt ${loginAttempt}/${MAX_LOGIN_RETRIES})`);
+                await client.login(process.env.DISCORD_TOKEN);
+                break; // Success — exit retry loop
+            } catch (loginError) {
+                const isRetryable = loginError.message?.includes('503')
+                    || loginError.message?.includes('502')
+                    || loginError.message?.includes('ECONNRESET')
+                    || loginError.message?.includes('ETIMEDOUT')
+                    || loginError.message?.includes('Service Unavailable');
+
+                if (isRetryable && loginAttempt < MAX_LOGIN_RETRIES) {
+                    const delaySeconds = 10 * Math.pow(2, loginAttempt - 1); // 10s, 20s, 40s, 80s, 160s
+                    console.warn(`[Reso] ⚠ Discord Gateway error (attempt ${loginAttempt}/${MAX_LOGIN_RETRIES}): ${loginError.message}`);
+                    console.log(`[Reso] ⏳ Retrying in ${delaySeconds}s...`);
+                    await new Promise(r => setTimeout(r, delaySeconds * 1000));
+
+                    // Destroy the previous client state before retrying
+                    try { client.destroy(); } catch {}
+                } else {
+                    // Non-retryable error or exhausted retries
+                    throw loginError;
+                }
+            }
+        }
     } catch (error) {
         console.error('[Reso] Fatal error:', error);
         process.exit(1);
