@@ -224,8 +224,8 @@ module.exports = {
             // Ensure player is connected to the lowest-latency healthy Lavalink node
             await ensurePlayerNode(player, interaction.client);
 
-            // Search with a timeout helper so a slow or blocked source never freezes playback
-            const searchWithTimeout = (promise, ms = 4000) => Promise.race([
+            // Search with a fast timeout helper so slow/blocked sources don't stall Discord
+            const searchWithTimeout = (promise, ms = 2500) => Promise.race([
                 promise,
                 new Promise((_, reject) => setTimeout(() => reject(new Error('Search timed out')), ms))
             ]);
@@ -236,7 +236,7 @@ module.exports = {
                 result = await searchWithTimeout(player.search({
                     query: query,
                     source: searchSource,
-                }, interaction.user), 4500);
+                }, interaction.user), 3000);
             } catch (searchErr) {
                 console.warn(`[Reso] Initial search failed: ${searchErr.message}. Trying fallback sources...`);
                 result = { tracks: [] };

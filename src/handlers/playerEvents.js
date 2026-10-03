@@ -97,7 +97,7 @@ function setupLavalinkEvents(client) {
                         console.log(`[Reso] ↻ Retrying "${title}" via ${retrySource.label} on node "${searchNode.id}" (reason: ${reason})`);
 
                         const searchTimeout = new Promise((_, reject) =>
-                            setTimeout(() => reject(new Error('Search timeout')), 3500)
+                            setTimeout(() => reject(new Error('Search timeout')), 2500)
                         );
                         const result = await Promise.race([
                             searchNode.search({ query: retrySource.query, source: retrySource.source }, track.requester),
