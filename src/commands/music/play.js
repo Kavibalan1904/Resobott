@@ -224,13 +224,19 @@ module.exports = {
             // Ensure player is connected to the lowest-latency healthy Lavalink node
             await ensurePlayerNode(player, interaction.client);
 
+            // Search with a timeout helper so a slow or blocked source never freezes playback
+            const searchWithTimeout = (promise, ms = 4000) => Promise.race([
+                promise,
+                new Promise((_, reject) => setTimeout(() => reject(new Error('Search timed out')), ms))
+            ]);
+
             // Search for the track or playlist
             let result = null;
             try {
-                result = await player.search({
+                result = await searchWithTimeout(player.search({
                     query: query,
                     source: searchSource,
-                }, interaction.user);
+                }, interaction.user), 4500);
             } catch (searchErr) {
                 console.warn(`[Reso] Initial search failed: ${searchErr.message}. Trying fallback sources...`);
                 result = { tracks: [] };
@@ -243,10 +249,10 @@ module.exports = {
             }
 
             // ── Multi-platform search fallback for text queries ──
-            // If the default source (e.g. spsearch) returned nothing, try other platforms.
-            // This handles free public nodes that don't have LavaSrc/Spotify configured.
+            // If the default source returned nothing, try other platforms in order of reliability.
+            // SoundCloud (scsearch) is tried before YouTube to guarantee immediate, unblocked playback.
             if ((!result.tracks || result.tracks.length === 0) && !isUrl && (source === 'auto' || source === 'spotify')) {
-                const fallbackSources = ['spsearch', 'ytmsearch', 'scsearch', 'ytsearch'];
+                const fallbackSources = ['spsearch', 'scsearch', 'ytmsearch', 'ytsearch'];
                 // Remove the source we already tried
                 const alreadyTried = searchSource;
                 const toTry = fallbackSources.filter(s => s !== alreadyTried);
@@ -254,11 +260,11 @@ module.exports = {
                 for (const fbSource of toTry) {
                     try {
                         console.log(`[Reso] ↻ Fallback text search with "${fbSource}" for: ${truncate(query, 60)}`);
-                        const fbResult = await player.search({
+                        const fbResult = await searchWithTimeout(player.search({
                             query: query,
                             source: fbSource,
-                        }, interaction.user);
-                        if (fbResult.tracks && fbResult.tracks.length > 0) {
+                        }, interaction.user), 4000);
+                        if (fbResult && fbResult.tracks && fbResult.tracks.length > 0) {
                             result = fbResult;
                             const resolvedSource = result.tracks[0]?.info?.sourceName || fbSource;
                             console.log(`[Reso] ✓ Fallback resolved from: ${resolvedSource} (${result.tracks.length} track(s))`);
