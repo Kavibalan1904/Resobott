@@ -6,18 +6,18 @@ const { getVoiceChannel, checkVoicePermissions, truncate, formatMs, ensurePlayer
 // Map user-friendly source names to Lavalink search platforms
 // ytmsearch = YouTube Music (pure studio audio tracks with 0 movie dialogues/video skits)
 const SOURCE_MAP = {
-    auto: 'ytmsearch',
+    auto: 'spsearch',
+    spotify: 'spsearch',
     youtubemusic: 'ytmsearch',
     youtube: 'ytsearch',
-    spotify: 'spsearch',
     soundcloud: 'scsearch',
     apple: 'amsearch',
 };
 
 const SOURCE_EMOJIS = {
-    auto: '🎵',
-    youtubemusic: '🎵',
+    auto: '🟢',
     spotify: '🟢',
+    youtubemusic: '🎵',
     soundcloud: '🟠',
     youtube: '🔴',
     apple: '🍎',
@@ -249,9 +249,9 @@ module.exports = {
             }
 
             // ── Multi-platform search fallback for text queries ──
-            // Order: YouTube -> Spotify if YouTube doesn't work -> SoundCloud last
+            // Order: Spotify -> YouTube if Spotify fails -> SoundCloud last
             if ((!result.tracks || result.tracks.length === 0) && !isUrl) {
-                const fallbackSources = ['ytmsearch', 'ytsearch', 'spsearch', 'scsearch'];
+                const fallbackSources = ['spsearch', 'ytmsearch', 'ytsearch', 'scsearch'];
                 // Remove the source we already tried
                 const alreadyTried = searchSource;
                 const toTry = fallbackSources.filter(s => s !== alreadyTried);

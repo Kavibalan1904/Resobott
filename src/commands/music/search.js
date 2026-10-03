@@ -3,10 +3,10 @@ const { errorEmbed, createEmbed, EMOJIS, capitalize } = require('../../utils/emb
 const { getVoiceChannel, checkVoicePermissions, truncate, formatMs, ensurePlayerNode } = require('../../utils/helpers');
 
 const SOURCE_MAP = {
-    auto: 'ytmsearch',
+    auto: 'spsearch',
+    spotify: 'spsearch',
     youtubemusic: 'ytmsearch',
     youtube: 'ytsearch',
-    spotify: 'spsearch',
     soundcloud: 'scsearch',
     apple: 'amsearch',
 };
@@ -93,9 +93,9 @@ module.exports = {
             }
 
             // ── Multi-platform search fallback ──
-            // Order: YouTube -> Spotify if YouTube doesn't work -> SoundCloud last
+            // Order: Spotify -> YouTube if Spotify fails -> SoundCloud last
             if (!result || !result.tracks || result.tracks.length === 0) {
-                const fallbackSources = ['ytmsearch', 'ytsearch', 'spsearch', 'scsearch'];
+                const fallbackSources = ['spsearch', 'ytmsearch', 'ytsearch', 'scsearch'];
                 const toTry = fallbackSources.filter(s => s !== searchPlatform);
                 for (const fbSource of toTry) {
                     try {
