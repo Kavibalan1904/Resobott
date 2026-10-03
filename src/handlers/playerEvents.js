@@ -236,6 +236,12 @@ function setupLavalinkEvents(client) {
 
     // ── Track ends ─────────────────────────────────────────────
     manager.on('trackEnd', async (player, track, payload) => {
+        const endReason = payload?.reason || 'unknown';
+        // Log non-normal endings to help diagnose skipping issues
+        if (endReason !== 'finished' && endReason !== 'replaced') {
+            console.warn(`[Reso] ⚠ Track ended abnormally: "${truncate(track?.info?.title, 40)}" — reason: ${endReason}`);
+        }
+
         // Continuous playback: NEVER switch nodes between tracks if the current node is connected.
         // Node switching reconnects Discord voice gateway and causes noticeable audio breaks.
         // Only failover if the current node actually disconnected:
@@ -337,21 +343,23 @@ function setupLavalinkEvents(client) {
     });
 
     // ── Track stuck ────────────────────────────────────────────
+    // NOTE: Do NOT call player.skip() here! autoSkip:true (index.js) already
+    // advances the queue after Lavalink sends TrackEndEvent(reason=stuck).
+    // Calling skip() manually would DOUBLE-SKIP and eat the next queued track.
     manager.on('trackStuck', async (player, track, payload) => {
-        console.error(`[Reso] Track stuck:`, track?.info?.title);
+        const thresholdMs = payload?.thresholdMs || '?';
+        console.error(`[Reso] Track stuck (threshold: ${thresholdMs}ms):`, track?.info?.title);
 
         // Attempt retry before giving up
         const retried = await retryTrack(player, track, 'got stuck');
-        if (retried) return; // Retry initiated, don't skip
+        if (retried) return; // Retry initiated successfully
 
-        // Retry failed or already retried — skip with error message
+        // Retry failed or already retried — notify user (autoSkip handles queue advancement)
         const channel = client.channels.cache.get(player.textChannelId);
         if (!channel) return;
 
         const embed = errorEmbed(`Track **${truncate(track?.info?.title, 50)}** got stuck. Skipping...`);
         channel.send({ embeds: [embed] }).catch(() => { });
-
-        player.skip().catch(() => { });
     });
 
     // ── Player created ─────────────────────────────────────────
