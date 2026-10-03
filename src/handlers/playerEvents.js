@@ -106,7 +106,7 @@ function setupLavalinkEvents(client) {
                         ]);
 
                         if (!result || !result.tracks || result.tracks.length === 0) {
-                            console.log(`[Reso] ✗ ${retrySource.label} found no results on node "${searchNode.id}" for "${title}"`);
+                            console.log(`[Reso] ✗ ${retrySource.label} found no results on node "${searchNode.id}" for "${rawTitle}"`);
                             continue; // Try next node for this source
                         }
 
@@ -134,7 +134,7 @@ function setupLavalinkEvents(client) {
                         const channel = client.channels.cache.get(player.textChannelId);
                         if (channel) {
                             const embed = warningEmbed(
-                                `Track **${truncate(title, 50)}** ${reason}. Retrying with **${resolvedSource}**...`
+                                `Track **${truncate(rawTitle, 50)}** ${reason}. Retrying with **${resolvedSource}**...`
                             );
                             channel.send({ embeds: [embed] }).catch(() => { });
                         }
@@ -148,7 +148,7 @@ function setupLavalinkEvents(client) {
             }
 
             // All retry sources and nodes exhausted
-            console.log(`[Reso] ✗ All retry sources exhausted for "${title}"`);
+            console.log(`[Reso] ✗ All retry sources exhausted for "${rawTitle}"`);
             return false;
         } catch (err) {
             console.error(`[Reso] ✗ Retry failed for "${track?.info?.title}":`, err.message);
