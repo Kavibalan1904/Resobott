@@ -22,11 +22,11 @@ module.exports = {
         )
         .addStringOption(option =>
             option.setName('source')
-                .setDescription('Where to search (default: Clean Studio Audio)')
+                .setDescription('Where to search (default: Spotify)')
                 .setRequired(false)
                 .addChoices(
-                    { name: '🎵 YouTube Music (Default - Clean Studio Audio)', value: 'auto' },
-                    { name: '🟢 Spotify (Official Tracks)', value: 'spotify' },
+                    { name: '🟢 Spotify (Default - Official Tracks)', value: 'auto' },
+                    { name: '🎵 YouTube Music (Clean Studio Audio)', value: 'youtubemusic' },
                     { name: '🟠 SoundCloud (Fast & Direct)', value: 'soundcloud' },
                     { name: '🔴 YouTube Video (Music Videos)', value: 'youtube' },
                     { name: '🍎 Apple Music', value: 'apple' },

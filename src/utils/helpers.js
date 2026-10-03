@@ -654,6 +654,66 @@ function startNodeHealthMonitor(manager) {
     return interval;
 }
 
+/**
+ * Extract an 11-character YouTube video ID from various YouTube URL formats
+ */
+function extractYouTubeVideoId(url) {
+    if (!url || typeof url !== 'string') return null;
+    const match = url.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+?&v=|shorts\/))([\w-]{11})/i);
+    return match ? match[1] : null;
+}
+
+/**
+ * Detect if a query is a YouTube/YouTube Music URL
+ */
+function isYouTubeUrl(query) {
+    if (!query || typeof query !== 'string') return false;
+    return /^(https?:\/\/)?(www\.|music\.)?youtube\.com\//i.test(query)
+        || /^(https?:\/\/)?youtu\.be\//i.test(query);
+}
+
+/**
+ * Detect if a query is a Spotify URL or URI
+ */
+function isSpotifyUrl(query) {
+    if (!query || typeof query !== 'string') return false;
+    return /^(https?:\/\/)?(www\.)?open\.spotify\.com\//i.test(query)
+        || /^spotify:/i.test(query);
+}
+
+/**
+ * Detect if a query is a SoundCloud URL
+ */
+function isSoundCloudUrl(query) {
+    if (!query || typeof query !== 'string') return false;
+    return /^(https?:\/\/)?(www\.)?soundcloud\.com\//i.test(query);
+}
+
+/**
+ * Detect if a query is any URL or URI
+ */
+function isUrl(query) {
+    if (!query || typeof query !== 'string') return false;
+    const pattern = /^(https?:\/\/|spotify:|www\.|open\.spotify\.com|music\.youtube\.com|youtube\.com|youtu\.be|soundcloud\.com)/i;
+    return pattern.test(query.trim());
+}
+
+/**
+ * Clean a raw YouTube or media title by removing noisy metadata, pipes, and movie credits
+ */
+function cleanVideoTitle(rawTitle) {
+    if (!rawTitle || typeof rawTitle !== 'string') return '';
+    let title = rawTitle;
+    // Strip common YouTube tag suffixes: | Official Video, - Full Song, (4K Remaster), etc.
+    title = title.replace(/\s*[\|\-–—]\s*(Official\s+)?(Video|Audio|Music\s+Video|Lyric\s+Video|Full\s+Song|Full\s+Video|4K|HD|Remastered|Visualizer).*/i, '');
+    // If multiple pipe delimiters (e.g. "Charlie| Puthumazhayai| Dulquer Salmaan..."), extract primary movie + song name
+    const segments = title.split(/\s*\|\s*/).map(s => s.trim()).filter(Boolean);
+    if (segments.length >= 2) {
+        return segments.slice(0, 2).join(' ');
+    }
+    return title.trim();
+}
+
 module.exports = {
     parseTime,
     formatTime,
@@ -676,4 +736,10 @@ module.exports = {
     computeNodeScore,
     optimizeActivePlayers,
     startNodeHealthMonitor,
+    extractYouTubeVideoId,
+    isYouTubeUrl,
+    isSpotifyUrl,
+    isSoundCloudUrl,
+    isUrl,
+    cleanVideoTitle,
 };

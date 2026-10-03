@@ -1,10 +1,22 @@
 const path = require('path');
 const { SlashCommandBuilder } = require('discord.js');
 const { errorEmbed, successEmbed, createEmbed, EMOJIS, capitalize } = require('../../utils/embeds');
-const { getVoiceChannel, checkVoicePermissions, truncate, formatMs, ensurePlayerNode, getHealthyNodes } = require('../../utils/helpers');
+const {
+    getVoiceChannel,
+    checkVoicePermissions,
+    truncate,
+    formatMs,
+    ensurePlayerNode,
+    getHealthyNodes,
+    extractYouTubeVideoId,
+    isYouTubeUrl,
+    isSpotifyUrl,
+    isSoundCloudUrl,
+    isUrl,
+    cleanVideoTitle,
+} = require('../../utils/helpers');
 
 // Map user-friendly source names to Lavalink search platforms
-// ytmsearch = YouTube Music (pure studio audio tracks with 0 movie dialogues/video skits)
 const SOURCE_MAP = {
     auto: 'spsearch',
     spotify: 'spsearch',
@@ -23,30 +35,6 @@ const SOURCE_EMOJIS = {
     apple: '🍎',
     file: '📁',
 };
-
-/**
- * Detect if a query is a Spotify URL or URI
- * Matches: open.spotify.com/..., spotify:track:..., spotify:album:..., etc.
- */
-function isSpotifyUrl(query) {
-    return /^(https?:\/\/)?(www\.)?open\.spotify\.com\//i.test(query)
-        || /^spotify:/i.test(query);
-}
-
-/**
- * Detect if a query is a YouTube/YouTube Music URL
- */
-function isYouTubeUrl(query) {
-    return /^(https?:\/\/)?(www\.|music\.)?youtube\.com\//i.test(query)
-        || /^(https?:\/\/)?youtu\.be\//i.test(query);
-}
-
-/**
- * Detect if a query is a SoundCloud URL
- */
-function isSoundCloudUrl(query) {
-    return /^(https?:\/\/)?(www\.)?soundcloud\.com\//i.test(query);
-}
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -70,11 +58,11 @@ module.exports = {
         })
         .addStringOption(option =>
             option.setName('source')
-                .setDescription('Where to search (default: Clean Studio Audio)')
+                .setDescription('Where to search (default: Spotify / YouTube for links)')
                 .setRequired(false)
                 .addChoices(
-                    { name: '🎵 YouTube Music (Default - Clean Studio Audio)', value: 'auto' },
-                    { name: '🟢 Spotify (Official Tracks)', value: 'spotify' },
+                    { name: '🟢 Spotify (Default - Official Tracks)', value: 'auto' },
+                    { name: '🎵 YouTube Music (Clean Studio Audio)', value: 'youtubemusic' },
                     { name: '🟠 SoundCloud (Fast & Direct)', value: 'soundcloud' },
                     { name: '🔴 YouTube Video (Music Videos)', value: 'youtube' },
                     { name: '🍎 Apple Music', value: 'apple' },
@@ -141,10 +129,7 @@ module.exports = {
         } else {
             rawQuery = rawStringQuery;
             query = rawStringQuery;
-
-            // Detect URLs, Spotify URIs, and domain-only links
-            const isUrlPattern = /^(https?:\/\/|spotify:|www\.|open\.spotify\.com|music\.youtube\.com|youtube\.com|youtu\.be|soundcloud\.com)/i;
-            isUrl = isUrlPattern.test(rawQuery);
+            isUrl = isUrl(rawQuery);
 
             if (isUrl && !/^https?:\/\//i.test(query) && !query.startsWith('spotify:')) {
                 query = `https://${query}`;
@@ -157,25 +142,21 @@ module.exports = {
         }
 
         // ── Determine the search source intelligently ──
-        // For URLs and files: let Lavalink load them directly
-        // For text queries: use the user-selected source or default to Spotify
         let searchSource;
-        let detectedPlatform = source; // Track what platform we detected for logging
+        let detectedPlatform = source;
+        const ytVideoId = (isUrl && isYouTubeUrl(query)) ? extractYouTubeVideoId(query) : null;
 
         if (isAttachment) {
             searchSource = undefined;
             detectedPlatform = 'file';
         } else if (isUrl) {
-            // URLs should be loaded directly — Lavalink/LavaSrc will handle them natively
             searchSource = undefined;
-
-            // Detect which platform the URL is from for logging
             if (isSpotifyUrl(query)) {
                 detectedPlatform = 'spotify';
                 console.log(`[Reso] 🟢 Spotify URL detected: ${truncate(query, 80)}`);
             } else if (isYouTubeUrl(query)) {
                 detectedPlatform = 'youtube';
-                console.log(`[Reso] 🔴 YouTube URL detected: ${truncate(query, 80)}`);
+                console.log(`[Reso] 🔴 YouTube URL detected (Video ID: ${ytVideoId || 'playlist'}): ${truncate(query, 80)}`);
             } else if (isSoundCloudUrl(query)) {
                 detectedPlatform = 'soundcloud';
                 console.log(`[Reso] 🟠 SoundCloud URL detected: ${truncate(query, 80)}`);
@@ -183,7 +164,7 @@ module.exports = {
                 console.log(`[Reso] 🔗 URL detected: ${truncate(query, 80)}`);
             }
         } else {
-            // Text query — use selected source or default (spsearch)
+            // Text query — default to Spotify (spsearch) or user's chosen source
             searchSource = SOURCE_MAP[source] || 'spsearch';
             console.log(`[Reso] 🔍 Text search on ${source} (${searchSource}): ${truncate(query, 80)}`);
         }
@@ -224,80 +205,99 @@ module.exports = {
             // Ensure player is connected to the lowest-latency healthy Lavalink node
             await ensurePlayerNode(player, interaction.client);
 
-            // Search with a fast timeout helper so slow/blocked sources don't stall Discord
-            const searchWithTimeout = (promise, ms = 2500) => Promise.race([
+            // Search with a 4s timeout helper so slow sources don't stall Discord
+            const searchWithTimeout = (promise, ms = 4000) => Promise.race([
                 promise,
                 new Promise((_, reject) => setTimeout(() => reject(new Error('Search timed out')), ms))
             ]);
 
-            // Search for the track or playlist
+            // Execute primary search based on query type
             let result = null;
-            try {
-                result = await searchWithTimeout(player.search({
-                    query: query,
-                    source: searchSource,
-                }, interaction.user), 3000);
-            } catch (searchErr) {
-                console.warn(`[Reso] Initial search failed: ${searchErr.message}. Trying fallback sources...`);
-                result = { tracks: [] };
+
+            if (ytVideoId) {
+                // 1. YouTube Video link: query ytsearch:<videoId>
+                // Bypasses YouTube's datacenter IP block on direct watch URLs and resolves in <1 second
+                try {
+                    console.log(`[Reso] 🔴 YouTube video link detected (${ytVideoId}). Querying via ytsearch...`);
+                    const ytRes = await searchWithTimeout(player.search({
+                        query: ytVideoId,
+                        source: 'ytsearch',
+                    }, interaction.user), 4000);
+
+                    if (ytRes && ytRes.tracks && ytRes.tracks.length > 0) {
+                        const exactMatch = ytRes.tracks.find(t => t.info.identifier === ytVideoId);
+                        if (exactMatch) {
+                            result = { ...ytRes, tracks: [exactMatch] };
+                        } else {
+                            result = ytRes;
+                        }
+                    }
+                } catch (err) {
+                    console.warn(`[Reso] Initial ytsearch with videoId failed: ${err.message}. Trying oEmbed fallback...`);
+                }
+            } else if (isUrl) {
+                // 2. Other URLs (Spotify, SoundCloud, etc.) or YouTube Playlist
+                try {
+                    result = await searchWithTimeout(player.search({
+                        query: query,
+                        source: undefined,
+                    }, interaction.user), 4000);
+                } catch (err) {
+                    console.warn(`[Reso] Direct URL search failed: ${err.message}. Trying fallbacks...`);
+                    result = { tracks: [] };
+                }
+            } else if (isAttachment) {
+                // 3. Audio file attachment
+                try {
+                    result = await searchWithTimeout(player.search({
+                        query: query,
+                        source: undefined,
+                    }, interaction.user), 4000);
+                } catch (err) {
+                    console.warn(`[Reso] Attachment search failed: ${err.message}`);
+                    result = { tracks: [] };
+                }
+            } else {
+                // 4. Plain text search: Spotify first
+                try {
+                    result = await searchWithTimeout(player.search({
+                        query: query,
+                        source: searchSource,
+                    }, interaction.user), 4000);
+                } catch (err) {
+                    console.warn(`[Reso] Initial text search failed: ${err.message}. Trying fallback sources...`);
+                    result = { tracks: [] };
+                }
             }
 
-            // Log which source actually resolved the track
+            // Log which source resolved
             if (result && result.tracks && result.tracks.length > 0) {
                 const resolvedSource = result.tracks[0]?.info?.sourceName || 'unknown';
                 console.log(`[Reso] ✓ Resolved from: ${resolvedSource} (${result.tracks.length} track(s))`);
             }
 
-            // ── Multi-platform search fallback for text queries ──
-            // Order: Spotify -> YouTube if Spotify fails -> SoundCloud last
-            if ((!result.tracks || result.tracks.length === 0) && !isUrl) {
-                const fallbackSources = ['spsearch', 'ytmsearch', 'ytsearch', 'scsearch'];
-                // Remove the source we already tried
-                const alreadyTried = searchSource;
-                const toTry = fallbackSources.filter(s => s !== alreadyTried);
-
-                for (const fbSource of toTry) {
-                    try {
-                        console.log(`[Reso] ↻ Fallback text search with "${fbSource}" for: ${truncate(query, 60)}`);
-                        const fbResult = await searchWithTimeout(player.search({
-                            query: query,
-                            source: fbSource,
-                        }, interaction.user), 4000);
-                        if (fbResult && fbResult.tracks && fbResult.tracks.length > 0) {
-                            result = fbResult;
-                            const resolvedSource = result.tracks[0]?.info?.sourceName || fbSource;
-                            console.log(`[Reso] ✓ Fallback resolved from: ${resolvedSource} (${result.tracks.length} track(s))`);
-                            break;
-                        }
-                    } catch (e) {
-                        console.log(`[Reso] ⚠ Fallback source "${fbSource}" errored: ${e.message}`);
-                    }
-                }
-            }
-
-            // ── URL Fallback: If a YouTube URL failed to resolve directly on Lavalink ──
-            // Datacenter IPs (like Render) are blocked from direct YouTube video stream downloads.
-            // When direct loading fails, we resolve the video title via YouTube's public oEmbed API
-            // (which is never blocked) and seamlessly retry via Spotify -> SoundCloud!
-            if ((!result.tracks || result.tracks.length === 0) && isUrl && isYouTubeUrl(query)) {
+            // ── Fallback 1: YouTube URLs (if ytsearch:<videoId> or direct URL failed) ──
+            if ((!result || !result.tracks || result.tracks.length === 0) && isUrl && isYouTubeUrl(query)) {
                 try {
-                    console.log(`[Reso] ↻ YouTube direct stream blocked. Resolving title via oEmbed...`);
+                    console.log(`[Reso] ↻ YouTube URL fallback: Resolving title via YouTube oEmbed...`);
                     const oembedUrl = `https://www.youtube.com/oembed?url=${encodeURIComponent(query)}&format=json`;
-                    const oembedRes = await fetch(oembedUrl);
+                    const oembedRes = await fetch(oembedUrl, { signal: AbortSignal.timeout(3000) });
                     if (oembedRes.ok) {
                         const oembedData = await oembedRes.json();
-                        const videoTitle = oembedData.title;
-                        console.log(`[Reso] ✓ Extracted video title: "${videoTitle}". Retrying via Spotify -> SoundCloud...`);
+                        const rawTitle = oembedData.title;
+                        const cleanTitle = cleanVideoTitle(rawTitle);
+                        console.log(`[Reso] ✓ Extracted YouTube title: "${rawTitle}" (Cleaned: "${cleanTitle}")`);
 
-                        // Try Spotify first ("go for spotify if youtube doesn't work"), then SoundCloud last
-                        const urlFallbacks = ['spsearch', 'scsearch'];
-                        for (const fbSource of urlFallbacks) {
+                        // Order: YouTube first -> Spotify -> SoundCloud last
+                        const ytFallbacks = ['ytsearch', 'ytmsearch', 'spsearch', 'scsearch'];
+                        for (const fbSource of ytFallbacks) {
                             try {
-                                console.log(`[Reso] ↻ Fallback search with "${fbSource}" for: ${truncate(videoTitle, 60)}`);
+                                console.log(`[Reso] ↻ Fallback search with "${fbSource}" for: ${truncate(cleanTitle, 60)}`);
                                 const fbResult = await searchWithTimeout(player.search({
-                                    query: videoTitle,
+                                    query: cleanTitle,
                                     source: fbSource,
-                                }, interaction.user), 4000);
+                                }, interaction.user), 3500);
+
                                 if (fbResult && fbResult.tracks && fbResult.tracks.length > 0) {
                                     result = fbResult;
                                     const resolvedSource = result.tracks[0]?.info?.sourceName || fbSource;
@@ -310,7 +310,67 @@ module.exports = {
                         }
                     }
                 } catch (oembedErr) {
-                    console.warn(`[Reso] oEmbed resolution failed: ${oembedErr.message}`);
+                    console.warn(`[Reso] YouTube oEmbed resolution failed: ${oembedErr.message}`);
+                }
+            }
+
+            // ── Fallback 2: Spotify URLs (if LavaSrc credentials missing on Lavalink) ──
+            if ((!result || !result.tracks || result.tracks.length === 0) && isUrl && isSpotifyUrl(query)) {
+                try {
+                    console.log(`[Reso] ↻ Spotify URL fallback: Resolving title via Spotify oEmbed...`);
+                    const oembedUrl = `https://open.spotify.com/oembed?url=${encodeURIComponent(query)}`;
+                    const oembedRes = await fetch(oembedUrl, { signal: AbortSignal.timeout(3000) });
+                    if (oembedRes.ok) {
+                        const oembedData = await oembedRes.json();
+                        const trackTitle = cleanVideoTitle(oembedData.title);
+                        console.log(`[Reso] ✓ Extracted Spotify title: "${trackTitle}". Searching via YouTube Music -> SoundCloud...`);
+
+                        const spFallbacks = ['ytmsearch', 'ytsearch', 'scsearch'];
+                        for (const fbSource of spFallbacks) {
+                            try {
+                                const fbResult = await searchWithTimeout(player.search({
+                                    query: trackTitle,
+                                    source: fbSource,
+                                }, interaction.user), 3500);
+
+                                if (fbResult && fbResult.tracks && fbResult.tracks.length > 0) {
+                                    result = fbResult;
+                                    const resolvedSource = result.tracks[0]?.info?.sourceName || fbSource;
+                                    console.log(`[Reso] ✓ Spotify fallback resolved from: ${resolvedSource} (${result.tracks.length} track(s))`);
+                                    break;
+                                }
+                            } catch { /* skip */ }
+                        }
+                    }
+                } catch (oembedErr) {
+                    console.warn(`[Reso] Spotify oEmbed resolution failed: ${oembedErr.message}`);
+                }
+            }
+
+            // ── Fallback 3: Text queries ──
+            // Order per user: Spotify first -> YouTube next -> SoundCloud last
+            if ((!result || !result.tracks || result.tracks.length === 0) && !isUrl && !isAttachment) {
+                const fallbackSources = ['spsearch', 'ytmsearch', 'ytsearch', 'scsearch'];
+                const alreadyTried = searchSource;
+                const toTry = fallbackSources.filter(s => s !== alreadyTried);
+
+                for (const fbSource of toTry) {
+                    try {
+                        console.log(`[Reso] ↻ Fallback text search with "${fbSource}" for: ${truncate(query, 60)}`);
+                        const fbResult = await searchWithTimeout(player.search({
+                            query: query,
+                            source: fbSource,
+                        }, interaction.user), 3500);
+
+                        if (fbResult && fbResult.tracks && fbResult.tracks.length > 0) {
+                            result = fbResult;
+                            const resolvedSource = result.tracks[0]?.info?.sourceName || fbSource;
+                            console.log(`[Reso] ✓ Fallback resolved from: ${resolvedSource} (${result.tracks.length} track(s))`);
+                            break;
+                        }
+                    } catch (e) {
+                        console.log(`[Reso] ⚠ Fallback source "${fbSource}" errored: ${e.message}`);
+                    }
                 }
             }
 
