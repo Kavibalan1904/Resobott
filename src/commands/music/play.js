@@ -275,32 +275,43 @@ module.exports = {
                 }
             }
 
-            // Fallback search across other connected nodes if primary node returned empty for a URL
-            if ((!result.tracks || result.tracks.length === 0) && isUrl) {
-                const connectedNodes = Array.from(manager.nodeManager.nodes.values()).filter(n => n.connected && n.id !== player.node?.id);
-                for (const fallbackNode of connectedNodes) {
-                    try {
-                        console.log(`[Reso] ↻ Trying fallback node "${fallbackNode.id}" for URL...`);
-                        const fallbackResult = await fallbackNode.search({
-                            query: query,
-                            source: undefined,
-                        }, interaction.user);
-                        if (fallbackResult.tracks && fallbackResult.tracks.length > 0) {
-                            result = fallbackResult;
-                            const resolvedSource = result.tracks[0]?.info?.sourceName || 'unknown';
-                            console.log(`[Reso] ✓ Fallback resolved from: ${resolvedSource} via node "${fallbackNode.id}"`);
-                            break;
-                        }
-                    } catch (e) {
-                        // ignore node search error
-                    }
-                }
-            }
+            // ── URL Fallback: If a YouTube URL failed to resolve directly on Lavalink ──
+            // Datacenter IPs (like Render) are blocked from direct YouTube video stream downloads.
+            // When direct loading fails, we resolve the video title via YouTube's public oEmbed API
+            // (which is never blocked) and seamlessly retry via Spotify -> SoundCloud!
+            if ((!result.tracks || result.tracks.length === 0) && isUrl && isYouTubeUrl(query)) {
+                try {
+                    console.log(`[Reso] ↻ YouTube direct stream blocked. Resolving title via oEmbed...`);
+                    const oembedUrl = `https://www.youtube.com/oembed?url=${encodeURIComponent(query)}&format=json`;
+                    const oembedRes = await fetch(oembedUrl);
+                    if (oembedRes.ok) {
+                        const oembedData = await oembedRes.json();
+                        const videoTitle = oembedData.title;
+                        console.log(`[Reso] ✓ Extracted video title: "${videoTitle}". Retrying via Spotify -> SoundCloud...`);
 
-            // If Spotify URL failed, try re-searching as text query with spsearch
-            if ((!result.tracks || result.tracks.length === 0) && isUrl && isSpotifyUrl(rawQuery)) {
-                console.log(`[Reso] ⚠ Spotify URL load failed — the Lavalink node may not have LavaSrc/Spotify configured`);
-                // We can't do much here without LavaSrc, but let's log it clearly
+                        // Try Spotify first ("go for spotify if youtube doesn't work"), then SoundCloud last
+                        const urlFallbacks = ['spsearch', 'scsearch'];
+                        for (const fbSource of urlFallbacks) {
+                            try {
+                                console.log(`[Reso] ↻ Fallback search with "${fbSource}" for: ${truncate(videoTitle, 60)}`);
+                                const fbResult = await searchWithTimeout(player.search({
+                                    query: videoTitle,
+                                    source: fbSource,
+                                }, interaction.user), 4000);
+                                if (fbResult && fbResult.tracks && fbResult.tracks.length > 0) {
+                                    result = fbResult;
+                                    const resolvedSource = result.tracks[0]?.info?.sourceName || fbSource;
+                                    console.log(`[Reso] ✓ Fallback resolved from: ${resolvedSource} (${result.tracks.length} track(s))`);
+                                    break;
+                                }
+                            } catch (e) {
+                                console.log(`[Reso] ⚠ Fallback source "${fbSource}" errored: ${e.message}`);
+                            }
+                        }
+                    }
+                } catch (oembedErr) {
+                    console.warn(`[Reso] oEmbed resolution failed: ${oembedErr.message}`);
+                }
             }
 
             if (!result.tracks || result.tracks.length === 0) {
