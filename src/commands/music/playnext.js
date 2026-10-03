@@ -173,17 +173,32 @@ module.exports = {
 
             if (ytVideoId) {
                 try {
-                    const ytRes = await searchWithTimeout(player.search({
-                        query: ytVideoId,
-                        source: 'ytsearch',
-                    }, interaction.user), 4000);
+                    const directRes = await searchWithTimeout(player.search({
+                        query: query,
+                        source: undefined,
+                    }, interaction.user), 3000);
 
-                    if (ytRes?.tracks?.length > 0) {
-                        const exactMatch = ytRes.tracks.find(t => t.info.identifier === ytVideoId);
-                        result = exactMatch ? { ...ytRes, tracks: [exactMatch] } : ytRes;
+                    if (directRes && directRes.tracks && directRes.tracks.length > 0) {
+                        result = directRes;
                     }
-                } catch (err) {
-                    console.warn(`[Reso] PlayNext ytsearch with videoId failed: ${err.message}`);
+                } catch {
+                    /* fallback to ytsearch below */
+                }
+
+                if (!result || !result.tracks || result.tracks.length === 0) {
+                    try {
+                        const ytRes = await searchWithTimeout(player.search({
+                            query: ytVideoId,
+                            source: 'ytsearch',
+                        }, interaction.user), 3500);
+
+                        if (ytRes?.tracks?.length > 0) {
+                            const exactMatch = ytRes.tracks.find(t => t.info.identifier === ytVideoId);
+                            result = exactMatch ? { ...ytRes, tracks: [exactMatch] } : ytRes;
+                        }
+                    } catch (err) {
+                        console.warn(`[Reso] PlayNext ytsearch with videoId failed: ${err.message}`);
+                    }
                 }
             } else {
                 try {

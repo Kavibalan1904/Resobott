@@ -215,25 +215,36 @@ module.exports = {
             let result = null;
 
             if (ytVideoId) {
-                // 1. YouTube Video link: query ytsearch:<videoId>
-                // Bypasses YouTube's datacenter IP block on direct watch URLs and resolves in <1 second
+                // 1. YouTube Video link: try direct URL load (supported with active OAuth), with ytsearch fallback
                 try {
-                    console.log(`[Reso] 🔴 YouTube video link detected (${ytVideoId}). Querying via ytsearch...`);
-                    const ytRes = await searchWithTimeout(player.search({
-                        query: ytVideoId,
-                        source: 'ytsearch',
-                    }, interaction.user), 4000);
+                    console.log(`[Reso] 🔴 YouTube video link detected (${ytVideoId}). Loading via native YouTube stream...`);
+                    const directRes = await searchWithTimeout(player.search({
+                        query: query,
+                        source: undefined,
+                    }, interaction.user), 3000);
 
-                    if (ytRes && ytRes.tracks && ytRes.tracks.length > 0) {
-                        const exactMatch = ytRes.tracks.find(t => t.info.identifier === ytVideoId);
-                        if (exactMatch) {
-                            result = { ...ytRes, tracks: [exactMatch] };
-                        } else {
-                            result = ytRes;
-                        }
+                    if (directRes && directRes.tracks && directRes.tracks.length > 0) {
+                        result = directRes;
                     }
-                } catch (err) {
-                    console.warn(`[Reso] Initial ytsearch with videoId failed: ${err.message}. Trying oEmbed fallback...`);
+                } catch {
+                    /* fallback to ytsearch with video ID below */
+                }
+
+                if (!result || !result.tracks || result.tracks.length === 0) {
+                    try {
+                        console.log(`[Reso] ↻ Direct YouTube load fallback: Querying via ytsearch with ID ${ytVideoId}...`);
+                        const ytRes = await searchWithTimeout(player.search({
+                            query: ytVideoId,
+                            source: 'ytsearch',
+                        }, interaction.user), 3500);
+
+                        if (ytRes && ytRes.tracks && ytRes.tracks.length > 0) {
+                            const exactMatch = ytRes.tracks.find(t => t.info.identifier === ytVideoId);
+                            result = exactMatch ? { ...ytRes, tracks: [exactMatch] } : ytRes;
+                        }
+                    } catch (err) {
+                        console.warn(`[Reso] ytsearch with videoId failed: ${err.message}. Trying oEmbed fallback...`);
+                    }
                 }
             } else if (isUrl) {
                 // 2. Other URLs (Spotify, SoundCloud, etc.) or YouTube Playlist
