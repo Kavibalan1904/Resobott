@@ -613,7 +613,8 @@ async function ensurePlayerNode(player, client) {
 function startNodeHealthMonitor(manager) {
     if (!manager || !manager.nodeManager) return null;
 
-    const PROBE_INTERVAL_MS = 60 * 1000; // Every 60 seconds
+    const PROBE_INTERVAL_MS = 25 * 1000; // Every 25s — keeps Render proxy warm & prevents 1006 idle disconnects
+    let probeCycle = 0;
 
     // Initial probe after 10 seconds (let nodes connect first)
     setTimeout(async () => {
@@ -627,13 +628,17 @@ function startNodeHealthMonitor(manager) {
         } catch { /* safety net */ }
     }, 10000);
 
-    // Recurring probe + dynamic auto-switch
+    // Recurring probe + keepalive ping to prevent proxy/firewall idle closure
     const interval = setInterval(async () => {
         try {
             const results = await probeAllNodes(manager);
+            probeCycle++;
             if (results.length > 0) {
-                const summary = results.map(r => `${r.node.id}=${r.latencyMs}ms`).join(', ');
-                console.log(`[Reso] 🏓 Node latency probe: ${summary}`);
+                // Log latency every 2 minutes (every 5 cycles) to keep console clean
+                if (probeCycle % 5 === 0) {
+                    const summary = results.map(r => `${r.node.id}=${r.latencyMs}ms`).join(', ');
+                    console.log(`[Reso] 🏓 Node latency probe: ${summary}`);
+                }
                 // Actively check and switch any players on suboptimal/laggy nodes
                 const switched = await optimizeActivePlayers(manager);
                 if (switched > 0) {
