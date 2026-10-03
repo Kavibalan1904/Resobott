@@ -15,6 +15,10 @@ function setupLavalinkEvents(client) {
     // Key: guildId, Value: Set of track identifiers (uri or title) already retried
     const retriedTracks = new Map();
 
+    // ── Track guilds with an active retry in progress ──
+    // Used to prevent queueEnd from firing "Queue has ended" while a retry search is still running
+    const activeRetries = new Set();
+
     // ── Track the last Now Playing message per guild (for single active message) ──
     const lastNowPlayingMessage = client.lastNowPlayingMessage || (client.lastNowPlayingMessage = new Map());
 
@@ -47,6 +51,9 @@ function setupLavalinkEvents(client) {
             const first = guildRetries.values().next().value;
             guildRetries.delete(first);
         }
+
+        // Mark retry as active so queueEnd doesn't fire prematurely
+        activeRetries.add(guildId);
 
         try {
             // Build a search query from the clean track title + author
@@ -94,6 +101,9 @@ function setupLavalinkEvents(client) {
         } catch (err) {
             console.error(`[Reso] ✗ Retry error:`, err.message);
             return false;
+        } finally {
+            // Always clear the active retry flag
+            activeRetries.delete(guildId);
         }
     }
 
@@ -260,6 +270,23 @@ function setupLavalinkEvents(client) {
 
     // ── Queue finished (all tracks done) ───────────────────────
     manager.on('queueEnd', async (player) => {
+        // ── Wait for active retry before declaring queue ended ──
+        // When a track gets stuck/errors, retryTrack searches for an alternative.
+        // autoSkip fires queueEnd before the retry completes, causing a false "Queue ended" message.
+        if (activeRetries.has(player.guildId)) {
+            console.log(`[Reso] ⏳ queueEnd: Retry in progress for guild ${player.guildId}, waiting...`);
+            // Wait up to 8 seconds for the retry to finish
+            for (let i = 0; i < 16; i++) {
+                await new Promise(r => setTimeout(r, 500));
+                if (!activeRetries.has(player.guildId)) break;
+            }
+            // If the retry succeeded and player is now playing, suppress the "queue ended" message
+            if (player.playing) {
+                console.log(`[Reso] ✓ queueEnd suppressed — retry succeeded, player is playing`);
+                return;
+            }
+        }
+
         // Clean up retry state for this guild
         retriedTracks.delete(player.guildId);
 
