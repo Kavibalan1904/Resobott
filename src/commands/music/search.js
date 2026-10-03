@@ -3,11 +3,11 @@ const { errorEmbed, createEmbed, EMOJIS, capitalize } = require('../../utils/emb
 const { getVoiceChannel, checkVoicePermissions, truncate, formatMs, ensurePlayerNode } = require('../../utils/helpers');
 
 const SOURCE_MAP = {
-    auto: 'spsearch',
-    spotify: 'spsearch',
-    soundcloud: 'scsearch',
+    auto: 'ytmsearch',
     youtubemusic: 'ytmsearch',
     youtube: 'ytsearch',
+    spotify: 'spsearch',
+    soundcloud: 'scsearch',
     apple: 'amsearch',
 };
 
@@ -77,28 +77,33 @@ module.exports = {
             await ensurePlayerNode(player, interaction.client);
 
             let result = null;
+            const searchWithTimeout = (promise, ms = 4000) => Promise.race([
+                promise,
+                new Promise((_, reject) => setTimeout(() => reject(new Error('Search timed out')), ms))
+            ]);
+
             try {
-                result = await player.search({
+                result = await searchWithTimeout(player.search({
                     query: query,
                     source: searchPlatform,
-                }, interaction.user);
+                }, interaction.user), 4500);
             } catch (searchErr) {
                 console.warn(`[Reso] Search initial query failed: ${searchErr.message}. Trying fallbacks...`);
                 result = { tracks: [] };
             }
 
             // ── Multi-platform search fallback ──
-            // If the default source returned nothing (e.g. node lacks LavaSrc), try others
-            if ((!result || !result.tracks || result.tracks.length === 0) && (source === 'auto' || source === 'spotify')) {
-                const fallbackSources = ['ytsearch', 'ytmsearch', 'scsearch'];
+            // Order: YouTube -> Spotify if YouTube doesn't work -> SoundCloud last
+            if (!result || !result.tracks || result.tracks.length === 0) {
+                const fallbackSources = ['ytmsearch', 'ytsearch', 'spsearch', 'scsearch'];
                 const toTry = fallbackSources.filter(s => s !== searchPlatform);
                 for (const fbSource of toTry) {
                     try {
-                        const fbResult = await player.search({
+                        const fbResult = await searchWithTimeout(player.search({
                             query: query,
                             source: fbSource,
-                        }, interaction.user);
-                        if (fbResult.tracks && fbResult.tracks.length > 0) {
+                        }, interaction.user), 4000);
+                        if (fbResult && fbResult.tracks && fbResult.tracks.length > 0) {
                             result = fbResult;
                             break;
                         }
