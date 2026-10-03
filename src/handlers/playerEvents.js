@@ -66,7 +66,7 @@ function setupLavalinkEvents(client) {
 
             try {
                 const searchPromise = player.search({ query: searchQuery, source: fallbackSource }, track.requester);
-                const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Retry search timeout')), 3000));
+                const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Retry search timeout')), 5000));
                 const result = await Promise.race([searchPromise, timeoutPromise]);
 
                 if (result && result.tracks && result.tracks.length > 0) {
