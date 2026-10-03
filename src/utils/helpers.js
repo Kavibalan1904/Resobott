@@ -553,53 +553,20 @@ async function optimizeActivePlayers(manager) {
  */
 async function ensurePlayerNode(player, client) {
     if (!player) return null;
+    if (player.node && player.node.connected) return player.node;
 
     const manager = client?.lavalink || player.lavalinkManager;
     if (!manager || !manager.nodeManager) return player.node || null;
 
-    // Always prefer the primary node if it's connected
     const primaryNode = manager.nodeManager.nodes.get(PRIMARY_NODE_ID);
-    const primaryIsOnline = primaryNode && primaryNode.connected;
-    const targetNode = primaryIsOnline ? primaryNode : getBestNode(manager);
+    const targetNode = (primaryNode && primaryNode.connected) ? primaryNode : getBestNode(manager);
     if (!targetNode) return player.node || null;
 
-    // If player has no node or current node is disconnected, switch immediately
-    if (!player.node || !player.node.connected) {
-        try {
-            await player.changeNode(targetNode.id, false);
-            console.log(`[Reso] ↝ Switched disconnected player (${player.guildId}) to ${targetNode.id === PRIMARY_NODE_ID ? 'PRIMARY' : 'healthy'} node "${targetNode.id}"`);
-        } catch (e) {
-            console.warn(`[Reso] Failed to switch disconnected player to "${targetNode.id}":`, e.message);
-        }
-        return player.node;
+    try {
+        await player.changeNode(targetNode.id, false);
+    } catch (e) {
+        console.warn(`[Reso] Failed to switch disconnected player to "${targetNode.id}":`, e.message);
     }
-
-    // Do NOT disrupt active playback — only migrate idle players
-    if (player.playing && !player.paused) {
-        return player.node;
-    }
-
-    // If primary is online but player is idle on a backup, migrate back to primary
-    if (primaryIsOnline && player.node.id !== PRIMARY_NODE_ID) {
-        try {
-            await player.changeNode(PRIMARY_NODE_ID, false);
-            console.log(`[Reso] ↝ Migrated idle player (${player.guildId}) back to PRIMARY node "${PRIMARY_NODE_ID}"`);
-        } catch (e) {
-            console.warn(`[Reso] Failed to migrate idle player back to primary:`, e.message);
-        }
-        return player.node;
-    }
-
-    // If player is idle and current node is not the best, migrate before next playback starts
-    if (player.node.id !== targetNode.id) {
-        try {
-            await player.changeNode(targetNode.id, false);
-            console.log(`[Reso] ↝ Switched idle player (${player.guildId}) to ${targetNode.id === PRIMARY_NODE_ID ? 'PRIMARY' : 'best'} node "${targetNode.id}"`);
-        } catch (e) {
-            console.warn(`[Reso] Failed to switch idle player to "${targetNode.id}":`, e.message);
-        }
-    }
-
     return player.node;
 }
 

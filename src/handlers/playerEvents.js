@@ -58,100 +58,41 @@ function setupLavalinkEvents(client) {
             const originalSource = (track?.info?.sourceName || '').toLowerCase();
 
             if (!searchQuery) return false;
+            if (!player.node || !player.node.connected) return false;
 
-            // ── Gather nodes to search on ──
-            // IMPORTANT: Do NOT switch player.node — the voice session lives on the
-            // original node. Switching player.node causes player.play()/skip() to
-            // send commands to a node that has no voice connection, so nothing plays.
-            // Instead, search on alternate nodes directly via node.search().
-            const originalNodeId = player.node?.id;
-            const alternateNodes = getHealthyNodes(manager, originalNodeId);
+            // Single fast fallback source: if YouTube failed, try SoundCloud. Otherwise try YouTube.
+            const fallbackSource = originalSource.includes('youtube') || originalSource.includes('yt') ? 'scsearch' : 'ytsearch';
+            console.log(`[Reso] ↻ Quick retry for "${cleanTitle}" via ${fallbackSource} (reason: ${reason})`);
 
-            // Limit to top 2 healthy search nodes to prevent 20-second stalls
-            const searchNodes = alternateNodes.slice(0, 2);
-            if (player.node?.connected && !searchNodes.some(n => n.id === player.node.id)) {
-                searchNodes.unshift(player.node); // player's current node first
-            }
+            try {
+                const searchPromise = player.search({ query: searchQuery, source: fallbackSource }, track.requester);
+                const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Retry search timeout')), 3000));
+                const result = await Promise.race([searchPromise, timeoutPromise]);
 
-            if (searchNodes.length === 0) {
-                console.log(`[Reso] ✗ No connected nodes available for retry`);
-                return false;
-            }
+                if (result && result.tracks && result.tracks.length > 0) {
+                    const resolvedTrack = result.tracks[0];
+                    resolvedTrack.requester = track.requester;
+                    const resolvedSource = resolvedTrack?.info?.sourceName || fallbackSource;
+                    console.log(`[Reso] ✓ Retry resolved: "${truncate(resolvedTrack.info?.title, 40)}" from ${resolvedSource}`);
 
-            // Prioritize top 2 most reliable fallback sources
-            const retrySources = [];
-            if (originalSource === 'spotify' || originalSource === 'spsearch') {
-                retrySources.push({ source: 'ytmsearch', query: searchQuery, label: 'YouTube Music fallback' });
-                retrySources.push({ source: 'scsearch', query: searchQuery, label: 'SoundCloud fallback' });
-            } else if (originalSource === 'soundcloud') {
-                retrySources.push({ source: 'ytmsearch', query: searchQuery, label: 'YouTube Music fallback' });
-                retrySources.push({ source: 'spsearch', query: searchQuery, label: 'Spotify fallback' });
-            } else {
-                retrySources.push({ source: 'spsearch', query: searchQuery, label: 'Spotify fallback' });
-                retrySources.push({ source: 'scsearch', query: searchQuery, label: 'SoundCloud fallback' });
-            }
+                    await player.play({ clientTrack: resolvedTrack });
 
-            // Try each source on each node with a strict 4.5s timeout
-            for (const retrySource of retrySources) {
-                for (const searchNode of searchNodes) {
-                    try {
-                        console.log(`[Reso] ↻ Retrying "${cleanTitle}" via ${retrySource.label} on node "${searchNode.id}" (reason: ${reason})`);
-
-                        const searchTimeout = new Promise((_, reject) =>
-                            setTimeout(() => reject(new Error('Search timeout')), 4500)
+                    const channel = client.channels.cache.get(player.textChannelId);
+                    if (channel) {
+                        const embed = warningEmbed(
+                            `Track **${truncate(rawTitle, 50)}** ${reason}. Switched to **${resolvedSource}**.`
                         );
-                        const result = await Promise.race([
-                            searchNode.search({ query: retrySource.query, source: retrySource.source }, track.requester),
-                            searchTimeout
-                        ]);
-
-                        if (!result || !result.tracks || result.tracks.length === 0) {
-                            console.log(`[Reso] ✗ ${retrySource.label} found no results on node "${searchNode.id}" for "${rawTitle}"`);
-                            continue; // Try next node for this source
-                        }
-
-                        // Pick the best match — first result
-                        const resolvedTrack = result.tracks[0];
-                        resolvedTrack.requester = track.requester;
-                        const resolvedSource = resolvedTrack?.info?.sourceName || 'unknown';
-
-                        console.log(`[Reso] ✓ Retry resolved from: ${resolvedSource} via ${retrySource.label} (node: ${searchNode.id})`);
-
-                        // If search resolved on a different node than current player, transfer voice
-                        if (searchNode.id !== player.node?.id) {
-                            console.log(`[Reso] ↝ Transferring player voice to node "${searchNode.id}" for playback`);
-                            try {
-                                await player.changeNode(searchNode.id);
-                            } catch (transferErr) {
-                                console.warn(`[Reso] ⚠ Voice transfer to "${searchNode.id}" failed: ${transferErr.message}`);
-                            }
-                        }
-
-                        // Directly play the resolved track
-                        await player.play({ clientTrack: resolvedTrack });
-
-                        // Notify the text channel
-                        const channel = client.channels.cache.get(player.textChannelId);
-                        if (channel) {
-                            const embed = warningEmbed(
-                                `Track **${truncate(rawTitle, 50)}** ${reason}. Retrying with **${resolvedSource}**...`
-                            );
-                            channel.send({ embeds: [embed] }).catch(() => { });
-                        }
-
-                        return true;
-                    } catch (err) {
-                        console.error(`[Reso] ✗ Retry via ${retrySource.label} on node "${searchNode.id}" failed:`, err.message);
-                        continue;
+                        channel.send({ embeds: [embed] }).catch(() => { });
                     }
+                    return true;
                 }
+            } catch (err) {
+                console.warn(`[Reso] ✗ Retry search failed: ${err.message}`);
             }
 
-            // All retry sources and nodes exhausted
-            console.log(`[Reso] ✗ All retry sources exhausted for "${rawTitle}"`);
             return false;
         } catch (err) {
-            console.error(`[Reso] ✗ Retry failed for "${track?.info?.title}":`, err.message);
+            console.error(`[Reso] ✗ Retry error:`, err.message);
             return false;
         }
     }

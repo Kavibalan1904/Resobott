@@ -3,10 +3,10 @@ const { errorEmbed, createEmbed, EMOJIS, capitalize } = require('../../utils/emb
 const { getVoiceChannel, checkVoicePermissions, truncate, formatMs, ensurePlayerNode } = require('../../utils/helpers');
 
 const SOURCE_MAP = {
-    auto: 'spsearch',
-    spotify: 'spsearch',
-    youtubemusic: 'ytmsearch',
+    auto: 'ytsearch',
     youtube: 'ytsearch',
+    youtubemusic: 'ytmsearch',
+    spotify: 'spsearch',
     soundcloud: 'scsearch',
     apple: 'amsearch',
 };
@@ -22,13 +22,13 @@ module.exports = {
         )
         .addStringOption(option =>
             option.setName('source')
-                .setDescription('Where to search (default: Spotify)')
+                .setDescription('Where to search (default: YouTube)')
                 .setRequired(false)
                 .addChoices(
-                    { name: '🟢 Spotify (Default - Official Tracks)', value: 'auto' },
+                    { name: '🔴 YouTube (Default - Fast & High Quality)', value: 'auto' },
                     { name: '🎵 YouTube Music (Clean Studio Audio)', value: 'youtubemusic' },
                     { name: '🟠 SoundCloud (Fast & Direct)', value: 'soundcloud' },
-                    { name: '🔴 YouTube Video (Music Videos)', value: 'youtube' },
+                    { name: '🟢 Spotify', value: 'spotify' },
                     { name: '🍎 Apple Music', value: 'apple' },
                 )
         ),
@@ -58,7 +58,7 @@ module.exports = {
         const query = interaction.options.getString('query', true);
         const source = interaction.options.getString('source') || 'auto';
         const manager = interaction.client.lavalink;
-        const searchPlatform = SOURCE_MAP[source] || 'spsearch';
+        const searchPlatform = SOURCE_MAP[source] || 'ytsearch';
 
         try {
             // Create or get the player for searching
@@ -73,42 +73,21 @@ module.exports = {
                 });
             }
 
-            // Ensure player is connected to the lowest-latency healthy Lavalink node
+            // Ensure player is connected to the Lavalink node
             await ensurePlayerNode(player, interaction.client);
 
             let result = null;
-            const searchWithTimeout = (promise, ms = 4000) => Promise.race([
-                promise,
-                new Promise((_, reject) => setTimeout(() => reject(new Error('Search timed out')), ms))
-            ]);
-
             try {
-                result = await searchWithTimeout(player.search({
-                    query: query,
-                    source: searchPlatform,
-                }, interaction.user), 4500);
+                result = await player.search({ query, source: searchPlatform }, interaction.user);
             } catch (searchErr) {
-                console.warn(`[Reso] Search initial query failed: ${searchErr.message}. Trying fallbacks...`);
-                result = { tracks: [] };
+                console.warn(`[Reso] Search initial query error: ${searchErr.message}`);
             }
 
-            // ── Multi-platform search fallback ──
-            // Order: Spotify -> YouTube if Spotify fails -> SoundCloud last
-            if (!result || !result.tracks || result.tracks.length === 0) {
-                const fallbackSources = ['spsearch', 'ytmsearch', 'ytsearch', 'scsearch'];
-                const toTry = fallbackSources.filter(s => s !== searchPlatform);
-                for (const fbSource of toTry) {
-                    try {
-                        const fbResult = await searchWithTimeout(player.search({
-                            query: query,
-                            source: fbSource,
-                        }, interaction.user), 4000);
-                        if (fbResult && fbResult.tracks && fbResult.tracks.length > 0) {
-                            result = fbResult;
-                            break;
-                        }
-                    } catch { /* skip */ }
-                }
+            // Quick fallback to SoundCloud only if primary search returned empty
+            if ((!result || !result.tracks || result.tracks.length === 0) && searchPlatform !== 'scsearch') {
+                try {
+                    result = await player.search({ query, source: 'scsearch' }, interaction.user);
+                } catch {}
             }
 
             if (!result.tracks || result.tracks.length === 0) {

@@ -17,10 +17,10 @@ const {
 
 // Map user-friendly source names to Lavalink search platforms
 const SOURCE_MAP = {
-    auto: 'spsearch',
-    spotify: 'spsearch',
-    youtubemusic: 'ytmsearch',
+    auto: 'ytsearch',
     youtube: 'ytsearch',
+    youtubemusic: 'ytmsearch',
+    spotify: 'spsearch',
     soundcloud: 'scsearch',
     apple: 'amsearch',
 };
@@ -47,13 +47,13 @@ module.exports = {
         })
         .addStringOption(option =>
             option.setName('source')
-                .setDescription('Where to search (default: Spotify / YouTube for links)')
+                .setDescription('Where to search (default: YouTube)')
                 .setRequired(false)
                 .addChoices(
-                    { name: '🟢 Spotify (Default - Official Tracks)', value: 'auto' },
+                    { name: '🔴 YouTube (Default - Fast & High Quality)', value: 'auto' },
                     { name: '🎵 YouTube Music (Clean Studio Audio)', value: 'youtubemusic' },
                     { name: '🟠 SoundCloud (Fast & Direct)', value: 'soundcloud' },
-                    { name: '🔴 YouTube Video (Music Videos)', value: 'youtube' },
+                    { name: '🟢 Spotify', value: 'spotify' },
                     { name: '🍎 Apple Music', value: 'apple' },
                 )
         ),
@@ -163,119 +163,43 @@ module.exports = {
 
             await ensurePlayerNode(player, interaction.client);
 
-            const searchWithTimeout = (promise, ms = 4000) => Promise.race([
-                promise,
-                new Promise((_, reject) => setTimeout(() => reject(new Error('Search timed out')), ms))
-            ]);
-
-            // Execute search
+            // Simple, fast direct search
             let result = null;
 
-            if (ytVideoId) {
-                try {
-                    const directRes = await searchWithTimeout(player.search({
-                        query: query,
-                        source: undefined,
-                    }, interaction.user), 3000);
-
-                    if (directRes && directRes.tracks && directRes.tracks.length > 0) {
-                        result = directRes;
-                    }
-                } catch {
-                    /* fallback to ytsearch below */
+            try {
+                if (isAttachment || isUrlQuery) {
+                    result = await player.search({ query }, interaction.user);
+                } else {
+                    result = await player.search({ query, source: searchSource }, interaction.user);
                 }
+            } catch (err) {
+                console.warn(`[Reso] PlayNext initial search error: ${err.message}`);
+            }
 
-                if (!result || !result.tracks || result.tracks.length === 0) {
+            // Quick fallbacks only if primary search found nothing
+            if (!result || !result.tracks || result.tracks.length === 0) {
+                if (isUrlQuery && isYouTubeUrl(query)) {
+                    const vid = extractYouTubeVideoId(query);
+                    if (vid) {
+                        try {
+                            result = await player.search({ query: vid, source: 'ytsearch' }, interaction.user);
+                        } catch {}
+                    }
+                } else if (isUrlQuery && isSpotifyUrl(query)) {
                     try {
-                        const ytRes = await searchWithTimeout(player.search({
-                            query: ytVideoId,
-                            source: 'ytsearch',
-                        }, interaction.user), 3500);
-
-                        if (ytRes?.tracks?.length > 0) {
-                            const exactMatch = ytRes.tracks.find(t => t.info.identifier === ytVideoId);
-                            result = exactMatch ? { ...ytRes, tracks: [exactMatch] } : ytRes;
+                        const oembedRes = await fetch(`https://open.spotify.com/oembed?url=${encodeURIComponent(query)}`, { signal: AbortSignal.timeout(3000) });
+                        if (oembedRes.ok) {
+                            const oembedData = await oembedRes.json();
+                            if (oembedData.title) {
+                                const cleanTitle = cleanVideoTitle(oembedData.title);
+                                result = await player.search({ query: cleanTitle, source: 'ytsearch' }, interaction.user);
+                            }
                         }
-                    } catch (err) {
-                        console.warn(`[Reso] PlayNext ytsearch with videoId failed: ${err.message}`);
-                    }
-                }
-            } else {
-                try {
-                    result = await searchWithTimeout(player.search({
-                        query: query,
-                        source: searchSource,
-                    }, interaction.user), 4000);
-                } catch (searchErr) {
-                    console.warn(`[Reso] PlayNext initial search failed: ${searchErr.message}. Trying fallback sources...`);
-                    result = { tracks: [] };
-                }
-            }
-
-            // YouTube URL fallback via oEmbed
-            if ((!result || !result.tracks || result.tracks.length === 0) && isUrlQuery && isYouTubeUrl(query)) {
-                try {
-                    const oembedUrl = `https://www.youtube.com/oembed?url=${encodeURIComponent(query)}&format=json`;
-                    const oembedRes = await fetch(oembedUrl, { signal: AbortSignal.timeout(3000) });
-                    if (oembedRes.ok) {
-                        const oembedData = await oembedRes.json();
-                        const cleanTitle = cleanVideoTitle(oembedData.title);
-                        const ytFallbacks = ['ytsearch', 'ytmsearch', 'spsearch', 'scsearch'];
-                        for (const fbSource of ytFallbacks) {
-                            try {
-                                const fbResult = await searchWithTimeout(player.search({
-                                    query: cleanTitle,
-                                    source: fbSource,
-                                }, interaction.user), 3500);
-                                if (fbResult?.tracks?.length > 0) {
-                                    result = fbResult;
-                                    break;
-                                }
-                            } catch { /* skip */ }
-                        }
-                    }
-                } catch { /* skip */ }
-            }
-
-            // Spotify URL fallback via oEmbed
-            if ((!result || !result.tracks || result.tracks.length === 0) && isUrlQuery && isSpotifyUrl(query)) {
-                try {
-                    const oembedUrl = `https://open.spotify.com/oembed?url=${encodeURIComponent(query)}`;
-                    const oembedRes = await fetch(oembedUrl, { signal: AbortSignal.timeout(3000) });
-                    if (oembedRes.ok) {
-                        const oembedData = await oembedRes.json();
-                        const cleanTitle = cleanVideoTitle(oembedData.title);
-                        const spFallbacks = ['ytmsearch', 'ytsearch', 'scsearch'];
-                        for (const fbSource of spFallbacks) {
-                            try {
-                                const fbResult = await searchWithTimeout(player.search({
-                                    query: cleanTitle,
-                                    source: fbSource,
-                                }, interaction.user), 3500);
-                                if (fbResult?.tracks?.length > 0) {
-                                    result = fbResult;
-                                    break;
-                                }
-                            } catch { /* skip */ }
-                        }
-                    }
-                } catch { /* skip */ }
-            }
-
-            // Text query multi-source fallback: Spotify -> YouTube -> SoundCloud last
-            if ((!result || !result.tracks || result.tracks.length === 0) && !isUrlQuery && !isAttachment) {
-                const fallbackSources = ['spsearch', 'ytmsearch', 'ytsearch', 'scsearch'].filter(s => s !== searchSource);
-                for (const fbSource of fallbackSources) {
+                    } catch {}
+                } else if (!isUrlQuery && !isAttachment && searchSource !== 'scsearch') {
                     try {
-                        const fbResult = await searchWithTimeout(player.search({
-                            query: query,
-                            source: fbSource,
-                        }, interaction.user), 3500);
-                        if (fbResult?.tracks?.length > 0) {
-                            result = fbResult;
-                            break;
-                        }
-                    } catch { /* skip */ }
+                        result = await player.search({ query, source: 'scsearch' }, interaction.user);
+                    } catch {}
                 }
             }
 

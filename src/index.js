@@ -107,7 +107,7 @@ client.lavalink = new LavalinkManager({
         username: 'Reso',
     },
     playerOptions: {
-        defaultSearchPlatform: 'spsearch', // Spotify search (bypasses YouTube datacenter IP login blocks)
+        defaultSearchPlatform: 'ytsearch', // Fast direct YouTube search
         clientBasedPositionUpdateInterval: 500, // Smooth 500ms local position tracking
         volumeDecrementer: 0.75, // 100% client volume → 75% Lavalink volume (headroom, prevents clipping)
         onDisconnect: {
