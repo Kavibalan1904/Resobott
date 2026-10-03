@@ -31,11 +31,11 @@ lavalink:
       rotation: true
       channelMix: true
       lowPass: true
-    bufferDurationMs: 1000 # 1000ms NAS buffer — protects against GC pauses on free-tier hosting
+    bufferDurationMs: 4000 # 4000ms NAS buffer — large cushion against network jitter and GC pauses
     frameBufferDurationMs: 8000 # 8s frame buffer — large cushion against network jitter and GC spikes
     opusEncodingQuality: 8 # Crisp audio with significantly lower CPU load
     resamplingQuality: MEDIUM # Balanced resampling avoiding CPU spikes
-    trackStuckThresholdMs: 5000 # Detect stuck tracks in 5s instead of 10s for faster retry
+    trackStuckThresholdMs: 7000 # Detect stuck tracks in 7s for responsive recovery
     useSeekGhosting: true
     youtubePlaylistLoadLimit: 100
     playerUpdateInterval: 5 # Client tracks position locally; 5s server sync is plenty
@@ -56,6 +56,19 @@ plugins:
       - MWEB
       - WEBEMBEDDED
       - WEB
+  lavasrc:
+    providers:
+      - "ytsearch:\"%ISRC%\""
+      - "ytsearch:%QUERY%"
+    sources:
+      spotify: true
+      applemusic: true
+      deezer: true
+      yandexmusic: false
+      flowerytts: false
+      youtube: true
+    spotify:
+      countryCode: "US"
 
 logging:
   level:

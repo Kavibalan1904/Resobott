@@ -1,7 +1,7 @@
 const path = require('path');
 const { SlashCommandBuilder } = require('discord.js');
 const { errorEmbed, createEmbed, EMOJIS, capitalize } = require('../../utils/embeds');
-const { getVoiceChannel, truncate, formatMs, ensurePlayerNode, getHealthyNodes } = require('../../utils/helpers');
+const { getVoiceChannel, checkVoicePermissions, truncate, formatMs, ensurePlayerNode, getHealthyNodes } = require('../../utils/helpers');
 
 // Map user-friendly source names to Lavalink search platforms
 const SOURCE_MAP = {
@@ -60,16 +60,19 @@ module.exports = {
             deferred = true;
         } catch (deferErr) {
             console.warn('[Reso] deferReply failed for /playnext:', deferErr.message);
+            return;
         }
 
         const voiceChannel = getVoiceChannel(interaction);
         if (!voiceChannel) {
             const embed = errorEmbed('You need to be in a voice channel!');
-            if (interaction.deferred || interaction.replied || deferred) {
-                return interaction.editReply({ embeds: [embed] }).catch(() => {});
-            } else {
-                return interaction.reply({ embeds: [embed], ephemeral: true }).catch(() => {});
-            }
+            return interaction.editReply({ embeds: [embed] }).catch(() => {});
+        }
+
+        const permCheck = checkVoicePermissions(voiceChannel, interaction.client.user);
+        if (!permCheck.allowed) {
+            const embed = errorEmbed(permCheck.reason);
+            return interaction.editReply({ embeds: [embed] }).catch(() => {});
         }
 
         const rawStringQuery = interaction.options.getString('query')?.trim();
@@ -148,13 +151,32 @@ module.exports = {
 
             await ensurePlayerNode(player, interaction.client);
 
-            // Search
-            const result = await player.search({
-                query: query,
-                source: searchSource,
-            }, interaction.user);
+            // Search with fallback
+            let result = null;
+            try {
+                result = await player.search({
+                    query: query,
+                    source: searchSource,
+                }, interaction.user);
+            } catch (searchErr) {
+                console.warn(`[Reso] PlayNext initial search failed: ${searchErr.message}. Trying fallback sources...`);
+                result = { tracks: [] };
+            }
 
-            if (!result.tracks || result.tracks.length === 0) {
+            if ((!result || !result.tracks || result.tracks.length === 0) && searchSource) {
+                const fallbacks = ['spsearch', 'ytmsearch', 'scsearch'].filter(s => s !== searchSource);
+                for (const fb of fallbacks) {
+                    try {
+                        const fbRes = await player.search({ query, source: fb }, interaction.user);
+                        if (fbRes?.tracks?.length > 0) {
+                            result = fbRes;
+                            break;
+                        }
+                    } catch { /* skip */ }
+                }
+            }
+
+            if (!result || !result.tracks || result.tracks.length === 0) {
                 if (isAttachment) {
                     return interaction.editReply({
                         embeds: [errorEmbed(`Could not play **${truncate(rawQuery, 50)}**. Make sure the uploaded file is a valid, uncorrupted audio format.`)]

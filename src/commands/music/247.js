@@ -25,6 +25,20 @@ module.exports = {
             // Enable 24/7 mode
             interaction.client.twentyFourSeven.add(guildId);
 
+            // Clear any active queue-empty or alone timers immediately
+            const player = interaction.client.lavalink.getPlayer(guildId);
+            if (player) {
+                const emptyTimer = player.getData('internal_queueempty');
+                if (emptyTimer) {
+                    clearTimeout(emptyTimer);
+                    player.setData('internal_queueempty', undefined);
+                }
+            }
+            if (interaction.client.aloneTimers?.has(guildId)) {
+                clearTimeout(interaction.client.aloneTimers.get(guildId));
+                interaction.client.aloneTimers.delete(guildId);
+            }
+
             return interaction.reply({ embeds: [successEmbed(`${EMOJIS.success} **24/7 mode** has been **enabled**. I'll stay in the voice channel until you use \`/leave\` or \`/stop\`.`)] });
         }
     },

@@ -375,8 +375,13 @@ function isFuzzyDuplicate(titleA, titleB) {
 //  MAIN RECOMMENDATION ENGINE
 // ══════════════════════════════════════════════════════════════════
 
+// In-memory recommendations cache (cacheKey -> { timestamp, recommendations })
+// 30-minute TTL, max 100 entries. Eliminates duplicate Lavalink searches on repeated songs.
+const recommendationCache = new Map();
+const REC_CACHE_TTL_MS = 30 * 60 * 1000;
+
 /**
- * Fetch 5 structured, high-relevance recommendations using YouTube-style
+ * Fetch 5 structured, high-relevance recommendations using YouTube-Style
  * 5-tier weighted search with parallel queries and scoring.
  *
  * @param {Object} player - Lavalink player instance
@@ -422,6 +427,20 @@ async function getRecommendations(player, currentTrack, limit = 5, sessionHistor
         if (t.info?.title) excludedTitles.add(t.info.title.toLowerCase());
     }
 
+    // ── Cache Lookup: instant zero-overhead return for previously fetched tracks ──
+    const cacheKey = `${(meta.songName || rawTitle).toLowerCase()}::${(cleanAuthor(rawAuthor) || '').toLowerCase()}`;
+    const cached = recommendationCache.get(cacheKey);
+    if (cached && (Date.now() - cached.timestamp < REC_CACHE_TTL_MS) && cached.recommendations?.length > 0) {
+        const freshFromCache = cached.recommendations.filter(t =>
+            !excludedIdentifiers.has(t.info?.uri) &&
+            !excludedIdentifiers.has(t.info?.identifier) &&
+            !excludedTitles.has((t.info?.title || '').toLowerCase())
+        );
+        if (freshFromCache.length >= limit) {
+            return freshFromCache.slice(0, limit);
+        }
+    }
+
     // ── Step 3: Get search node (prefer an idle node to protect audio streaming) ──
     let searchNode = null;
     const allNodes = player.lavalinkManager?.nodeManager?.nodes;
@@ -443,13 +462,26 @@ async function getRecommendations(player, currentTrack, limit = 5, sessionHistor
     // ── Step 4: Build search queries (capped at top 3 to prevent CPU spikes) ──
     const queries = buildSearchQueries(meta, langGenre).slice(0, 3);
 
-    // ── Step 5: Fire searches in parallel ──
+    // ── Step 5: Fire searches in parallel with source fallback and strict timeout ──
     const searchPromises = queries.map(async (q) => {
         try {
-            const result = await searchNode.search({
-                query: q.query,
-                source: 'ytsearch',
-            }, currentTrack.requester);
+            const timeoutPromise = new Promise((_, reject) =>
+                setTimeout(() => reject(new Error('Recommendation search timeout')), 3500)
+            );
+
+            const searchExec = (async () => {
+                // Try YouTube Music first (clean audio), then Spotify / SoundCloud
+                let res = await searchNode.search({ query: q.query, source: 'ytmsearch' }, currentTrack.requester).catch(() => null);
+                if (!res || !res.tracks || res.tracks.length === 0) {
+                    res = await searchNode.search({ query: q.query, source: 'spsearch' }, currentTrack.requester).catch(() => null);
+                }
+                if (!res || !res.tracks || res.tracks.length === 0) {
+                    res = await searchNode.search({ query: q.query, source: 'scsearch' }, currentTrack.requester).catch(() => null);
+                }
+                return res;
+            })();
+
+            const result = await Promise.race([searchExec, timeoutPromise]).catch(() => null);
 
             return {
                 tier: q.tier,
@@ -558,6 +590,18 @@ async function getRecommendations(player, currentTrack, limit = 5, sessionHistor
                 return bMatch - aMatch;
             });
         }
+    }
+
+    // Cache the recommendations for fast repeat lookups
+    if (finalRecommendations.length > 0) {
+        if (recommendationCache.size >= 100) {
+            const oldestKey = recommendationCache.keys().next().value;
+            recommendationCache.delete(oldestKey);
+        }
+        recommendationCache.set(cacheKey, {
+            timestamp: Date.now(),
+            recommendations: finalRecommendations.slice(0, 10),
+        });
     }
 
     return finalRecommendations.slice(0, limit);

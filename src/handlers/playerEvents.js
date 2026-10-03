@@ -66,10 +66,10 @@ function setupLavalinkEvents(client) {
             const originalNodeId = player.node?.id;
             const alternateNodes = getHealthyNodes(manager, originalNodeId);
 
-            // Build ordered list of nodes to try: alternate healthy nodes first, then original
-            const searchNodes = [...alternateNodes];
-            if (player.node?.connected) {
-                searchNodes.push(player.node); // original node as last resort
+            // Limit to top 2 healthy search nodes to prevent 20-second stalls
+            const searchNodes = alternateNodes.slice(0, 2);
+            if (player.node?.connected && !searchNodes.some(n => n.id === player.node.id)) {
+                searchNodes.unshift(player.node); // player's current node first
             }
 
             if (searchNodes.length === 0) {
@@ -77,45 +77,34 @@ function setupLavalinkEvents(client) {
                 return false;
             }
 
-            // Determine retry search sources — NEVER retry on the same source that just failed.
-            // If a track failed on source X, retrying X will just fail again.
+            // Prioritize top 2 most reliable fallback sources
             const retrySources = [];
-
             if (originalSource === 'spotify' || originalSource === 'spsearch') {
-                // Spotify failed → try everything EXCEPT Spotify
                 retrySources.push({ source: 'ytmsearch', query: searchQuery, label: 'YouTube Music fallback' });
                 retrySources.push({ source: 'scsearch', query: searchQuery, label: 'SoundCloud fallback' });
-                retrySources.push({ source: 'dzsearch', query: searchQuery, label: 'Deezer fallback' });
             } else if (originalSource === 'soundcloud') {
-                // SoundCloud failed → try everything EXCEPT SoundCloud
-                retrySources.push({ source: 'spsearch', query: searchQuery, label: 'Spotify fallback' });
                 retrySources.push({ source: 'ytmsearch', query: searchQuery, label: 'YouTube Music fallback' });
-                retrySources.push({ source: 'dzsearch', query: searchQuery, label: 'Deezer fallback' });
-            } else if (originalSource === 'deezer') {
-                // Deezer failed → try everything EXCEPT Deezer
                 retrySources.push({ source: 'spsearch', query: searchQuery, label: 'Spotify fallback' });
-                retrySources.push({ source: 'ytmsearch', query: searchQuery, label: 'YouTube Music fallback' });
-                retrySources.push({ source: 'scsearch', query: searchQuery, label: 'SoundCloud fallback' });
             } else {
-                // YouTube/other failed → try Spotify, SoundCloud & Deezer (no YouTube retry)
                 retrySources.push({ source: 'spsearch', query: searchQuery, label: 'Spotify fallback' });
                 retrySources.push({ source: 'scsearch', query: searchQuery, label: 'SoundCloud fallback' });
-                retrySources.push({ source: 'dzsearch', query: searchQuery, label: 'Deezer fallback' });
             }
 
-            // Try each source on each node until we find a playable track
+            // Try each source on each node with a strict 3.5s timeout
             for (const retrySource of retrySources) {
                 for (const searchNode of searchNodes) {
                     try {
                         console.log(`[Reso] ↻ Retrying "${title}" via ${retrySource.label} on node "${searchNode.id}" (reason: ${reason})`);
 
-                        // Search directly on the node — NOT via player.search()
-                        const result = await searchNode.search({
-                            query: retrySource.query,
-                            source: retrySource.source,
-                        }, track.requester);
+                        const searchTimeout = new Promise((_, reject) =>
+                            setTimeout(() => reject(new Error('Search timeout')), 3500)
+                        );
+                        const result = await Promise.race([
+                            searchNode.search({ query: retrySource.query, source: retrySource.source }, track.requester),
+                            searchTimeout
+                        ]);
 
-                        if (!result.tracks || result.tracks.length === 0) {
+                        if (!result || !result.tracks || result.tracks.length === 0) {
                             console.log(`[Reso] ✗ ${retrySource.label} found no results on node "${searchNode.id}" for "${title}"`);
                             continue; // Try next node for this source
                         }
@@ -127,24 +116,17 @@ function setupLavalinkEvents(client) {
 
                         console.log(`[Reso] ✓ Retry resolved from: ${resolvedSource} via ${retrySource.label} (node: ${searchNode.id})`);
 
-                        // ── Play the resolved track directly ──
-                        // Use player.play({ clientTrack }) instead of queue.add + skip
-                        // because autoSkip: true races with trackError — Lavalink sends
-                        // trackEnd(loadFailed) alongside trackException, and autoSkip
-                        // advances the queue before our skip() runs, causing silent playback.
-
-                        // If the search resolved on a different node than the player's current node,
-                        // use player.changeNode() to seamlessly migrate the voice session
+                        // If search resolved on a different node than current player, transfer voice
                         if (searchNode.id !== player.node?.id) {
                             console.log(`[Reso] ↝ Transferring player voice to node "${searchNode.id}" for playback`);
                             try {
                                 await player.changeNode(searchNode.id);
                             } catch (transferErr) {
-                                console.warn(`[Reso] ⚠ Voice transfer to "${searchNode.id}" failed: ${transferErr.message}, trying to play on original node`);
+                                console.warn(`[Reso] ⚠ Voice transfer to "${searchNode.id}" failed: ${transferErr.message}`);
                             }
                         }
 
-                        // Directly play the resolved track — bypasses queue/skip race
+                        // Directly play the resolved track
                         await player.play({ clientTrack: resolvedTrack });
 
                         // Notify the text channel
@@ -159,7 +141,7 @@ function setupLavalinkEvents(client) {
                         return true;
                     } catch (err) {
                         console.error(`[Reso] ✗ Retry via ${retrySource.label} on node "${searchNode.id}" failed:`, err.message);
-                        continue; // Try next node/source
+                        continue;
                     }
                 }
             }
@@ -439,8 +421,16 @@ function setupLavalinkEvents(client) {
     manager.on('playerDestroy', (player) => {
         console.log(`[Reso] Player destroyed for guild: ${player.guildId}`);
         // Clean up history and retry state
-        client.trackHistory.delete(player.guildId);
+        client.trackHistory?.delete(player.guildId);
         retriedTracks.delete(player.guildId);
+        client.recommendations?.delete(player.guildId);
+        client.voteSkips?.delete(player.guildId);
+
+        if (client.aloneTimers?.has(player.guildId)) {
+            clearTimeout(client.aloneTimers.get(player.guildId));
+            client.aloneTimers.delete(player.guildId);
+        }
+
         const prevMsg = lastNowPlayingMessage.get(player.guildId);
         if (prevMsg) {
             prevMsg.delete().catch(() => {});

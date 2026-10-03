@@ -79,6 +79,33 @@ function getVoiceChannel(interaction) {
 }
 
 /**
+ * Validate that the bot has permissions to join and speak in a voice channel
+ * @param {object} voiceChannel - Discord Voice/Stage channel
+ * @param {object} clientUser - Discord ClientUser
+ * @returns {{ allowed: boolean, reason?: string }}
+ */
+function checkVoicePermissions(voiceChannel, clientUser) {
+    if (!voiceChannel || !clientUser) return { allowed: true };
+    const permissions = voiceChannel.permissionsFor(clientUser);
+    if (!permissions) return { allowed: true };
+
+    const { PermissionsBitField } = require('discord.js');
+    if (!permissions.has(PermissionsBitField.Flags.ViewChannel)) {
+        return { allowed: false, reason: 'I cannot view or access that voice channel! Please check channel permissions.' };
+    }
+    if (!permissions.has(PermissionsBitField.Flags.Connect)) {
+        return { allowed: false, reason: 'I do not have permission to **Connect** to your voice channel!' };
+    }
+    if (!permissions.has(PermissionsBitField.Flags.Speak)) {
+        return { allowed: false, reason: 'I do not have permission to **Speak** in your voice channel!' };
+    }
+    if (voiceChannel.full && !permissions.has(PermissionsBitField.Flags.MoveMembers) && !permissions.has(PermissionsBitField.Flags.Administrator)) {
+        return { allowed: false, reason: 'The voice channel is full and has reached its user limit!' };
+    }
+    return { allowed: true };
+}
+
+/**
  * Check if the bot is in the same voice channel as the user
  */
 function isInSameVoiceChannel(interaction) {
@@ -413,7 +440,7 @@ async function optimizeActivePlayers(manager) {
 
         const currentNode = player.node;
 
-        // Case 1: Player has no node or current node is disconnected -> emergency switch
+        // Case 1: Player has no node or current node is disconnected -> EMERGENCY switch (must always happen)
         if (!currentNode || !currentNode.connected) {
             const targetNode = primaryIsOnline ? primaryNode : bestNode;
             console.log(`[Reso] 🚨 Emergency switch: Player (${guildId}) node is disconnected. Switching to ${targetNode.id === PRIMARY_NODE_ID ? 'PRIMARY' : 'best'} node "${targetNode.id}"...`);
@@ -427,11 +454,18 @@ async function optimizeActivePlayers(manager) {
             continue;
         }
 
-        // ── STICKY PRIMARY: If primary is online but player is on a backup, migrate BACK ──
-        // This is the core "change node only if primary is down" logic.
-        // When primary recovers, all players return to it immediately (no cooldown).
+        // ── SMOOTH PLAYBACK RULE ──
+        // NEVER switch nodes while music is actively playing unless the node has disconnected.
+        // Node switching tears down Discord UDP voice socket and forces voice re-negotiation,
+        // causing noticeable audio silence/pops/stutters.
+        // All performance migrations & primary restorations happen when player is IDLE between tracks.
+        if (player.playing && !player.paused) {
+            continue;
+        }
+
+        // ── STICKY PRIMARY: If primary is online but idle player is on a backup, migrate BACK ──
         if (primaryIsOnline && currentNode.id !== PRIMARY_NODE_ID) {
-            console.log(`[Reso] 🏠 Primary node is BACK ONLINE! Migrating player (${guildId}) from backup "${currentNode.id}" → PRIMARY "${PRIMARY_NODE_ID}"...`);
+            console.log(`[Reso] 🏠 Primary node is BACK ONLINE! Migrating idle player (${guildId}) from backup "${currentNode.id}" → PRIMARY "${PRIMARY_NODE_ID}"...`);
             try {
                 await player.changeNode(PRIMARY_NODE_ID, false);
                 playerLastSwitch.set(guildId, now);
@@ -445,11 +479,11 @@ async function optimizeActivePlayers(manager) {
         // Already on the best node -> nothing to do
         if (currentNode.id === bestNode.id) continue;
 
-        // Case 2: Current node had a recent playback error -> switch immediately
+        // Case 2: Current node had a recent playback error -> switch idle player
         const hasRecentError = !!nodeErrorTimestamps.get(currentNode.id) && (now - nodeErrorTimestamps.get(currentNode.id) < 10 * 60 * 1000);
         if (hasRecentError) {
             const targetNode = primaryIsOnline ? primaryNode : bestNode;
-            console.log(`[Reso] ⚠️ Node error cooldown: Player (${guildId}) current node "${currentNode.id}" had recent errors. Migrating to "${targetNode.id}"...`);
+            console.log(`[Reso] ⚠️ Node error cooldown: Idle player (${guildId}) current node "${currentNode.id}" had recent errors. Migrating to "${targetNode.id}"...`);
             try {
                 await player.changeNode(targetNode.id, false);
                 playerLastSwitch.set(guildId, now);
@@ -461,8 +495,7 @@ async function optimizeActivePlayers(manager) {
         }
 
         // Case 3: Performance optimization (latency & composite score)
-        // Only relevant when player is on primary but a backup is somehow much better —
-        // since we want sticky primary, we SKIP this if player is already on primary.
+        // Skip if player is already on primary
         if (currentNode.id === PRIMARY_NODE_ID) continue;
 
         // Respect cooldown to prevent rapid bouncing between similarly performing nodes
@@ -490,7 +523,7 @@ async function optimizeActivePlayers(manager) {
         if (isMuchBetter) {
             const currentLatencyStr = currentLatency ? `${currentLatency}ms` : 'high';
             const bestLatencyStr = bestLatency ? `${bestLatency}ms` : 'low';
-            console.log(`[Reso] 🔀 Auto-switching player (${guildId}) to lower-latency node: "${currentNode.id}" (${currentLatencyStr}, score ${currentScore.toFixed(0)}) → "${bestNode.id}" (${bestLatencyStr}, score ${bestScore.toFixed(0)})`);
+            console.log(`[Reso] 🔀 Auto-switching idle player (${guildId}) to lower-latency node: "${currentNode.id}" (${currentLatencyStr}, score ${currentScore.toFixed(0)}) → "${bestNode.id}" (${bestLatencyStr}, score ${bestScore.toFixed(0)})`);
             try {
                 await player.changeNode(bestNode.id, false);
                 playerLastSwitch.set(guildId, now);
@@ -531,19 +564,24 @@ async function ensurePlayerNode(player, client) {
         return player.node;
     }
 
-    // If primary is online but player is on a backup, migrate back to primary
+    // Do NOT disrupt active playback — only migrate idle players
+    if (player.playing && !player.paused) {
+        return player.node;
+    }
+
+    // If primary is online but player is idle on a backup, migrate back to primary
     if (primaryIsOnline && player.node.id !== PRIMARY_NODE_ID) {
         try {
             await player.changeNode(PRIMARY_NODE_ID, false);
-            console.log(`[Reso] ↝ Migrated player (${player.guildId}) back to PRIMARY node "${PRIMARY_NODE_ID}"`);
+            console.log(`[Reso] ↝ Migrated idle player (${player.guildId}) back to PRIMARY node "${PRIMARY_NODE_ID}"`);
         } catch (e) {
-            console.warn(`[Reso] Failed to migrate player back to primary:`, e.message);
+            console.warn(`[Reso] Failed to migrate idle player back to primary:`, e.message);
         }
         return player.node;
     }
 
     // If player is idle and current node is not the best, migrate before next playback starts
-    if (player.node.id !== targetNode.id && !player.playing && !player.paused) {
+    if (player.node.id !== targetNode.id) {
         try {
             await player.changeNode(targetNode.id, false);
             console.log(`[Reso] ↝ Switched idle player (${player.guildId}) to ${targetNode.id === PRIMARY_NODE_ID ? 'PRIMARY' : 'best'} node "${targetNode.id}"`);
@@ -608,6 +646,7 @@ module.exports = {
     formatDuration,
     formatUptime,
     getVoiceChannel,
+    checkVoicePermissions,
     isInSameVoiceChannel,
     truncate,
     paginate,

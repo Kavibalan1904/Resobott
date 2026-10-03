@@ -6,3 +6,6 @@ node_modules/
 npm-debug.log*
 .DS_Store
 lavalink/
+Lavalink1/
+*.zip
+*.jar

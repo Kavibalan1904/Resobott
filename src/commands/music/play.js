@@ -1,7 +1,7 @@
 const path = require('path');
 const { SlashCommandBuilder } = require('discord.js');
 const { errorEmbed, successEmbed, createEmbed, EMOJIS, capitalize } = require('../../utils/embeds');
-const { getVoiceChannel, truncate, formatMs, ensurePlayerNode, getHealthyNodes } = require('../../utils/helpers');
+const { getVoiceChannel, checkVoicePermissions, truncate, formatMs, ensurePlayerNode, getHealthyNodes } = require('../../utils/helpers');
 
 // Map user-friendly source names to Lavalink search platforms
 // ytmsearch = YouTube Music (pure studio audio tracks with 0 movie dialogues/video skits)
@@ -89,16 +89,20 @@ module.exports = {
             deferred = true;
         } catch (deferErr) {
             console.warn('[Reso] deferReply failed (interaction timed out or invalid):', deferErr.message);
+            return; // Interaction is dead, cannot reply further
         }
 
         const voiceChannel = getVoiceChannel(interaction);
         if (!voiceChannel) {
             const embed = errorEmbed('You need to be in a voice channel!');
-            if (interaction.deferred || interaction.replied || deferred) {
-                return interaction.editReply({ embeds: [embed] }).catch(() => { });
-            } else {
-                return interaction.reply({ embeds: [embed], ephemeral: true }).catch(() => { });
-            }
+            return interaction.editReply({ embeds: [embed] }).catch(() => { });
+        }
+
+        // Validate bot permissions in the voice channel
+        const permCheck = checkVoicePermissions(voiceChannel, interaction.client.user);
+        if (!permCheck.allowed) {
+            const embed = errorEmbed(permCheck.reason);
+            return interaction.editReply({ embeds: [embed] }).catch(() => { });
         }
 
         const rawStringQuery = interaction.options.getString('query')?.trim();
@@ -221,13 +225,19 @@ module.exports = {
             await ensurePlayerNode(player, interaction.client);
 
             // Search for the track or playlist
-            let result = await player.search({
-                query: query,
-                source: searchSource,
-            }, interaction.user);
+            let result = null;
+            try {
+                result = await player.search({
+                    query: query,
+                    source: searchSource,
+                }, interaction.user);
+            } catch (searchErr) {
+                console.warn(`[Reso] Initial search failed: ${searchErr.message}. Trying fallback sources...`);
+                result = { tracks: [] };
+            }
 
             // Log which source actually resolved the track
-            if (result.tracks && result.tracks.length > 0) {
+            if (result && result.tracks && result.tracks.length > 0) {
                 const resolvedSource = result.tracks[0]?.info?.sourceName || 'unknown';
                 console.log(`[Reso] ✓ Resolved from: ${resolvedSource} (${result.tracks.length} track(s))`);
             }

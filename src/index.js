@@ -40,6 +40,10 @@ const client = new Client({
         PresenceManager: 0,      // Bot doesn't need presence data
         ReactionManager: 0,      // Bot doesn't use reactions
         GuildMemberManager: 200, // Cap member cache per guild
+        UserManager: 100,        // Cap user cache
+        ThreadManager: 0,        // Bot doesn't track threads
+        GuildBanManager: 0,      // Bot doesn't track bans
+        StageInstanceManager: 0, // Bot doesn't track stage instances
     }),
     sweepers: {
         messages: {
@@ -202,22 +206,31 @@ async function discoverAndAddNodes(manager) {
     }
 
     let added = 0;
-    const probePromises = discovered.map(async (n) => {
+    const MAX_AUTO_DISCOVERED = 2;
+
+    for (const n of discovered) {
+        if (added >= MAX_AUTO_DISCOVERED) break;
+
         const key = `${n.host.toLowerCase()}:${n.port}`;
-        if (existingHosts.has(key)) return; // Already registered
+        if (existingHosts.has(key)) continue; // Already registered
 
         const proto = n.secure ? 'https' : 'http';
         const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 5000);
+        const timeout = setTimeout(() => controller.abort(), 4000);
         try {
+            const startProbe = performance.now();
             const res = await fetch(`${proto}://${n.host}:${n.port}/v4/info`, {
                 method: 'GET',
                 headers: { Authorization: n.auth },
                 signal: controller.signal,
             });
             clearTimeout(timeout);
-            if (!res.ok) return;
+            if (!res.ok) continue;
             await res.json(); // Validate JSON response
+            const probeLatency = Math.round(performance.now() - startProbe);
+
+            // Only add nodes with reasonable latency (< 500ms)
+            if (probeLatency > 500) continue;
 
             const nodeId = `auto-${n.identifier || n.host}`.replace(/[^a-zA-Z0-9._-]/g, '-').slice(0, 40);
             try {
@@ -228,19 +241,18 @@ async function discoverAndAddNodes(manager) {
                     authorization: n.auth,
                     secure: n.secure,
                     retryAmount: 3,
-                    retryDelay: 20000,
+                    retryDelay: 30000,
                 });
                 existingHosts.add(key);
                 added++;
-                console.log(`[Reso] ✓ Auto-added node "${nodeId}" (${n.host}:${n.port})`);
+                console.log(`[Reso] ✓ Auto-added verified node "${nodeId}" (${n.host}:${n.port}, ${probeLatency}ms)`);
             } catch { /* node creation error — skip */ }
         } catch {
             clearTimeout(timeout);
         }
-    });
+    }
 
-    await Promise.all(probePromises);
-    console.log(`[Reso] 🔍 Auto-discovery complete: ${added} new node(s) added`);
+    console.log(`[Reso] 🔍 Auto-discovery complete: ${added} new verified node(s) added (capped at ${MAX_AUTO_DISCOVERED})`);
 }
 
 client.lavalink = new LavalinkManager({
@@ -275,13 +287,36 @@ client.lavalink = new LavalinkManager({
 // ── Forward raw Discord events to Lavalink ─────────────────────
 client.on('raw', (data) => client.lavalink.sendRawData(data));
 
-// ── Auto-leave when all users leave the voice channel ──────────
+// ── 24/7 Mode: Prevent Lavalink from auto-destroying player when queue is empty ──
+client.lavalink.on('playerQueueEmptyStart', (player) => {
+    if (client.twentyFourSeven?.has(player.guildId)) {
+        const timer = player.getData('internal_queueempty');
+        if (timer) {
+            clearTimeout(timer);
+            player.setData('internal_queueempty', undefined);
+            console.log(`[Reso] 24/7 mode active for guild ${player.guildId}: cancelled auto-destroy timeout`);
+        }
+    }
+});
+
+// ── Auto-leave when all users leave the voice channel (respects 24/7 mode) ──
 const aloneTimers = new Map();
+client.aloneTimers = aloneTimers;
 client.on('voiceStateUpdate', (oldState, newState) => {
     // Only care about channel leave/move events (not mute/deaf/etc.)
     if (oldState.channelId === newState.channelId) return;
 
     const guildId = oldState.guild.id || newState.guild.id;
+
+    // ── 24/7 mode check: Never disconnect if 24/7 mode is active ──
+    if (client.twentyFourSeven?.has(guildId)) {
+        if (aloneTimers.has(guildId)) {
+            clearTimeout(aloneTimers.get(guildId));
+            aloneTimers.delete(guildId);
+        }
+        return;
+    }
+
     const player = client.lavalink.getPlayer(guildId);
     if (!player || !player.voiceChannelId) return;
 
@@ -299,7 +334,9 @@ client.on('voiceStateUpdate', (oldState, newState) => {
                 const currentPlayer = client.lavalink.getPlayer(guildId);
                 if (!currentPlayer) return;
 
-                // Re-check: still alone?
+                // Re-check: still alone and not in 24/7 mode?
+                if (client.twentyFourSeven?.has(guildId)) return;
+
                 const vc = client.channels.cache.get(currentPlayer.voiceChannelId);
                 const stillAlone = !vc || vc.members.filter(m => !m.user.bot).size === 0;
 

@@ -1,6 +1,6 @@
 const { SlashCommandBuilder, ActionRowBuilder, StringSelectMenuBuilder } = require('discord.js');
 const { errorEmbed, createEmbed, EMOJIS, capitalize } = require('../../utils/embeds');
-const { getVoiceChannel, truncate, formatMs, ensurePlayerNode } = require('../../utils/helpers');
+const { getVoiceChannel, checkVoicePermissions, truncate, formatMs, ensurePlayerNode } = require('../../utils/helpers');
 
 const SOURCE_MAP = {
     auto: 'spsearch',
@@ -40,16 +40,19 @@ module.exports = {
             deferred = true;
         } catch (deferErr) {
             console.warn('[Reso] deferReply failed for /search:', deferErr.message);
+            return;
         }
 
         const voiceChannel = getVoiceChannel(interaction);
         if (!voiceChannel) {
             const embed = errorEmbed('You need to be in a voice channel!');
-            if (interaction.deferred || interaction.replied || deferred) {
-                return interaction.editReply({ embeds: [embed] }).catch(() => { });
-            } else {
-                return interaction.reply({ embeds: [embed], ephemeral: true }).catch(() => { });
-            }
+            return interaction.editReply({ embeds: [embed] }).catch(() => { });
+        }
+
+        const permCheck = checkVoicePermissions(voiceChannel, interaction.client.user);
+        if (!permCheck.allowed) {
+            const embed = errorEmbed(permCheck.reason);
+            return interaction.editReply({ embeds: [embed] }).catch(() => { });
         }
 
         const query = interaction.options.getString('query', true);
@@ -73,14 +76,20 @@ module.exports = {
             // Ensure player is connected to the lowest-latency healthy Lavalink node
             await ensurePlayerNode(player, interaction.client);
 
-            let result = await player.search({
-                query: query,
-                source: searchPlatform,
-            }, interaction.user);
+            let result = null;
+            try {
+                result = await player.search({
+                    query: query,
+                    source: searchPlatform,
+                }, interaction.user);
+            } catch (searchErr) {
+                console.warn(`[Reso] Search initial query failed: ${searchErr.message}. Trying fallbacks...`);
+                result = { tracks: [] };
+            }
 
             // ── Multi-platform search fallback ──
             // If the default source returned nothing (e.g. node lacks LavaSrc), try others
-            if ((!result.tracks || result.tracks.length === 0) && source === 'auto') {
+            if ((!result || !result.tracks || result.tracks.length === 0) && (source === 'auto' || source === 'spotify')) {
                 const fallbackSources = ['ytsearch', 'ytmsearch', 'scsearch'];
                 const toTry = fallbackSources.filter(s => s !== searchPlatform);
                 for (const fbSource of toTry) {
