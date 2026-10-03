@@ -131,15 +131,6 @@ const backupNodes = [
     },
     // ── Non-SSL Fallback Nodes ──────────────────────────────────
     {
-        id: 'backup-minecuta',
-        host: 'lavav4.minecuta.com',
-        port: 2333,
-        authorization: 'discord.gg/gKuXdHs',
-        secure: false,
-        retryAmount: 5,
-        retryDelay: 15000,
-    },
-    {
         id: 'backup-serenetia-80',
         host: 'lavalinkv4.serenetia.com',
         port: 80,
