@@ -12,7 +12,7 @@ const {
     isYouTubeUrl,
     isSpotifyUrl,
     cleanVideoTitle,
-    isUrl,
+    isUrl: isUrlHelper,
 } = require('../../utils/helpers');
 
 // Map user-friendly source names to Lavalink search platforms
@@ -116,7 +116,7 @@ module.exports = {
         } else {
             rawQuery = rawStringQuery;
             query = rawStringQuery;
-            const queryIsUrl = isUrl(rawQuery);
+            const queryIsUrl = isUrlHelper(rawQuery);
 
             if (queryIsUrl && !/^https?:\/\//i.test(query) && !query.startsWith('spotify:')) {
                 query = `https://${query}`;
@@ -129,7 +129,8 @@ module.exports = {
             searchSource = queryIsUrl ? undefined : (SOURCE_MAP[source] || 'spsearch');
         }
 
-        const ytVideoId = (isUrl(rawQuery) && isYouTubeUrl(query)) ? extractYouTubeVideoId(query) : null;
+        const isUrlQuery = isUrlHelper(rawQuery);
+        const ytVideoId = (isUrlQuery && isYouTubeUrl(query)) ? extractYouTubeVideoId(query) : null;
 
         try {
             // Pre-flight: ensure at least one Lavalink node is connected
@@ -197,7 +198,7 @@ module.exports = {
             }
 
             // YouTube URL fallback via oEmbed
-            if ((!result || !result.tracks || result.tracks.length === 0) && isUrl(rawQuery) && isYouTubeUrl(query)) {
+            if ((!result || !result.tracks || result.tracks.length === 0) && isUrlQuery && isYouTubeUrl(query)) {
                 try {
                     const oembedUrl = `https://www.youtube.com/oembed?url=${encodeURIComponent(query)}&format=json`;
                     const oembedRes = await fetch(oembedUrl, { signal: AbortSignal.timeout(3000) });
@@ -222,7 +223,7 @@ module.exports = {
             }
 
             // Spotify URL fallback via oEmbed
-            if ((!result || !result.tracks || result.tracks.length === 0) && isUrl(rawQuery) && isSpotifyUrl(query)) {
+            if ((!result || !result.tracks || result.tracks.length === 0) && isUrlQuery && isSpotifyUrl(query)) {
                 try {
                     const oembedUrl = `https://open.spotify.com/oembed?url=${encodeURIComponent(query)}`;
                     const oembedRes = await fetch(oembedUrl, { signal: AbortSignal.timeout(3000) });
@@ -247,7 +248,7 @@ module.exports = {
             }
 
             // Text query multi-source fallback: Spotify -> YouTube -> SoundCloud last
-            if ((!result || !result.tracks || result.tracks.length === 0) && !isUrl(rawQuery) && !isAttachment) {
+            if ((!result || !result.tracks || result.tracks.length === 0) && !isUrlQuery && !isAttachment) {
                 const fallbackSources = ['spsearch', 'ytmsearch', 'ytsearch', 'scsearch'].filter(s => s !== searchSource);
                 for (const fbSource of fallbackSources) {
                     try {

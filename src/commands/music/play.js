@@ -12,7 +12,7 @@ const {
     isYouTubeUrl,
     isSpotifyUrl,
     isSoundCloudUrl,
-    isUrl,
+    isUrl: isUrlHelper,
     cleanVideoTitle,
 } = require('../../utils/helpers');
 
@@ -129,7 +129,7 @@ module.exports = {
         } else {
             rawQuery = rawStringQuery;
             query = rawStringQuery;
-            isUrl = isUrl(rawQuery);
+            isUrl = isUrlHelper(rawQuery);
 
             if (isUrl && !/^https?:\/\//i.test(query) && !query.startsWith('spotify:')) {
                 query = `https://${query}`;
