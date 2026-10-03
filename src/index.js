@@ -73,187 +73,28 @@ client.voteSkips = new Map();
 // ── Now Playing message storage (guild ID → message) ─────────
 client.lastNowPlayingMessage = new Map();
 
-// ── Create Lavalink Manager ────────────────────────────────────
+// ── Dedicated Lavalink Server (the ONE AND ONLY node) ─────────
 const defaultNodes = [];
-const addedHosts = new Set();
 
-// 1. PRIMARY / Main Node from .env (ALWAYS preferred — only use backups if this is DOWN)
-if (process.env.LAVALINK_HOST) {
-    const host = process.env.LAVALINK_HOST.trim()
-        .replace(/^(https?|wss?):\/\//i, '') // Remove http://, https://, ws://, wss://
-        .replace(/\/.*$/, ''); // Remove trailing slashes or paths
-    const port = parseInt(process.env.LAVALINK_PORT) || 443;
+const host = (process.env.LAVALINK_HOST || 'lavalink1-7tbh.onrender.com').trim()
+    .replace(/^(https?|wss?):\/\//i, '') // Remove http://, https://, ws://, wss://
+    .replace(/\/.*$/, ''); // Remove trailing slashes or paths
+const port = parseInt(process.env.LAVALINK_PORT) || 443;
+const password = process.env.LAVALINK_PASSWORD ? process.env.LAVALINK_PASSWORD.trim() : 'youshallnotpass';
+const isSecure = process.env.LAVALINK_SECURE !== undefined
+    ? String(process.env.LAVALINK_SECURE).toLowerCase() === 'true'
+    : port === 443;
 
-    console.log(`[Reso] Loading PRIMARY Lavalink node from .env: ${host}:${port}`);
-    defaultNodes.push({
-        id: 'primary-main',
-        host: host,
-        port: port,
-        authorization: process.env.LAVALINK_PASSWORD ? process.env.LAVALINK_PASSWORD.trim() : 'youshallnotpass',
-        secure: String(process.env.LAVALINK_SECURE).toLowerCase() === 'true' || port === 443,
-        retryAmount: Infinity, // Never give up reconnecting — this is our MAIN node
-        retryDelay: 10000,     // Retry every 10 seconds
-    });
-    addedHosts.add(`${host.toLowerCase()}:${port}`);
-}
-
-// 2. Backup / Fallback Nodes (ordered by reliability)
-//    retryAmount capped at 5 to prevent infinite log spam from dead nodes.
-const backupNodes = [
-    // ── Private Render Node (reliable for search + failover, YouTube playback may be throttled) ──
-    {
-        id: 'backup-render-private',
-        host: 'lavalink1-7tbh.onrender.com',
-        port: 443,
-        authorization: 'youshallnotpass',
-        secure: true,
-        retryAmount: Infinity, // Private node — always retry
-        retryDelay: 15000,
-    },
-    // ── SSL Public Nodes (Port 443) ────────────────────────────────────
-    {
-        id: 'backup-ssl-serenetia',
-        host: 'lavalinkv4.serenetia.com',
-        port: 443,
-        authorization: 'https://seretia.link/discord',
-        secure: true,
-        retryAmount: 5,
-        retryDelay: 15000,
-    },
-    {
-        id: 'backup-ssl-serenetia-alt',
-        host: 'lavalinkv4.serenetia.com',
-        port: 443,
-        authorization: 'https://dsc.gg/ajidevserver',
-        secure: true,
-        retryAmount: 5,
-        retryDelay: 15000,
-    },
-    {
-        id: 'backup-ssl-millohost',
-        host: 'lava-v4.millohost.my.id',
-        port: 443,
-        authorization: 'https://discord.gg/mjS5J2K3ep',
-        secure: true,
-        retryAmount: 5,
-        retryDelay: 15000,
-    },
-    // ── Non-SSL Fallback Nodes ──────────────────────────────────
-    {
-        id: 'backup-serenetia-80',
-        host: 'lavalinkv4.serenetia.com',
-        port: 80,
-        authorization: 'https://dsc.gg/ajidevserver',
-        secure: false,
-        retryAmount: 5,
-        retryDelay: 15000,
-    },
-];
-
-for (const node of backupNodes) {
-    const key = `${node.host.toLowerCase()}:${node.port}`;
-    if (!addedHosts.has(key)) {
-        defaultNodes.push(node);
-        addedHosts.add(key);
-    }
-}
-
-// ── Runtime Auto-Discovery: fetch & probe public nodes from GitHub ──
-// Runs at startup to dynamically find NEW working nodes beyond the hardcoded list.
-async function discoverAndAddNodes(manager) {
-    const GITHUB_LISTS = [
-        'https://raw.githubusercontent.com/Austayo/lavalink-list/main/nodes.json',
-        'https://raw.githubusercontent.com/appujet/lavalink-list/main/nodes.json',
-    ];
-
-    const discovered = [];
-
-    for (const url of GITHUB_LISTS) {
-        try {
-            const controller = new AbortController();
-            const timeout = setTimeout(() => controller.abort(), 8000);
-            const res = await fetch(url, { signal: controller.signal });
-            clearTimeout(timeout);
-            if (!res.ok) continue;
-            const nodes = await res.json();
-            if (Array.isArray(nodes)) {
-                for (const n of nodes) {
-                    // Only add v4 nodes
-                    if (n.restVersion && n.restVersion !== 'v4') continue;
-                    discovered.push({
-                        host: n.host,
-                        port: parseInt(n.port) || 2333,
-                        auth: n.password || 'youshallnotpass',
-                        secure: n.secure === true || parseInt(n.port) === 443,
-                        identifier: n.identifier || n.host,
-                    });
-                }
-            }
-        } catch { /* ignore fetch errors */ }
-    }
-
-    if (discovered.length === 0) {
-        console.log('[Reso] ℹ No new nodes discovered from GitHub lists');
-        return;
-    }
-
-    console.log(`[Reso] 🔍 Discovered ${discovered.length} candidate nodes from GitHub, probing...`);
-
-    // Probe each discovered node in parallel (skip already-added hosts)
-    const existingHosts = new Set();
-    for (const [, node] of manager.nodeManager.nodes) {
-        existingHosts.add(`${(node.options?.host || '').toLowerCase()}:${node.options?.port || ''}`);
-    }
-
-    let added = 0;
-    const MAX_AUTO_DISCOVERED = 2;
-
-    for (const n of discovered) {
-        if (added >= MAX_AUTO_DISCOVERED) break;
-
-        const key = `${n.host.toLowerCase()}:${n.port}`;
-        if (existingHosts.has(key)) continue; // Already registered
-
-        const proto = n.secure ? 'https' : 'http';
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 4000);
-        try {
-            const startProbe = performance.now();
-            const res = await fetch(`${proto}://${n.host}:${n.port}/v4/info`, {
-                method: 'GET',
-                headers: { Authorization: n.auth },
-                signal: controller.signal,
-            });
-            clearTimeout(timeout);
-            if (!res.ok) continue;
-            await res.json(); // Validate JSON response
-            const probeLatency = Math.round(performance.now() - startProbe);
-
-            // Only add nodes with reasonable latency (< 500ms)
-            if (probeLatency > 500) continue;
-
-            const nodeId = `auto-${n.identifier || n.host}`.replace(/[^a-zA-Z0-9._-]/g, '-').slice(0, 40);
-            try {
-                manager.nodeManager.createNode({
-                    id: nodeId,
-                    host: n.host,
-                    port: n.port,
-                    authorization: n.auth,
-                    secure: n.secure,
-                    retryAmount: 3,
-                    retryDelay: 30000,
-                });
-                existingHosts.add(key);
-                added++;
-                console.log(`[Reso] ✓ Auto-added verified node "${nodeId}" (${n.host}:${n.port}, ${probeLatency}ms)`);
-            } catch { /* node creation error — skip */ }
-        } catch {
-            clearTimeout(timeout);
-        }
-    }
-
-    console.log(`[Reso] 🔍 Auto-discovery complete: ${added} new verified node(s) added (capped at ${MAX_AUTO_DISCOVERED})`);
-}
+console.log(`[Reso] 🔒 Loading DEDICATED private Lavalink node: ${host}:${port}`);
+defaultNodes.push({
+    id: 'primary-main',
+    host: host,
+    port: port,
+    authorization: password,
+    secure: isSecure,
+    retryAmount: Infinity, // Dedicated node — always keep reconnecting
+    retryDelay: 5000,      // Fast 5s reconnect attempts
+});
 
 client.lavalink = new LavalinkManager({
     nodes: defaultNodes,
@@ -405,10 +246,6 @@ async function main() {
             startNodeHealthMonitor(client.lavalink);
             console.log('[Reso] ✓ Node health monitor started (60s interval)');
 
-            // Auto-discover new public nodes from GitHub lists (non-blocking)
-            discoverAndAddNodes(client.lavalink).catch(e =>
-                console.warn('[Reso] ⚠ Auto-discovery error:', e.message)
-            );
 
             // Set activity
             client.user.setPresence({
