@@ -252,12 +252,18 @@ function computeNodeScore(node) {
     const COOLDOWN_MS = 10 * 60 * 1000;
     let score = 0;
 
+    const lastErr = nodeErrorTimestamps.get(node.id);
+    const hasRecentError = !!(lastErr && (now - lastErr < COOLDOWN_MS));
+
+    const frames = node.stats?.frameStats;
+    const isDroppingFrames = !!(frames && frames.sent > 0 && (((frames.nulled || 0) + (frames.deficit || 0)) / frames.sent) > 0.08);
+
     // ── PRIMARY NODE BONUS ──
-    // The primary-main node gets a massive score bonus (-10000) so it ALWAYS
-    // wins the selection unless it's disconnected. This ensures backup nodes
-    // are only used when the primary is genuinely down.
-    if (node.id === PRIMARY_NODE_ID) {
-        score -= 10000;
+    // The primary-main node gets a score bonus (-5000) as long as it's healthy.
+    // If it has recent playback errors or is dropping >8% frames, revoke bonus
+    // so healthy backup nodes can take over immediately and prevent stutter.
+    if (node.id === PRIMARY_NODE_ID && !hasRecentError && !isDroppingFrames) {
+        score -= 5000;
     }
 
     // ── 1. Latency (primary factor) ──
@@ -275,11 +281,10 @@ function computeNodeScore(node) {
     score += latency; // 1:1 weight — ms directly as points
 
     // ── 2. Frame health ──
-    const frames = node.stats?.frameStats;
     if (frames && frames.sent > 0) {
         const nulledRatio = (frames.nulled || 0) / frames.sent;
         const deficitRatio = (frames.deficit || 0) / frames.sent;
-        score += (nulledRatio + deficitRatio) * 300; // Heavy penalty for frame drops
+        score += (nulledRatio + deficitRatio) * 4000; // Strong penalty for frame drops (audio stutter)
     }
 
     // ── 3. CPU load ──
@@ -295,12 +300,11 @@ function computeNodeScore(node) {
     score += playingPlayers * 3;
 
     // ── 5. Recent error penalty ──
-    const lastErr = nodeErrorTimestamps.get(node.id);
-    if (lastErr && (now - lastErr < COOLDOWN_MS)) {
+    if (hasRecentError) {
         // Decaying penalty: full penalty right after error, reduces over time
         const elapsed = now - lastErr;
         const penaltyFactor = 1 - (elapsed / COOLDOWN_MS);
-        score += 2000 * penaltyFactor;
+        score += 3000 * penaltyFactor;
     }
 
     return score;
@@ -335,8 +339,8 @@ function getHealthyNodes(manager, excludeNodeId = null) {
 
 /**
  * Get the single best node (convenience wrapper).
- * ALWAYS returns the primary node if it's connected and not excluded.
- * Falls back to the best healthy backup node only when primary is down.
+ * Returns the primary node if it is healthy and not degraded.
+ * Automatically falls back to the best healthy backup node if the primary has errors or frame drops.
  * @param {object} manager - LavalinkManager
  * @param {string|null} excludeNodeId - Optional node ID to exclude
  * @returns {object|null} Best node or null
@@ -344,15 +348,21 @@ function getHealthyNodes(manager, excludeNodeId = null) {
 function getBestNode(manager, excludeNodeId = null) {
     if (!manager || !manager.nodeManager) return null;
 
-    // Fast path: if primary node is connected and not excluded, always prefer it
+    // Fast path: if primary node is connected, healthy, and not excluded, prefer it
     if (excludeNodeId !== PRIMARY_NODE_ID) {
         const primaryNode = manager.nodeManager.nodes.get(PRIMARY_NODE_ID);
         if (primaryNode && primaryNode.connected) {
-            return primaryNode;
+            const lastErr = nodeErrorTimestamps.get(PRIMARY_NODE_ID);
+            const hasRecentError = !!(lastErr && (Date.now() - lastErr < 10 * 60 * 1000));
+            const frames = primaryNode.stats?.frameStats;
+            const isDroppingFrames = !!(frames && frames.sent > 0 && (((frames.nulled || 0) + (frames.deficit || 0)) / frames.sent) > 0.10);
+            if (!hasRecentError && !isDroppingFrames) {
+                return primaryNode;
+            }
         }
     }
 
-    // Primary is down — fall back to scored ranking of backup nodes
+    // Primary is down or degraded — fall back to scored ranking of backup nodes
     const nodes = getHealthyNodes(manager, excludeNodeId);
     return nodes[0] || null;
 }
