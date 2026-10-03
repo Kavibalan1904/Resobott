@@ -1,5 +1,5 @@
 const { nowPlayingEmbed, createRecommendationComponents, createPlayerControls, createDisabledControls, createEmbed, errorEmbed, warningEmbed, EMOJIS } = require('../utils/embeds');
-const { truncate, markNodeError, getHealthyNodes, getBestNode, computeNodeScore } = require('../utils/helpers');
+const { truncate, markNodeError, getHealthyNodes, getBestNode, computeNodeScore, cleanVideoTitle } = require('../utils/helpers');
 const { getRecommendations, getAutoplayTrack } = require('../utils/recommendations');
 
 /**
@@ -49,10 +49,11 @@ function setupLavalinkEvents(client) {
         }
 
         try {
-            // Build a search query from the track title + author
-            const title = track?.info?.title || '';
+            // Build a search query from the clean track title + author
+            const rawTitle = track?.info?.title || '';
+            const cleanTitle = cleanVideoTitle(rawTitle) || rawTitle;
             const author = track?.info?.author || '';
-            const searchQuery = `${title} ${author}`.trim();
+            const searchQuery = cleanTitle.trim();
             const isrc = track?.info?.isrc || null;
             const originalSource = (track?.info?.sourceName || '').toLowerCase();
 
@@ -90,14 +91,14 @@ function setupLavalinkEvents(client) {
                 retrySources.push({ source: 'scsearch', query: searchQuery, label: 'SoundCloud fallback' });
             }
 
-            // Try each source on each node with a strict 3.5s timeout
+            // Try each source on each node with a strict 4.5s timeout
             for (const retrySource of retrySources) {
                 for (const searchNode of searchNodes) {
                     try {
-                        console.log(`[Reso] ↻ Retrying "${title}" via ${retrySource.label} on node "${searchNode.id}" (reason: ${reason})`);
+                        console.log(`[Reso] ↻ Retrying "${cleanTitle}" via ${retrySource.label} on node "${searchNode.id}" (reason: ${reason})`);
 
                         const searchTimeout = new Promise((_, reject) =>
-                            setTimeout(() => reject(new Error('Search timeout')), 2500)
+                            setTimeout(() => reject(new Error('Search timeout')), 4500)
                         );
                         const result = await Promise.race([
                             searchNode.search({ query: retrySource.query, source: retrySource.source }, track.requester),
