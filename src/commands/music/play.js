@@ -209,9 +209,20 @@ module.exports = {
             let result = null;
 
             try {
-                if (isAttachment || isUrl) {
+                if (isAttachment) {
+                    // File attachment: load directly
+                    result = await player.search({ query }, interaction.user);
+                } else if (isUrl && ytVideoId) {
+                    // YouTube video URL: go STRAIGHT to ytsearch with video ID.
+                    // Direct URL loading times out on datacenter IPs (Render/Docker),
+                    // but ytsearch resolves instantly via the YouTube plugin.
+                    console.log(`[Reso] 🔴 YouTube video link detected (${ytVideoId}). Loading via ytsearch...`);
+                    result = await player.search({ query: ytVideoId, source: 'ytsearch' }, interaction.user);
+                } else if (isUrl) {
+                    // Non-YouTube URL (Spotify, SoundCloud, playlist, etc.): load directly
                     result = await player.search({ query }, interaction.user);
                 } else {
+                    // Text query: use the selected search source
                     result = await player.search({ query, source: searchSource }, interaction.user);
                 }
             } catch (err) {
@@ -221,12 +232,17 @@ module.exports = {
             // Quick fallbacks only if primary search found nothing
             if (!result || !result.tracks || result.tracks.length === 0) {
                 if (isUrl && isYouTubeUrl(query)) {
-                    // If YouTube direct URL failed, try ytsearch with video ID
-                    const vid = extractYouTubeVideoId(query);
-                    if (vid) {
+                    // YouTube URL failed — try direct URL as last resort (handles playlists)
+                    if (ytVideoId) {
                         try {
-                            console.log(`[Reso] ↻ Retrying YouTube ID: ${vid}...`);
-                            result = await player.search({ query: vid, source: 'ytsearch' }, interaction.user);
+                            console.log(`[Reso] ↻ YouTube ytsearch failed, trying direct URL...`);
+                            result = await player.search({ query }, interaction.user);
+                        } catch {}
+                    } else {
+                        // Playlist URL — try ytsearch with cleaned query
+                        try {
+                            console.log(`[Reso] ↻ YouTube playlist failed, retrying...`);
+                            result = await player.search({ query }, interaction.user);
                         } catch {}
                     }
                 } else if (isUrl && isSpotifyUrl(query)) {
@@ -244,7 +260,7 @@ module.exports = {
                         }
                     } catch {}
                 } else if (!isUrl && !isAttachment && searchSource !== 'scsearch') {
-                    // If text search on YouTube found nothing, try SoundCloud once
+                    // If text search found nothing, try SoundCloud once
                     try {
                         console.log(`[Reso] ↻ Quick SoundCloud fallback for: "${truncate(query, 50)}"...`);
                         result = await player.search({ query, source: 'scsearch' }, interaction.user);
