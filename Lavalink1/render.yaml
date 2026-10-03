@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: reso-lavalink
+    env: docker
+    plan: free
+    region: singapore
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /version
+    envVars:
+      - key: PORT
+        value: "8080"

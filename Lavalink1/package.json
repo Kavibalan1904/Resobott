@@ -1,0 +1,12 @@
+{
+  "name": "reso-lavalink",
+  "version": "1.0.0",
+  "description": "24/7 Lavalink v4 server deployment kit for Discord bots",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "keywords": ["lavalink", "discord", "music", "bot"],
+  "author": "Kavibalan1904",
+  "license": "MIT"
+}
