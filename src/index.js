@@ -97,11 +97,20 @@ if (process.env.LAVALINK_HOST) {
     addedHosts.add(`${host.toLowerCase()}:${port}`);
 }
 
-// 2. Backup / Fallback Public Nodes (Lavalink v4 — LIVE-PROBED 2026-09-08)
-//    Every node below responded HTTP 200 on /v4/info when tested.
+// 2. Backup / Fallback Nodes (ordered by reliability)
 //    retryAmount capped at 5 to prevent infinite log spam from dead nodes.
 const backupNodes = [
-    // ── SSL Nodes (Port 443) ────────────────────────────────────
+    // ── Private Render Node (reliable for search + failover, YouTube playback may be throttled) ──
+    {
+        id: 'backup-render-private',
+        host: 'lavalink1-7tbh.onrender.com',
+        port: 443,
+        authorization: 'youshallnotpass',
+        secure: true,
+        retryAmount: Infinity, // Private node — always retry
+        retryDelay: 15000,
+    },
+    // ── SSL Public Nodes (Port 443) ────────────────────────────────────
     {
         id: 'backup-ssl-serenetia',
         host: 'lavalinkv4.serenetia.com',
