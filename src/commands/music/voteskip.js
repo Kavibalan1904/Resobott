@@ -14,7 +14,7 @@ module.exports = {
         }
 
         const player = interaction.client.lavalink.getPlayer(interaction.guild.id);
-        if (!player || !player.playing) {
+        if (!player || (!player.playing && !player.paused) || !player.queue.current) {
             return interaction.reply({ embeds: [errorEmbed('Nothing is playing right now.')], ephemeral: true });
         }
 
@@ -35,7 +35,7 @@ module.exports = {
         if (humanCount <= 1) {
             const currentTrack = player.queue.current;
             const title = truncate(currentTrack?.info?.title || 'Unknown', 50);
-            await player.skip();
+            await player.skip(0, false);
             const embed = createEmbed('Success')
                 .setDescription(`${EMOJIS.voteskip} Skipped **${title}** (only you in the channel)`);
             return interaction.reply({ embeds: [embed] });
@@ -55,7 +55,7 @@ module.exports = {
 
         // Check if initiator's vote alone is enough
         if (voteData.voters.size >= needed) {
-            await player.skip();
+            await player.skip(0, false);
             interaction.client.voteSkips.delete(guildId);
             const embed = createEmbed('Success')
                 .setDescription(`${EMOJIS.voteskip} Vote skip passed! (**1/${needed}** votes) ⏭️\n> Skipped **${title}**`);

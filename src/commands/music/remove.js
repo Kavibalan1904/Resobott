@@ -20,7 +20,7 @@ module.exports = {
         }
 
         const player = interaction.client.lavalink.getPlayer(interaction.guild.id);
-        if (!player || !player.playing) {
+        if (!player || (!player.playing && !player.paused) || !player.queue.current) {
             return interaction.reply({ embeds: [errorEmbed('Nothing is playing right now.')], ephemeral: true });
         }
 
@@ -31,7 +31,7 @@ module.exports = {
         }
 
         const removed = player.queue.tracks[position - 1];
-        player.queue.remove(position - 1);
+        await player.queue.remove(position - 1);
 
         return interaction.reply({ embeds: [successEmbed(`Removed **${truncate(removed?.info?.title, 50)}** from position #${position} 🗑️`)] });
     },

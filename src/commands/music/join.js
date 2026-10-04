@@ -30,18 +30,20 @@ module.exports = {
                     volume: parseInt(process.env.DEFAULT_VOLUME) || 50,
                 });
             } else {
-                // Move to the new voice channel
+                player.options.voiceChannelId = voiceChannel.id;
                 player.voiceChannelId = voiceChannel.id;
             }
 
             if (!player.connected) {
                 await player.connect();
+            } else {
+                await player.changeVoiceState({ voiceChannelId: voiceChannel.id }).catch(() => {});
             }
 
             return interaction.reply({ embeds: [successEmbed(`Joined **${voiceChannel.name}**! 🎧`)] });
         } catch (error) {
             console.error('[Reso] Join error:', error);
-            return interaction.reply({ embeds: [errorEmbed('Could not join the voice channel.')] });
+            return interaction.reply({ embeds: [errorEmbed('Could not join the voice channel.')], ephemeral: true });
         }
     },
 };

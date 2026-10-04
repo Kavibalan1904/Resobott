@@ -48,14 +48,21 @@ plugins:
     allowSearch: true
     allowDirectVideoIds: true
     allowDirectPlaylistIds: true
+
+    oauth:
+      enabled: true
+
+    remoteCipher:
+      url: "https://cipher.kikkia.dev"
+      password: ""
+      userAgent: "Resobot/1.0"
+
     clients:
-      - MUSIC
-      - ANDROID_VR
-      - ANDROID_MUSIC
       - TV
-      - MWEB
-      - WEBEMBEDDED
       - WEB
+      - WEBEMBEDDED
+      - MWEB
+      - ANDROID_VR
 
 logging:
   level:

@@ -241,11 +241,6 @@ async function main() {
             client.lavalink.init({ id: client.user.id, username: client.user.username });
             console.log('[Reso] ✓ Lavalink manager initialized');
 
-            // Start background node health monitor (latency probes every 60s for fast switching)
-            const { startNodeHealthMonitor } = require('./utils/helpers');
-            startNodeHealthMonitor(client.lavalink);
-            console.log('[Reso] ✓ Node health monitor started (60s interval)');
-
 
             // Set activity
             client.user.setPresence({

@@ -67,7 +67,7 @@ async function handlePlayerButton(interaction, client) {
 
                 // Re-add the previous track and play it
                 player.queue.add(previousTrack, 0);
-                await player.skip();
+                await player.skip(0, false);
 
                 await interaction.reply({
                     embeds: [successEmbed(`⏮️ Playing previous: **${truncate(previousTrack.info?.title || 'Unknown', 50)}**`)],
@@ -126,7 +126,7 @@ async function handlePlayerButton(interaction, client) {
                     }).catch(() => {});
                 }
 
-                await player.skip();
+                await player.skip(0, false);
 
                 await interaction.reply({
                     embeds: [successEmbed(`⏭️ Skipped **${title}**`)],

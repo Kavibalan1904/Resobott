@@ -207,6 +207,7 @@ module.exports = {
 
             // Simple, fast direct search
             let result = null;
+            let fallbackNote = null;
 
             try {
                 if (isAttachment) {
@@ -214,8 +215,6 @@ module.exports = {
                     result = await player.search({ query }, interaction.user);
                 } else if (isUrl && ytVideoId) {
                     // YouTube video URL: go STRAIGHT to ytsearch with video ID.
-                    // Direct URL loading times out on datacenter IPs (Render/Docker),
-                    // but ytsearch resolves instantly via the YouTube plugin.
                     console.log(`[Reso] 🔴 YouTube video link detected (${ytVideoId}). Loading via ytsearch...`);
                     result = await player.search({ query: ytVideoId, source: 'ytsearch' }, interaction.user);
                 } else if (isUrl) {
@@ -237,12 +236,24 @@ module.exports = {
                         try {
                             console.log(`[Reso] ↻ YouTube ytsearch failed, trying direct URL...`);
                             result = await player.search({ query }, interaction.user);
+                            if (result?.tracks?.length > 0) fallbackNote = 'Loaded via direct YouTube stream';
                         } catch {}
                     } else {
-                        // Playlist URL — try ytsearch with cleaned query
+                        // Playlist URL — retry
                         try {
                             console.log(`[Reso] ↻ YouTube playlist failed, retrying...`);
                             result = await player.search({ query }, interaction.user);
+                        } catch {}
+                    }
+
+                    // If still failed, attempt SoundCloud search fallback with video title/ID
+                    if ((!result || !result.tracks || result.tracks.length === 0) && ytVideoId) {
+                        try {
+                            console.log(`[Reso] ↻ YouTube failed, trying SoundCloud fallback for "${ytVideoId}"...`);
+                            result = await player.search({ query: ytVideoId, source: 'scsearch' }, interaction.user);
+                            if (result?.tracks?.length > 0) {
+                                fallbackNote = '⚠️ YouTube stream unavailable — playing alternative from SoundCloud';
+                            }
                         } catch {}
                     }
                 } else if (isUrl && isSpotifyUrl(query)) {
@@ -256,6 +267,7 @@ module.exports = {
                                 const cleanTitle = cleanVideoTitle(oembedData.title);
                                 console.log(`[Reso] ✓ Found Spotify title: "${cleanTitle}". Searching YouTube...`);
                                 result = await player.search({ query: cleanTitle, source: 'ytsearch' }, interaction.user);
+                                if (result?.tracks?.length > 0) fallbackNote = 'Matched via Spotify metadata';
                             }
                         }
                     } catch {}
@@ -264,6 +276,9 @@ module.exports = {
                     try {
                         console.log(`[Reso] ↻ Quick SoundCloud fallback for: "${truncate(query, 50)}"...`);
                         result = await player.search({ query, source: 'scsearch' }, interaction.user);
+                        if (result?.tracks?.length > 0) {
+                            fallbackNote = '⚠️ YouTube search returned no results — playing SoundCloud alternative';
+                        }
                     } catch {}
                 }
             }
@@ -353,7 +368,8 @@ module.exports = {
                 .setDescription(
                     `${sourceEmoji} ${isAttachment ? 'Loaded from' : 'Found on'} **${matchedSource}**\n\n` +
                     `**[${truncate(info.title || 'Unknown Track', 55)}](${info.uri || ''})**\n` +
-                    `${EMOJIS.clock} \`${info.isStream ? 'Live' : formatMs(info.duration)}\` • Requested by ${interaction.user}`
+                    `${EMOJIS.clock} \`${info.isStream ? 'Live' : formatMs(info.duration)}\` • Requested by ${interaction.user}` +
+                    (fallbackNote ? `\n\n> *${fallbackNote}*` : '')
                 )
                 .setThumbnail(info.artworkUrl || null);
 

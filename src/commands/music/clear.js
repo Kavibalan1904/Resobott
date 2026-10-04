@@ -14,7 +14,7 @@ module.exports = {
         }
 
         const player = interaction.client.lavalink.getPlayer(interaction.guild.id);
-        if (!player || !player.playing) {
+        if (!player || (!player.playing && !player.paused) || !player.queue.current) {
             return interaction.reply({ embeds: [errorEmbed('Nothing is playing right now.')], ephemeral: true });
         }
 
@@ -23,7 +23,7 @@ module.exports = {
         }
 
         const count = player.queue.tracks.length;
-        player.queue.tracks.splice(0, count);
+        await player.queue.splice(0, count);
         return interaction.reply({ embeds: [successEmbed(`Cleared **${count}** tracks from the queue! 🗑️`)] });
     },
 };

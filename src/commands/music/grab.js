@@ -9,7 +9,7 @@ module.exports = {
 
     async execute(interaction) {
         const player = interaction.client.lavalink.getPlayer(interaction.guild.id);
-        if (!player || !player.playing) {
+        if (!player || (!player.playing && !player.paused) || !player.queue.current) {
             return interaction.reply({ embeds: [errorEmbed('Nothing is playing right now.')], ephemeral: true });
         }
 

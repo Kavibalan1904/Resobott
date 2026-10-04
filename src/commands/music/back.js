@@ -34,13 +34,14 @@ module.exports = {
 
             // Add it to the front of the queue
             previousTrack.requester = interaction.user;
-            player.queue.tracks.unshift(previousTrack);
+            player.queue.add(previousTrack, 0);
 
             // Skip current track to play the previous one
-            await player.skip();
+            await player.skip(0, false);
 
             return interaction.editReply({ embeds: [successEmbed('Playing the previous track! ⏮️')] });
         } catch (error) {
+            console.error('[Reso] Back error:', error);
             return interaction.editReply({ embeds: [errorEmbed('Could not go back to the previous track.')] });
         }
     },
