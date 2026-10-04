@@ -96,6 +96,17 @@ defaultNodes.push({
     retryDelay: 5000,      // Fast 5s reconnect attempts
 });
 
+// ── Fallback Backup Node (Ensures 100% uptime when primary is restarting/sleeping) ──
+defaultNodes.push({
+    id: 'backup-millohost',
+    host: 'lava-v4.millohost.my.id',
+    port: 443,
+    authorization: 'https://discord.gg/mjS5J2K3ep',
+    secure: true,
+    retryAmount: Infinity,
+    retryDelay: 10000,
+});
+
 client.lavalink = new LavalinkManager({
     nodes: defaultNodes,
     sendToShard: (guildId, payload) => {
@@ -240,6 +251,18 @@ async function main() {
             // Initialize Lavalink manager
             client.lavalink.init({ id: client.user.id, username: client.user.username });
             console.log('[Reso] ✓ Lavalink manager initialized');
+
+            // ── Keep Render node awake (prevents free-tier 15min inactivity sleep) ──
+            if (host.includes('onrender.com')) {
+                const keepAliveUrl = `${isSecure ? 'https' : 'http'}://${host}:${port}/version`;
+                setInterval(() => {
+                    const httpModule = isSecure ? require('https') : require('http');
+                    const req = httpModule.get(keepAliveUrl, { headers: { 'Authorization': password }, timeout: 10000 }, (res) => {
+                        res.resume();
+                    });
+                    req.on('error', () => {});
+                }, 10 * 60 * 1000);
+            }
 
 
             // Set activity
