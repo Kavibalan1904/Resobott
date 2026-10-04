@@ -237,13 +237,13 @@ module.exports = {
                             console.log(`[Reso] ↻ YouTube ytsearch failed, trying direct URL...`);
                             result = await player.search({ query }, interaction.user);
                             if (result?.tracks?.length > 0) fallbackNote = 'Loaded via direct YouTube stream';
-                        } catch {}
+                        } catch { }
                     } else {
                         // Playlist URL — retry
                         try {
                             console.log(`[Reso] ↻ YouTube playlist failed, retrying...`);
                             result = await player.search({ query }, interaction.user);
-                        } catch {}
+                        } catch { }
                     }
 
                     // If still failed, attempt SoundCloud search fallback with video title/ID
@@ -254,7 +254,7 @@ module.exports = {
                             if (result?.tracks?.length > 0) {
                                 fallbackNote = '⚠️ YouTube stream unavailable — playing alternative from SoundCloud';
                             }
-                        } catch {}
+                        } catch { }
                     }
                 } else if (isUrl && isSpotifyUrl(query)) {
                     // If Spotify URL failed, resolve title via Spotify oEmbed and search YouTube
@@ -270,7 +270,7 @@ module.exports = {
                                 if (result?.tracks?.length > 0) fallbackNote = 'Matched via Spotify metadata';
                             }
                         }
-                    } catch {}
+                    } catch { }
                 } else if (!isUrl && !isAttachment && searchSource !== 'scsearch') {
                     // If text search found nothing, try SoundCloud once
                     try {
@@ -279,7 +279,7 @@ module.exports = {
                         if (result?.tracks?.length > 0) {
                             fallbackNote = '⚠️ YouTube search returned no results — playing SoundCloud alternative';
                         }
-                    } catch {}
+                    } catch { }
                 }
             }
 
