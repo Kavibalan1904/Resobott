@@ -19,6 +19,9 @@ function setupLavalinkEvents(client) {
     // Used to prevent queueEnd from firing "Queue has ended" while a retry search is still running
     const activeRetries = new Set();
 
+    // ── Track successful retries that are pending TrackStartEvent ──
+    const successfulRetries = new Set();
+
     // ── Track the last Now Playing message per guild (for single active message) ──
     const lastNowPlayingMessage = client.lastNowPlayingMessage || (client.lastNowPlayingMessage = new Map());
 
@@ -88,6 +91,7 @@ function setupLavalinkEvents(client) {
                         console.log(`[Reso] ✓ Retry resolved: "${truncate(resolvedTrack.info?.title, 40)}" from ${resolvedSource}`);
 
                         await player.play({ clientTrack: resolvedTrack });
+                        successfulRetries.add(guildId); // Mark as successfully retried to suppress queueEnd
 
                         const channel = client.channels.cache.get(player.textChannelId);
                         if (channel) {
@@ -297,15 +301,17 @@ function setupLavalinkEvents(client) {
                 await new Promise(r => setTimeout(r, 500));
                 if (!activeRetries.has(player.guildId)) break;
             }
-            // If the retry succeeded and player is now playing, suppress the "queue ended" message
-            if (player.playing) {
-                console.log(`[Reso] ✓ queueEnd suppressed — retry succeeded, player is playing`);
+            // If the retry succeeded (or player somehow resumed playing), suppress the "queue ended" message
+            if (player.playing || successfulRetries.has(player.guildId)) {
+                console.log(`[Reso] ✓ queueEnd suppressed — retry succeeded, playback pending`);
+                successfulRetries.delete(player.guildId);
                 return;
             }
         }
 
         // Clean up retry state for this guild
         retriedTracks.delete(player.guildId);
+        successfulRetries.delete(player.guildId);
 
         // ── Clean up last Now Playing message ──
         const prevMsg = lastNowPlayingMessage.get(player.guildId);
