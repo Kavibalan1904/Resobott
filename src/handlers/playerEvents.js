@@ -1,4 +1,4 @@
-const { nowPlayingEmbed, createRecommendationComponents, createPlayerControls, createDisabledControls, createEmbed, errorEmbed, warningEmbed, EMOJIS } = require('../utils/embeds');
+const { nowPlayingEmbed, createRecommendationComponents, createPlayerControls, createDisabledControls, createEmbed, errorEmbed, warningEmbed, EMOJIS, capitalize } = require('../utils/embeds');
 const { truncate, markNodeError, getHealthyNodes, getBestNode, computeNodeScore, cleanVideoTitle } = require('../utils/helpers');
 const { getRecommendations, getAutoplayTrack } = require('../utils/recommendations');
 
@@ -67,34 +67,40 @@ function setupLavalinkEvents(client) {
             if (!searchQuery) return false;
             if (!player.node || !player.node.connected) return false;
 
-            // Single fast fallback source: if YouTube failed, try SoundCloud. Otherwise try YouTube.
-            const fallbackSource = originalSource.includes('youtube') || originalSource.includes('yt') ? 'scsearch' : 'ytsearch';
-            console.log(`[Reso] ↻ Quick retry for "${cleanTitle}" via ${fallbackSource} (reason: ${reason})`);
+            // Smart fallback source:
+            // Since Spotify uses YouTube under the hood, any failure on YouTube/Spotify should fall back to SoundCloud.
+            // If SoundCloud fails, fallback to YouTube.
+            const fallbackSources = (originalSource.includes('soundcloud') || originalSource.includes('sc'))
+                ? ['ytsearch', 'ytmsearch']
+                : ['scsearch', 'ytsearch'];
 
-            try {
-                const searchPromise = player.search({ query: searchQuery, source: fallbackSource }, track.requester);
-                const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Retry search timeout')), 5000));
-                const result = await Promise.race([searchPromise, timeoutPromise]);
+            for (const fallbackSource of fallbackSources) {
+                console.log(`[Reso] ↻ Quick retry for "${cleanTitle}" via ${fallbackSource} (reason: ${reason})`);
+                try {
+                    const searchPromise = player.search({ query: searchQuery, source: fallbackSource }, track.requester);
+                    const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Retry search timeout')), 5000));
+                    const result = await Promise.race([searchPromise, timeoutPromise]);
 
-                if (result && result.tracks && result.tracks.length > 0) {
-                    const resolvedTrack = result.tracks[0];
-                    resolvedTrack.requester = track.requester;
-                    const resolvedSource = resolvedTrack?.info?.sourceName || fallbackSource;
-                    console.log(`[Reso] ✓ Retry resolved: "${truncate(resolvedTrack.info?.title, 40)}" from ${resolvedSource}`);
+                    if (result && result.tracks && result.tracks.length > 0) {
+                        const resolvedTrack = result.tracks[0];
+                        resolvedTrack.requester = track.requester;
+                        const resolvedSource = resolvedTrack?.info?.sourceName ? capitalize(resolvedTrack.info.sourceName) : fallbackSource;
+                        console.log(`[Reso] ✓ Retry resolved: "${truncate(resolvedTrack.info?.title, 40)}" from ${resolvedSource}`);
 
-                    await player.play({ clientTrack: resolvedTrack });
+                        await player.play({ clientTrack: resolvedTrack });
 
-                    const channel = client.channels.cache.get(player.textChannelId);
-                    if (channel) {
-                        const embed = warningEmbed(
-                            `Track **${truncate(rawTitle, 50)}** ${reason}. Switched to **${resolvedSource}**.`
-                        );
-                        channel.send({ embeds: [embed] }).catch(() => { });
+                        const channel = client.channels.cache.get(player.textChannelId);
+                        if (channel) {
+                            const embed = warningEmbed(
+                                `Track **${truncate(rawTitle, 50)}** ${reason}. Switched to **${resolvedSource}**.`
+                            );
+                            channel.send({ embeds: [embed] }).catch(() => { });
+                        }
+                        return true;
                     }
-                    return true;
+                } catch (err) {
+                    console.warn(`[Reso] ✗ Retry search on ${fallbackSource} failed: ${err.message}`);
                 }
-            } catch (err) {
-                console.warn(`[Reso] ✗ Retry search failed: ${err.message}`);
             }
 
             return false;
