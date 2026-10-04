@@ -14,28 +14,28 @@ lavalink:
     password: "youshallnotpass"
     sources:
       youtube: false
-      bandcamp: true
+      bandcamp: false
       soundcloud: true
-      twitch: true
-      vimeo: true
+      twitch: false
+      vimeo: false
       http: true
       local: false
     filters:
       volume: true
       equalizer: true
-      karaoke: true
+      karaoke: false
       timescale: true
-      tremolo: true
-      vibrato: true
-      distortion: true
-      rotation: true
-      channelMix: true
-      lowPass: true
-    bufferDurationMs: 4000 # 4000ms NAS buffer — large cushion against network jitter and GC pauses
-    frameBufferDurationMs: 8000 # 8s frame buffer — large cushion against network jitter and GC spikes
-    opusEncodingQuality: 8 # Crisp audio with significantly lower CPU load
-    resamplingQuality: MEDIUM # Balanced resampling avoiding CPU spikes
-    trackStuckThresholdMs: 7000 # Detect stuck tracks in 7s for responsive recovery
+      tremolo: false
+      vibrato: false
+      distortion: false
+      rotation: false
+      channelMix: false
+      lowPass: false
+    bufferDurationMs: 1000 # 1s NAS buffer — smooth network cushion without high memory usage
+    frameBufferDurationMs: 4000 # 4s frame buffer — prevents audio stutter while cutting heap memory in half
+    opusEncodingQuality: 7 # Balanced encoding quality (crisp audio with lower CPU & memory)
+    resamplingQuality: LOW # Low CPU and memory overhead during resampling
+    trackStuckThresholdMs: 8000 # 8s threshold for responsive recovery
     useSeekGhosting: true
     youtubePlaylistLoadLimit: 100
     playerUpdateInterval: 5 # Client tracks position locally; 5s server sync is plenty
