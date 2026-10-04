@@ -272,6 +272,17 @@ function setupLavalinkEvents(client) {
                 console.warn(`[Reso] Node failover on trackEnd failed (${player.guildId}):`, err.message);
             }
         }
+
+        // ── Manual Queue Advancement ──
+        // Since autoSkip is false, we must manually advance the queue when a track finishes normally.
+        // (Errors and stuck tracks are handled by their respective event listeners)
+        if (endReason === 'finished') {
+            try {
+                await player.skip();
+            } catch (err) {
+                console.error(`[Reso] Failed to skip to next track on trackEnd:`, err.message);
+            }
+        }
     });
 
     // ── Queue finished (all tracks done) ───────────────────────
@@ -367,18 +378,22 @@ function setupLavalinkEvents(client) {
 
         // Retry failed or already retried — skip with error message
         const channel = client.channels.cache.get(player.textChannelId);
-        if (!channel) return;
+        if (channel) {
+            const embed = errorEmbed(
+                `Failed to play **${truncate(track?.info?.title, 50)}**\n\`\`\`${truncate(payload?.exception?.message || 'Unknown error', 200)}\`\`\``
+            );
+            channel.send({ embeds: [embed] }).catch(() => { });
+        }
 
-        const embed = errorEmbed(
-            `Failed to play **${truncate(track?.info?.title, 50)}**\n\`\`\`${truncate(payload?.exception?.message || 'Unknown error', 200)}\`\`\``
-        );
-        channel.send({ embeds: [embed] }).catch(() => { });
+        // Advance the queue manually
+        try {
+            await player.skip();
+        } catch (err) {
+            console.error('[Reso] Error advancing queue after trackError:', err.message);
+        }
     });
 
     // ── Track stuck ────────────────────────────────────────────
-    // NOTE: Do NOT call player.skip() here! autoSkip:true (index.js) already
-    // advances the queue after Lavalink sends TrackEndEvent(reason=stuck).
-    // Calling skip() manually would DOUBLE-SKIP and eat the next queued track.
     manager.on('trackStuck', async (player, track, payload) => {
         const thresholdMs = payload?.thresholdMs || '?';
         console.error(`[Reso] Track stuck (threshold: ${thresholdMs}ms):`, track?.info?.title);
@@ -387,12 +402,19 @@ function setupLavalinkEvents(client) {
         const retried = await retryTrack(player, track, 'got stuck');
         if (retried) return; // Retry initiated successfully
 
-        // Retry failed or already retried — notify user (autoSkip handles queue advancement)
+        // Retry failed or already retried — notify user and skip
         const channel = client.channels.cache.get(player.textChannelId);
-        if (!channel) return;
+        if (channel) {
+            const embed = errorEmbed(`Track **${truncate(track?.info?.title, 50)}** got stuck. Skipping...`);
+            channel.send({ embeds: [embed] }).catch(() => { });
+        }
 
-        const embed = errorEmbed(`Track **${truncate(track?.info?.title, 50)}** got stuck. Skipping...`);
-        channel.send({ embeds: [embed] }).catch(() => { });
+        // Advance the queue manually
+        try {
+            await player.skip();
+        } catch (err) {
+            console.error('[Reso] Error advancing queue after trackStuck:', err.message);
+        }
     });
 
     // ── Player created ─────────────────────────────────────────

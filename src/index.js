@@ -101,7 +101,7 @@ client.lavalink = new LavalinkManager({
     sendToShard: (guildId, payload) => {
         client.guilds.cache.get(guildId)?.shard?.send(payload);
     },
-    autoSkip: true,
+    autoSkip: false, // Turned off to handle queue advancement manually in playerEvents (fixes race condition with retryTrack)
     client: {
         id: (process.env.CLIENT_ID && /^\d+$/.test(process.env.CLIENT_ID)) ? process.env.CLIENT_ID : undefined,
         username: 'Reso',
