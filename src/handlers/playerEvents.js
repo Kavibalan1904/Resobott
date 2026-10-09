@@ -131,21 +131,6 @@ function setupLavalinkEvents(client) {
             console.log(`[Reso] ✓ Lavalink node "${node.id}" reconnected after ${prevAttempts} attempt(s)`);
         }
         nodeReconnectCounts.set(node.id, 0);
-
-        // ── FAILBACK: When PRIMARY node connects/reconnects, migrate all players back to it! ──
-        if (node.id === PRIMARY_NODE_ID) {
-            console.log(`[Reso] 🌟 PRIMARY node "${PRIMARY_NODE_ID}" connected! Ensuring active players migrate to primary...`);
-            for (const [, player] of manager.players) {
-                if (player.node?.id !== PRIMARY_NODE_ID) {
-                    try {
-                        await player.changeNode(PRIMARY_NODE_ID, false);
-                        console.log(`[Reso] 🏠 Migrated player (${player.guildId}) back to PRIMARY "${PRIMARY_NODE_ID}"`);
-                    } catch (err) {
-                        console.warn(`[Reso] Failed to migrate player (${player.guildId}) to primary:`, err.message);
-                    }
-                }
-            }
-        }
     });
 
     // ── Node disconnected ──────────────────────────────────────
@@ -280,18 +265,9 @@ function setupLavalinkEvents(client) {
             console.warn(`[Reso] ⚠ Track ended abnormally: "${truncate(track?.info?.title, 40)}" — reason: ${endReason}`);
         }
 
-        // ── Sticky Primary & Continuous Playback ──
-        // If primary-main is back online and player was temporarily on a backup node, migrate back to primary!
+        // ── Handle disconnected node on track end ──
         if (player && player.queue.tracks.length > 0) {
-            const primaryNode = manager.nodeManager.nodes.get(PRIMARY_NODE_ID);
-            if (primaryNode && primaryNode.connected && player.node?.id !== PRIMARY_NODE_ID) {
-                try {
-                    console.log(`[Reso] 🏠 Between tracks: migrating player (${player.guildId}) from backup "${player.node?.id}" → PRIMARY "${PRIMARY_NODE_ID}"`);
-                    await player.changeNode(PRIMARY_NODE_ID, false);
-                } catch (err) {
-                    console.warn(`[Reso] Primary migration on trackEnd failed (${player.guildId}):`, err.message);
-                }
-            } else if (!player.node || !player.node.connected) {
+            if (!player.node || !player.node.connected) {
                 // Current node is disconnected - failover to best available node
                 try {
                     const bestNode = getBestNode(manager);
