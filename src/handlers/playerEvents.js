@@ -25,6 +25,31 @@ function setupLavalinkEvents(client) {
     // ── Track the last Now Playing message per guild (for single active message) ──
     const lastNowPlayingMessage = client.lastNowPlayingMessage || (client.lastNowPlayingMessage = new Map());
 
+    // ── Diagnostic: Track time between tracks ──
+    const trackGaps = new Map();
+
+    // ── Queue advancement guard ──
+    const isAdvancingQueue = new Set();
+
+    async function advanceQueueSafely(player) {
+        if (isAdvancingQueue.has(player.guildId)) {
+            console.log(`[Reso] 🛡️ Queue advancement already in progress for guild ${player.guildId}, ignoring duplicate.`);
+            return;
+        }
+        isAdvancingQueue.add(player.guildId);
+        try {
+            if (player.queue && player.queue.tracks && player.queue.tracks.length > 0) {
+                await player.skip();
+            } else {
+                await player.stopPlaying(false, false);
+            }
+        } catch (err) {
+            console.error(`[Reso] ✗ Failed to advance queue safely:`, err.message);
+        } finally {
+            setTimeout(() => isAdvancingQueue.delete(player.guildId), 1500);
+        }
+    }
+
     /**
      * Attempt to re-resolve and replay a failed/stuck track once.
      * Source-aware: retries on the original source first, then falls back to YouTube.
@@ -34,6 +59,11 @@ function setupLavalinkEvents(client) {
         const guildId = player.guildId;
         const trackKey = track?.info?.uri || track?.info?.title || 'unknown';
 
+        if (activeRetries.has(guildId)) {
+            console.log(`[Reso] ⏳ Retry already in progress for guild ${guildId}, ignoring concurrent error (${reason}).`);
+            return true; // Pretend handled to prevent skip
+        }
+
         // Get or create the retry set for this guild
         if (!retriedTracks.has(guildId)) {
             retriedTracks.set(guildId, new Set());
@@ -42,7 +72,7 @@ function setupLavalinkEvents(client) {
 
         // Already retried this track? Don't loop.
         if (guildRetries.has(trackKey)) {
-            guildRetries.delete(trackKey);
+            console.log(`[Reso] ⏭️ Track already retried recently, skipping: "${truncate(trackKey, 40)}"`);
             return false;
         }
 
@@ -79,10 +109,20 @@ function setupLavalinkEvents(client) {
                 console.log(`[Reso ${ts}] ↻ RETRY: Quick retry for "${cleanTitle}" via ${fallbackSource} (reason: ${reason})`);
                 try {
                     const searchPromise = player.search({ query: searchQuery, source: fallbackSource }, track.requester);
-                    const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Retry search timeout')), 5000));
+                    let timeoutId;
+                    const timeoutPromise = new Promise((_, reject) => {
+                        timeoutId = setTimeout(() => reject(new Error('Retry search timeout')), 5000);
+                    });
                     const result = await Promise.race([searchPromise, timeoutPromise]);
+                    clearTimeout(timeoutId);
 
                     if (result && result.tracks && result.tracks.length > 0) {
+                        // Check if a new track started playing while we were searching (e.g. manual skip)
+                        if (player.playing && player.queue.current) {
+                            console.log(`[Reso] ⏭️ Retry aborted: A new track is already playing.`);
+                            return false;
+                        }
+
                         // Pick the second track to avoid playing the exact same broken video, unless there's only one.
                         let trackIndex = 0;
                         if ((fallbackSource === 'ytsearch' || fallbackSource === 'youtube') && result.tracks.length > 1) {
@@ -188,6 +228,17 @@ function setupLavalinkEvents(client) {
 
     // ── Track starts playing ───────────────────────────────────
     manager.on('trackStart', async (player, track) => {
+        const mem = Math.round(process.memoryUsage().rss / 1024 / 1024);
+        
+        // Measure track gap
+        if (trackGaps.has(player.guildId)) {
+            const gap = Date.now() - trackGaps.get(player.guildId);
+            console.log(`[Reso] ▶️ Track started: "${truncate(track?.info?.title, 40)}" (Node: ${player.node?.id}, Mem: ${mem}MB, Gap: ${gap}ms)`);
+            trackGaps.delete(player.guildId);
+        } else {
+            console.log(`[Reso] ▶️ Track started: "${truncate(track?.info?.title, 40)}" (Node: ${player.node?.id}, Mem: ${mem}MB)`);
+        }
+
         // Store in history for /back command
         const history = client.trackHistory.get(player.guildId) || [];
         // Keep last 50 tracks in history
@@ -260,9 +311,13 @@ function setupLavalinkEvents(client) {
     // ── Track ends ─────────────────────────────────────────────
     manager.on('trackEnd', async (player, track, payload) => {
         const endReason = payload?.reason || 'unknown';
+        trackGaps.set(player.guildId, Date.now()); // Start measuring transition gap
+
         // Log non-normal endings to help diagnose skipping issues
         if (endReason !== 'finished' && endReason !== 'replaced') {
             console.warn(`[Reso] ⚠ Track ended abnormally: "${truncate(track?.info?.title, 40)}" — reason: ${endReason}`);
+        } else if (endReason === 'finished') {
+            console.log(`[Reso] ⏹ Track finished normally: "${truncate(track?.info?.title, 40)}"`);
         }
 
         // ── Handle disconnected node on track end ──
@@ -285,15 +340,7 @@ function setupLavalinkEvents(client) {
         // Since autoSkip is false, we must manually advance the queue when a track finishes normally.
         // (Errors and stuck tracks are handled by their respective event listeners)
         if (endReason === 'finished') {
-            try {
-                if (player.queue && player.queue.tracks && player.queue.tracks.length > 0) {
-                    await player.skip();
-                } else {
-                    await player.stopPlaying(false, false);
-                }
-            } catch (err) {
-                console.error(`[Reso] Failed to skip to next track on trackEnd:`, err.message);
-            }
+            await advanceQueueSafely(player);
         }
     });
 
@@ -400,15 +447,7 @@ function setupLavalinkEvents(client) {
         }
 
         // Advance the queue manually safely
-        try {
-            if (player.queue && player.queue.tracks && player.queue.tracks.length > 0) {
-                await player.skip();
-            } else {
-                await player.stopPlaying(false, false);
-            }
-        } catch (err) {
-            console.error('[Reso] Error advancing queue after trackError:', err.message);
-        }
+        await advanceQueueSafely(player);
     });
 
     // ── Track stuck ────────────────────────────────────────────
@@ -429,15 +468,7 @@ function setupLavalinkEvents(client) {
         }
 
         // Advance the queue manually safely
-        try {
-            if (player.queue && player.queue.tracks && player.queue.tracks.length > 0) {
-                await player.skip();
-            } else {
-                await player.stopPlaying(false, false);
-            }
-        } catch (err) {
-            console.error('[Reso] Error advancing queue after trackStuck:', err.message);
-        }
+        await advanceQueueSafely(player);
     });
 
     // ── Player created ─────────────────────────────────────────
