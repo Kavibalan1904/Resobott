@@ -143,8 +143,8 @@ function setupLavalinkEvents(client) {
                         const resolvedSource = resolvedTrack?.info?.sourceName ? capitalize(resolvedTrack.info.sourceName) : fallbackSource;
                         console.log(`[Reso] ✓ Retry resolved: "${truncate(resolvedTrack.info?.title, 40)}" from ${resolvedSource}`);
 
+                        successfulRetries.add(guildId); // Mark as successfully retried BEFORE playing to suppress queueEnd race condition
                         await player.play({ clientTrack: resolvedTrack });
-                        successfulRetries.add(guildId); // Mark as successfully retried to suppress queueEnd
 
                         const channel = client.channels.cache.get(player.textChannelId);
                         if (channel) {
@@ -333,8 +333,8 @@ function setupLavalinkEvents(client) {
         }
 
         // ── Handle disconnected node on track end ──
-        if (endReason === 'finished' || endReason === 'replaced') {
-            consecutiveRetries.delete(player.guildId); // Reset consecutive retries on natural progression
+        if (endReason === 'finished') {
+            consecutiveRetries.delete(player.guildId); // Reset consecutive retries only on natural progression (not on replace)
         }
         if (player && player.queue.tracks.length > 0) {
             if (!player.node || !player.node.connected) {
