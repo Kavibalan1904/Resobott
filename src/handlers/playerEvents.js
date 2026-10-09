@@ -28,6 +28,9 @@ function setupLavalinkEvents(client) {
     // ── Diagnostic: Track time between tracks ──
     const trackGaps = new Map();
 
+    // ── Bounded Retries: Track consecutive retries per guild ──
+    const consecutiveRetries = new Map();
+
     // ── Queue advancement guard ──
     const isAdvancingQueue = new Set();
 
@@ -63,6 +66,13 @@ function setupLavalinkEvents(client) {
             console.log(`[Reso] ⏳ Retry already in progress for guild ${guildId}, ignoring concurrent error (${reason}).`);
             return true; // Pretend handled to prevent skip
         }
+
+        const currentRetries = consecutiveRetries.get(guildId) || 0;
+        if (currentRetries >= 2) {
+            console.log(`[Reso] 🛑 Bounded retry limit reached (2) for guild ${guildId}. Skipping track instead of looping.`);
+            return false;
+        }
+        consecutiveRetries.set(guildId, currentRetries + 1);
 
         // Get or create the retry set for this guild
         if (!retriedTracks.has(guildId)) {
@@ -228,6 +238,8 @@ function setupLavalinkEvents(client) {
 
     // ── Track starts playing ───────────────────────────────────
     manager.on('trackStart', async (player, track) => {
+        player.set('trackStartTime', Date.now()); // For diagnostics
+        
         const mem = Math.round(process.memoryUsage().rss / 1024 / 1024);
         
         // Measure track gap
@@ -321,6 +333,9 @@ function setupLavalinkEvents(client) {
         }
 
         // ── Handle disconnected node on track end ──
+        if (endReason === 'finished' || endReason === 'replaced') {
+            consecutiveRetries.delete(player.guildId); // Reset consecutive retries on natural progression
+        }
         if (player && player.queue.tracks.length > 0) {
             if (!player.node || !player.node.connected) {
                 // Current node is disconnected - failover to best available node
@@ -426,8 +441,10 @@ function setupLavalinkEvents(client) {
     // ── Track error ────────────────────────────────────────────
     manager.on('trackError', async (player, track, payload) => {
         const errorMsg = payload?.exception?.message || 'Unknown error';
-        console.error(`[Reso] ✗ Track error for "${track?.info?.title}":`, errorMsg);
-
+        const cause = payload?.exception?.cause || 'None';
+        const severity = payload?.exception?.severity || 'Unknown';
+        console.error(`[Reso] ✗ Track error for "${track?.info?.title}": ${errorMsg} (Cause: ${cause}, Severity: ${severity})`);
+        
         // Mark current node as having encountered a track playback error
         if (player?.node?.id) {
             markNodeError(player.node.id);
@@ -453,7 +470,11 @@ function setupLavalinkEvents(client) {
     // ── Track stuck ────────────────────────────────────────────
     manager.on('trackStuck', async (player, track, payload) => {
         const thresholdMs = payload?.thresholdMs || '?';
-        console.error(`[Reso] Track stuck (threshold: ${thresholdMs}ms):`, track?.info?.title);
+        const startTime = player.get('trackStartTime') || Date.now();
+        const elapsed = Date.now() - startTime;
+        
+        console.error(`[Reso] ⚠️ Track stuck (threshold: ${thresholdMs}ms): "${track?.info?.title}"`);
+        console.error(`[Reso] 🔍 DIAGNOSTICS - Node: ${player.node?.id} | State: ${player.playing ? 'PLAYING' : 'STOPPED'} | Paused: ${player.paused} | Position: ${player.position}ms | Elapsed since start: ${elapsed}ms`);
         console.error(`[Reso] 🔍 Diagnostic Payload:`, JSON.stringify(payload));
 
         // Attempt retry before giving up
