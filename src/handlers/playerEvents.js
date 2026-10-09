@@ -75,7 +75,8 @@ function setupLavalinkEvents(client) {
             const fallbackSources = [originalSource || 'ytsearch'];
 
             for (const fallbackSource of fallbackSources) {
-                console.log(`[Reso] ↻ Quick retry for "${cleanTitle}" via ${fallbackSource} (reason: ${reason})`);
+                const ts = new Date().toISOString();
+                console.log(`[Reso ${ts}] ↻ RETRY: Quick retry for "${cleanTitle}" via ${fallbackSource} (reason: ${reason})`);
                 try {
                     const searchPromise = player.search({ query: searchQuery, source: fallbackSource }, track.requester);
                     const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Retry search timeout')), 5000));
