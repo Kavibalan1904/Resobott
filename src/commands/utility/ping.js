@@ -31,13 +31,14 @@ module.exports = {
             const nodes = getNodeHealthSummary(manager);
 
             if (nodes.length > 0) {
-                const nodeLines = nodes.map((n, i) => {
+                const nodeLines = nodes.map((n) => {
+                    const isPrimary = n.isPrimary || n.id === 'primary-main';
+                    const roleLabel = isPrimary ? ' `PRIMARY`' : ' `BACKUP`';
                     if (!n.connected) {
-                        return `⚫ ~~${n.id}~~ — Offline`;
+                        return `⚫ ~~${n.id}~~${roleLabel} — Offline`;
                     }
 
-                    const isFirst = i === 0; // Best node (sorted by score)
-                    const prefix = isFirst ? '⭐' : '🟢';
+                    const prefix = isPrimary ? '⭐' : '🟢';
                     const latStr = n.latencyMs != null ? `\`${n.latencyMs}ms\`` : '`?`';
                     const scoreStr = n.score != null ? `Score: \`${n.score}\`` : '';
                     const frameStr = n.frameHealth != null ? `Frames: \`${n.frameHealth}%\`` : '';
@@ -50,7 +51,7 @@ module.exports = {
                         .filter(Boolean)
                         .join(' • ');
 
-                    return `${prefix} **${n.id}**${errorStr}\n> ${details}`;
+                    return `${prefix} **${n.id}**${roleLabel}${errorStr}\n> ${details}`;
                 });
 
                 embed.addFields({

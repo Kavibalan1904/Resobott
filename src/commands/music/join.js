@@ -1,6 +1,6 @@
 const { SlashCommandBuilder } = require('discord.js');
 const { errorEmbed, successEmbed } = require('../../utils/embeds');
-const { getVoiceChannel } = require('../../utils/helpers');
+const { getVoiceChannel, getBestNode, ensurePlayerNode } = require('../../utils/helpers');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -21,6 +21,7 @@ module.exports = {
         }
 
         try {
+            const targetNode = getBestNode(manager);
             if (!player) {
                 player = manager.createPlayer({
                     guildId: interaction.guild.id,
@@ -28,6 +29,7 @@ module.exports = {
                     textChannelId: interaction.channel.id,
                     selfDeaf: true,
                     volume: parseInt(process.env.DEFAULT_VOLUME) || 50,
+                    node: targetNode?.id,
                 });
             } else {
                 player.options.voiceChannelId = voiceChannel.id;
@@ -39,6 +41,8 @@ module.exports = {
             } else {
                 await player.changeVoiceState({ voiceChannelId: voiceChannel.id }).catch(() => {});
             }
+
+            await ensurePlayerNode(player, interaction.client);
 
             return interaction.reply({ embeds: [successEmbed(`Joined **${voiceChannel.name}**! 🎧`)] });
         } catch (error) {

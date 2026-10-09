@@ -249,7 +249,7 @@ function computeNodeScore(node) {
     if (!node || !node.connected) return Infinity;
 
     const now = Date.now();
-    const COOLDOWN_MS = 10 * 60 * 1000;
+    const COOLDOWN_MS = 60 * 1000; // 1-minute cooldown for minor errors
     let score = 0;
 
     const lastErr = nodeErrorTimestamps.get(node.id);
@@ -259,11 +259,10 @@ function computeNodeScore(node) {
     const isDroppingFrames = !!(frames && frames.sent > 0 && (((frames.nulled || 0) + (frames.deficit || 0)) / frames.sent) > 0.08);
 
     // ── PRIMARY NODE BONUS ──
-    // The primary-main node gets a score bonus (-5000) as long as it's healthy.
-    // If it has recent playback errors or is dropping >8% frames, revoke bonus
-    // so healthy backup nodes can take over immediately and prevent stutter.
-    if (node.id === PRIMARY_NODE_ID && !hasRecentError && !isDroppingFrames) {
-        score -= 5000;
+    // The primary-main node is the user's dedicated primary server.
+    // Give it a massive bonus (-100000) whenever connected so it is always #1.
+    if (node.id === PRIMARY_NODE_ID) {
+        score -= 100000;
     }
 
     // ── 1. Latency (primary factor) ──
@@ -301,10 +300,9 @@ function computeNodeScore(node) {
 
     // ── 5. Recent error penalty ──
     if (hasRecentError) {
-        // Decaying penalty: full penalty right after error, reduces over time
         const elapsed = now - lastErr;
         const penaltyFactor = 1 - (elapsed / COOLDOWN_MS);
-        score += 3000 * penaltyFactor;
+        score += 1500 * penaltyFactor;
     }
 
     return score;
@@ -326,7 +324,7 @@ function getHealthyNodes(manager, excludeNodeId = null) {
 
     if (connected.length === 0) return [];
 
-    // Score and sort all connected nodes
+    // Score and sort all connected nodes (primary-main will naturally be #1 due to primary bonus)
     const scored = connected.map(node => ({
         node,
         score: computeNodeScore(node),
@@ -339,8 +337,8 @@ function getHealthyNodes(manager, excludeNodeId = null) {
 
 /**
  * Get the single best node (convenience wrapper).
- * Returns the primary node if it is healthy and not degraded.
- * Automatically falls back to the best healthy backup node if the primary has errors or frame drops.
+ * Always returns the primary-main node whenever it is connected.
+ * Automatically falls back to healthy backup node if primary is offline.
  * @param {object} manager - LavalinkManager
  * @param {string|null} excludeNodeId - Optional node ID to exclude
  * @returns {object|null} Best node or null
@@ -348,21 +346,15 @@ function getHealthyNodes(manager, excludeNodeId = null) {
 function getBestNode(manager, excludeNodeId = null) {
     if (!manager || !manager.nodeManager) return null;
 
-    // Fast path: if primary node is connected, healthy, and not excluded, prefer it
+    // Fast path: if primary-main node is connected and not excluded, ALWAYS prefer it
     if (excludeNodeId !== PRIMARY_NODE_ID) {
         const primaryNode = manager.nodeManager.nodes.get(PRIMARY_NODE_ID);
         if (primaryNode && primaryNode.connected) {
-            const lastErr = nodeErrorTimestamps.get(PRIMARY_NODE_ID);
-            const hasRecentError = !!(lastErr && (Date.now() - lastErr < 10 * 60 * 1000));
-            const frames = primaryNode.stats?.frameStats;
-            const isDroppingFrames = !!(frames && frames.sent > 0 && (((frames.nulled || 0) + (frames.deficit || 0)) / frames.sent) > 0.10);
-            if (!hasRecentError && !isDroppingFrames) {
-                return primaryNode;
-            }
+            return primaryNode;
         }
     }
 
-    // Primary is down or degraded — fall back to scored ranking of backup nodes
+    // Primary is down or excluded — fall back to scored ranking of backup nodes
     const nodes = getHealthyNodes(manager, excludeNodeId);
     return nodes[0] || null;
 }
@@ -390,6 +382,7 @@ function getNodeHealthSummary(manager) {
             id: node.id,
             host: `${node.options?.host || '?'}:${node.options?.port || '?'}`,
             connected: node.connected,
+            isPrimary: node.id === PRIMARY_NODE_ID,
             latencyMs: latency,
             score: score === Infinity ? null : Math.round(score),
             players: node.stats?.playingPlayers || 0,
@@ -399,11 +392,13 @@ function getNodeHealthSummary(manager) {
                 ? Math.round(((frames.sent - (frames.nulled || 0) - (frames.deficit || 0)) / frames.sent) * 100)
                 : null,
             uptime: node.stats?.uptime || 0,
-            hasRecentError: !!nodeErrorTimestamps.get(node.id) && (Date.now() - nodeErrorTimestamps.get(node.id) < 10 * 60 * 1000),
+            hasRecentError: !!nodeErrorTimestamps.get(node.id) && (Date.now() - nodeErrorTimestamps.get(node.id) < 60 * 1000),
         };
     }).sort((a, b) => {
-        // Connected first, then by score
+        // Connected nodes first, then offline
         if (a.connected !== b.connected) return a.connected ? -1 : 1;
+        // Primary node ALWAYS first among connected nodes
+        if (a.isPrimary !== b.isPrimary) return a.isPrimary ? -1 : 1;
         return (a.score || Infinity) - (b.score || Infinity);
     });
 }
@@ -553,19 +548,27 @@ async function optimizeActivePlayers(manager) {
  */
 async function ensurePlayerNode(player, client) {
     if (!player) return null;
-    if (player.node && player.node.connected) return player.node;
 
     const manager = client?.lavalink || player.lavalinkManager;
     if (!manager || !manager.nodeManager) return player.node || null;
 
     const primaryNode = manager.nodeManager.nodes.get(PRIMARY_NODE_ID);
-    const targetNode = (primaryNode && primaryNode.connected) ? primaryNode : getBestNode(manager);
+    const primaryIsOnline = primaryNode && primaryNode.connected;
+
+    // Desired node: primary-main if online; otherwise best available healthy node
+    const targetNode = primaryIsOnline ? primaryNode : getBestNode(manager);
     if (!targetNode) return player.node || null;
+
+    // If player is already on the target node and connected, nothing to do
+    if (player.node && player.node.id === targetNode.id && player.node.connected) {
+        return player.node;
+    }
 
     try {
         await player.changeNode(targetNode.id, false);
+        console.log(`[Reso] 🎯 Attached player (${player.guildId}) to ${targetNode.id === PRIMARY_NODE_ID ? 'PRIMARY' : 'backup'} node "${targetNode.id}"`);
     } catch (e) {
-        console.warn(`[Reso] Failed to switch disconnected player to "${targetNode.id}":`, e.message);
+        console.warn(`[Reso] Failed to switch player to "${targetNode.id}":`, e.message);
     }
     return player.node;
 }
@@ -665,4 +668,5 @@ module.exports = {
     isSoundCloudUrl,
     isUrl,
     cleanVideoTitle,
+    PRIMARY_NODE_ID,
 };

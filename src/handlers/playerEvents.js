@@ -1,5 +1,5 @@
 const { nowPlayingEmbed, createRecommendationComponents, createPlayerControls, createDisabledControls, createEmbed, errorEmbed, warningEmbed, EMOJIS, capitalize } = require('../utils/embeds');
-const { truncate, markNodeError, getHealthyNodes, getBestNode, computeNodeScore, cleanVideoTitle } = require('../utils/helpers');
+const { truncate, markNodeError, getHealthyNodes, getBestNode, computeNodeScore, cleanVideoTitle, PRIMARY_NODE_ID } = require('../utils/helpers');
 const { getRecommendations, getAutoplayTrack } = require('../utils/recommendations');
 
 /**
@@ -71,11 +71,15 @@ function setupLavalinkEvents(client) {
             if (!player.node || !player.node.connected) return false;
 
             // Smart fallback source:
-            // Since Spotify uses YouTube under the hood, any failure on YouTube/Spotify should fall back to SoundCloud.
-            // If SoundCloud fails, fallback to YouTube.
-            const fallbackSources = (originalSource.includes('soundcloud') || originalSource.includes('sc'))
-                ? ['ytsearch', 'ytmsearch']
-                : ['scsearch', 'ytsearch'];
+            let fallbackSources = [];
+            if (originalSource.includes('soundcloud') || originalSource.includes('sc')) {
+                fallbackSources = ['ytsearch', 'spsearch'];
+            } else if (originalSource.includes('youtube') || originalSource.includes('yt')) {
+                // If it failed on YouTube, do NOT retry on YouTube again! Use SoundCloud.
+                fallbackSources = ['scsearch', 'spsearch'];
+            } else {
+                fallbackSources = ['scsearch', 'ytsearch'];
+            }
 
             for (const fallbackSource of fallbackSources) {
                 console.log(`[Reso] ↻ Quick retry for "${cleanTitle}" via ${fallbackSource} (reason: ${reason})`);
@@ -119,7 +123,7 @@ function setupLavalinkEvents(client) {
 
     // ── Node connected ─────────────────────────────────────────
     const initialConnectedNodes = new Set();
-    manager.nodeManager.on('connect', (node) => {
+    manager.nodeManager.on('connect', async (node) => {
         const prevAttempts = nodeReconnectCounts.get(node.id) || 0;
         if (!initialConnectedNodes.has(node.id)) {
             initialConnectedNodes.add(node.id);
@@ -128,6 +132,21 @@ function setupLavalinkEvents(client) {
             console.log(`[Reso] ✓ Lavalink node "${node.id}" reconnected after ${prevAttempts} attempt(s)`);
         }
         nodeReconnectCounts.set(node.id, 0);
+
+        // ── FAILBACK: When PRIMARY node connects/reconnects, migrate all players back to it! ──
+        if (node.id === PRIMARY_NODE_ID) {
+            console.log(`[Reso] 🌟 PRIMARY node "${PRIMARY_NODE_ID}" connected! Ensuring active players migrate to primary...`);
+            for (const [, player] of manager.players) {
+                if (player.node?.id !== PRIMARY_NODE_ID) {
+                    try {
+                        await player.changeNode(PRIMARY_NODE_ID, false);
+                        console.log(`[Reso] 🏠 Migrated player (${player.guildId}) back to PRIMARY "${PRIMARY_NODE_ID}"`);
+                    } catch (err) {
+                        console.warn(`[Reso] Failed to migrate player (${player.guildId}) to primary:`, err.message);
+                    }
+                }
+            }
+        }
     });
 
     // ── Node disconnected ──────────────────────────────────────
@@ -262,18 +281,28 @@ function setupLavalinkEvents(client) {
             console.warn(`[Reso] ⚠ Track ended abnormally: "${truncate(track?.info?.title, 40)}" — reason: ${endReason}`);
         }
 
-        // Continuous playback: NEVER switch nodes between tracks if the current node is connected.
-        // Node switching reconnects Discord voice gateway and causes noticeable audio breaks.
-        // Only failover if the current node actually disconnected:
-        if (player && (!player.node || !player.node.connected) && player.queue.tracks.length > 0) {
-            try {
-                const bestNode = getBestNode(manager);
-                if (bestNode && bestNode.connected) {
-                    console.log(`[Reso] 🔀 Migrating player (${player.guildId}) from disconnected node to "${bestNode.id}"`);
-                    await player.changeNode(bestNode.id, false);
+        // ── Sticky Primary & Continuous Playback ──
+        // If primary-main is back online and player was temporarily on a backup node, migrate back to primary!
+        if (player && player.queue.tracks.length > 0) {
+            const primaryNode = manager.nodeManager.nodes.get(PRIMARY_NODE_ID);
+            if (primaryNode && primaryNode.connected && player.node?.id !== PRIMARY_NODE_ID) {
+                try {
+                    console.log(`[Reso] 🏠 Between tracks: migrating player (${player.guildId}) from backup "${player.node?.id}" → PRIMARY "${PRIMARY_NODE_ID}"`);
+                    await player.changeNode(PRIMARY_NODE_ID, false);
+                } catch (err) {
+                    console.warn(`[Reso] Primary migration on trackEnd failed (${player.guildId}):`, err.message);
                 }
-            } catch (err) {
-                console.warn(`[Reso] Node failover on trackEnd failed (${player.guildId}):`, err.message);
+            } else if (!player.node || !player.node.connected) {
+                // Current node is disconnected - failover to best available node
+                try {
+                    const bestNode = getBestNode(manager);
+                    if (bestNode && bestNode.connected) {
+                        console.log(`[Reso] 🔀 Migrating player (${player.guildId}) from disconnected node to "${bestNode.id}"`);
+                        await player.changeNode(bestNode.id, false);
+                    }
+                } catch (err) {
+                    console.warn(`[Reso] Node failover on trackEnd failed (${player.guildId}):`, err.message);
+                }
             }
         }
 
@@ -282,7 +311,11 @@ function setupLavalinkEvents(client) {
         // (Errors and stuck tracks are handled by their respective event listeners)
         if (endReason === 'finished') {
             try {
-                await player.skip();
+                if (player.queue && player.queue.tracks && player.queue.tracks.length > 0) {
+                    await player.skip();
+                } else {
+                    await player.stop();
+                }
             } catch (err) {
                 console.error(`[Reso] Failed to skip to next track on trackEnd:`, err.message);
             }
@@ -391,9 +424,13 @@ function setupLavalinkEvents(client) {
             channel.send({ embeds: [embed] }).catch(() => { });
         }
 
-        // Advance the queue manually
+        // Advance the queue manually safely
         try {
-            await player.skip();
+            if (player.queue && player.queue.tracks && player.queue.tracks.length > 0) {
+                await player.skip();
+            } else {
+                await player.stop();
+            }
         } catch (err) {
             console.error('[Reso] Error advancing queue after trackError:', err.message);
         }
@@ -415,9 +452,13 @@ function setupLavalinkEvents(client) {
             channel.send({ embeds: [embed] }).catch(() => { });
         }
 
-        // Advance the queue manually
+        // Advance the queue manually safely
         try {
-            await player.skip();
+            if (player.queue && player.queue.tracks && player.queue.tracks.length > 0) {
+                await player.skip();
+            } else {
+                await player.stop();
+            }
         } catch (err) {
             console.error('[Reso] Error advancing queue after trackStuck:', err.message);
         }

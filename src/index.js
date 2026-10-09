@@ -11,6 +11,7 @@ const { LavalinkManager } = require('lavalink-client');
 const { loadCommands, registerSlashCommands } = require('./handlers/commandHandler');
 const { setupLavalinkEvents } = require('./handlers/playerEvents');
 const { handlePlayerButton } = require('./handlers/buttonHandler');
+const { getBestNode, ensurePlayerNode } = require('./utils/helpers');
 
 // ── HTTP Health Check Server (Optional) ─────────────────────────
 const http = require('http');
@@ -255,13 +256,15 @@ async function main() {
             // ── Keep Render node awake (prevents free-tier 15min inactivity sleep) ──
             if (host.includes('onrender.com')) {
                 const keepAliveUrl = `${isSecure ? 'https' : 'http'}://${host}:${port}/version`;
-                setInterval(() => {
+                const pingRender = () => {
                     const httpModule = isSecure ? require('https') : require('http');
-                    const req = httpModule.get(keepAliveUrl, { headers: { 'Authorization': password }, timeout: 10000 }, (res) => {
+                    const req = httpModule.get(keepAliveUrl, { headers: { 'Authorization': password }, timeout: 15000 }, (res) => {
                         res.resume();
                     });
                     req.on('error', () => {});
-                }, 10 * 60 * 1000);
+                };
+                pingRender(); // Warm up Render immediately on startup
+                setInterval(pingRender, 7 * 60 * 1000); // Reset Render 15-min idle timer every 7 mins
             }
 
 
@@ -357,6 +360,7 @@ async function main() {
                         });
                     }
 
+                    const targetNode = getBestNode(client.lavalink);
                     let player = client.lavalink.getPlayer(guildId);
                     if (!player) {
                         player = client.lavalink.createPlayer({
@@ -365,12 +369,15 @@ async function main() {
                             textChannelId: interaction.channel.id,
                             selfDeaf: true,
                             volume: parseInt(process.env.DEFAULT_VOLUME) || 50,
+                            node: targetNode?.id,
                         });
                     }
 
                     if (!player.connected) {
                         await player.connect();
                     }
+
+                    await ensurePlayerNode(player, client);
 
                     recommendedTrack.requester = interaction.user;
                     player.queue.add(recommendedTrack);

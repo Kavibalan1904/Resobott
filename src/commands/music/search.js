@@ -1,6 +1,6 @@
 const { SlashCommandBuilder, ActionRowBuilder, StringSelectMenuBuilder } = require('discord.js');
 const { errorEmbed, createEmbed, EMOJIS, capitalize } = require('../../utils/embeds');
-const { getVoiceChannel, checkVoicePermissions, truncate, formatMs, ensurePlayerNode } = require('../../utils/helpers');
+const { getVoiceChannel, checkVoicePermissions, truncate, formatMs, ensurePlayerNode, getBestNode } = require('../../utils/helpers');
 
 const SOURCE_MAP = {
     auto: 'ytsearch',
@@ -61,7 +61,8 @@ module.exports = {
         const searchPlatform = SOURCE_MAP[source] || 'ytsearch';
 
         try {
-            // Create or get the player for searching
+            // Create or get the player for searching (assigning primary-main node)
+            const targetNode = getBestNode(manager);
             let player = manager.getPlayer(interaction.guild.id);
             if (!player) {
                 player = manager.createPlayer({
@@ -70,6 +71,7 @@ module.exports = {
                     textChannelId: interaction.channel.id,
                     selfDeaf: true,
                     volume: parseInt(process.env.DEFAULT_VOLUME) || 50,
+                    node: targetNode?.id,
                 });
             }
 
