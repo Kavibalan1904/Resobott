@@ -427,7 +427,7 @@ function setupLavalinkEvents(client) {
             if (player.queue && player.queue.tracks && player.queue.tracks.length > 0) {
                 await player.skip();
             } else {
-                await player.stop();
+                await player.stopPlaying(false, false);
             }
         } catch (err) {
             console.error('[Reso] Error advancing queue after trackError:', err.message);
@@ -456,7 +456,7 @@ function setupLavalinkEvents(client) {
             if (player.queue && player.queue.tracks && player.queue.tracks.length > 0) {
                 await player.skip();
             } else {
-                await player.stop();
+                await player.stopPlaying(false, false);
             }
         } catch (err) {
             console.error('[Reso] Error advancing queue after trackStuck:', err.message);
