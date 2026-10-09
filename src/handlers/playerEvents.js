@@ -70,16 +70,9 @@ function setupLavalinkEvents(client) {
             if (!searchQuery) return false;
             if (!player.node || !player.node.connected) return false;
 
-            // Smart fallback source:
-            let fallbackSources = [];
-            if (originalSource.includes('soundcloud') || originalSource.includes('sc')) {
-                fallbackSources = ['ytsearch', 'spsearch'];
-            } else if (originalSource.includes('youtube') || originalSource.includes('yt')) {
-                // If it failed on YouTube, do NOT retry on YouTube again! Use SoundCloud.
-                fallbackSources = ['scsearch', 'spsearch'];
-            } else {
-                fallbackSources = ['scsearch', 'ytsearch'];
-            }
+            // Simplify fallback behaviour: Do not hide YouTube errors with SoundCloud.
+            // If YouTube fails, retry once on YouTube, but we will pick the *second* search result if available.
+            const fallbackSources = [originalSource || 'ytsearch'];
 
             for (const fallbackSource of fallbackSources) {
                 console.log(`[Reso] ↻ Quick retry for "${cleanTitle}" via ${fallbackSource} (reason: ${reason})`);
@@ -89,7 +82,12 @@ function setupLavalinkEvents(client) {
                     const result = await Promise.race([searchPromise, timeoutPromise]);
 
                     if (result && result.tracks && result.tracks.length > 0) {
-                        const resolvedTrack = result.tracks[0];
+                        // Pick the second track to avoid playing the exact same broken video, unless there's only one.
+                        let trackIndex = 0;
+                        if ((fallbackSource === 'ytsearch' || fallbackSource === 'youtube') && result.tracks.length > 1) {
+                            trackIndex = 1;
+                        }
+                        const resolvedTrack = result.tracks[trackIndex];
                         resolvedTrack.requester = track.requester;
                         const resolvedSource = resolvedTrack?.info?.sourceName ? capitalize(resolvedTrack.info.sourceName) : fallbackSource;
                         console.log(`[Reso] ✓ Retry resolved: "${truncate(resolvedTrack.info?.title, 40)}" from ${resolvedSource}`);
@@ -314,7 +312,7 @@ function setupLavalinkEvents(client) {
                 if (player.queue && player.queue.tracks && player.queue.tracks.length > 0) {
                     await player.skip();
                 } else {
-                    await player.stop();
+                    await player.stopPlaying(false, false);
                 }
             } catch (err) {
                 console.error(`[Reso] Failed to skip to next track on trackEnd:`, err.message);
@@ -440,6 +438,7 @@ function setupLavalinkEvents(client) {
     manager.on('trackStuck', async (player, track, payload) => {
         const thresholdMs = payload?.thresholdMs || '?';
         console.error(`[Reso] Track stuck (threshold: ${thresholdMs}ms):`, track?.info?.title);
+        console.error(`[Reso] 🔍 Diagnostic Payload:`, JSON.stringify(payload));
 
         // Attempt retry before giving up
         const retried = await retryTrack(player, track, 'got stuck');
