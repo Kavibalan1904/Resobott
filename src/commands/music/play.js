@@ -24,6 +24,7 @@ const SOURCE_MAP = {
     youtubemusic: 'ytmsearch',
     spotify: 'spsearch',
     soundcloud: 'scsearch',
+    apple: 'amsearch',
 };
 
 const SOURCE_EMOJIS = {
@@ -32,6 +33,7 @@ const SOURCE_EMOJIS = {
     youtubemusic: '🎵',
     spotify: '🟢',
     soundcloud: '🟠',
+    apple: '🍎',
     file: '📁',
 };
 
@@ -61,9 +63,7 @@ module.exports = {
                 .setRequired(false)
                 .addChoices(
                     { name: '🔴 YouTube (Default - Fast & High Quality)', value: 'auto' },
-                    { name: '🎵 YouTube Music (Clean Audio)', value: 'youtubemusic' },
-                    { name: '🟠 SoundCloud (Fast & Direct)', value: 'soundcloud' },
-                    { name: '🟢 Spotify', value: 'spotify' },
+                    { name: '🎵 YouTube Music (Clean Audio)', value: 'youtubemusic' }
                 )
         ),
 
@@ -211,10 +211,9 @@ module.exports = {
                     // File attachment: load directly
                     result = await player.search({ query }, interaction.user);
                 } else if (isUrl && ytVideoId) {
-                    // Load the exact requested video URL. Searching the ID as text can return
-                    // no result or an unrelated search result instead of the requested video.
-                    console.log(`[Reso] 🔴 YouTube video link detected (${ytVideoId}). Loading the direct URL...`);
-                    result = await player.search({ query }, interaction.user);
+                    // YouTube video URL: go STRAIGHT to ytsearch with video ID.
+                    console.log(`[Reso] 🔴 YouTube video link detected (${ytVideoId}). Loading via ytsearch...`);
+                    result = await player.search({ query: ytVideoId, source: 'ytsearch' }, interaction.user);
                 } else if (isUrl) {
                     // Non-YouTube URL (Spotify, SoundCloud, playlist, etc.): load directly
                     result = await player.search({ query }, interaction.user);
@@ -243,57 +242,10 @@ module.exports = {
                             result = await player.search({ query }, interaction.user);
                         } catch { }
                     }
-
-                    // If still failed, attempt SoundCloud search fallback with video title/ID
-                    if ((!result || !result.tracks || result.tracks.length === 0) && ytVideoId) {
-                        try {
-                            console.log(`[Reso] ↻ YouTube failed, trying SoundCloud fallback for "${ytVideoId}"...`);
-                            result = await player.search({ query: ytVideoId, source: 'scsearch' }, interaction.user);
-                            if (result?.tracks?.length > 0) {
-                                fallbackNote = '⚠️ YouTube stream unavailable — playing alternative from SoundCloud';
-                            }
-                        } catch { }
-                    }
-                } else if (isUrl && isSpotifyUrl(query)) {
-                    // If Spotify URL failed, resolve title via Spotify oEmbed and search YouTube
-                    try {
-                        console.log(`[Reso] ↻ Resolving Spotify URL title via oEmbed...`);
-                        const oembedRes = await fetch(`https://open.spotify.com/oembed?url=${encodeURIComponent(query)}`, { signal: AbortSignal.timeout(3000) });
-                        if (oembedRes.ok) {
-                            const oembedData = await oembedRes.json();
-                            if (oembedData.title) {
-                                const cleanTitle = cleanVideoTitle(oembedData.title);
-                                console.log(`[Reso] ✓ Found Spotify title: "${cleanTitle}". Searching YouTube...`);
-                                result = await player.search({ query: cleanTitle, source: 'ytsearch' }, interaction.user);
-                                if (result?.tracks?.length > 0) fallbackNote = 'Matched via Spotify metadata';
-                            }
-                        }
-                    } catch { }
-                } else if (!isUrl && !isAttachment && searchSource !== 'scsearch') {
-                    // Default order: YouTube first, Spotify second, SoundCloud last.
-                    // Only search secondary providers when the primary query returned no tracks.
-                    if (source === 'auto') {
-                        try {
-                            console.log(`[Reso] ↻ YouTube returned no results; trying Spotify for "${truncate(query, 50)}"...`);
-                            result = await player.search({ query, source: 'spsearch' }, interaction.user);
-                            if (result?.tracks?.length > 0) {
-                                fallbackNote = 'Matched via Spotify search';
-                            }
-                        } catch { }
-                    }
-                    if (!result?.tracks?.length) {
-                        try {
-                            console.log(`[Reso] ↻ Trying SoundCloud fallback for "${truncate(query, 50)}"...`);
-                            result = await player.search({ query, source: 'scsearch' }, interaction.user);
-                            if (result?.tracks?.length > 0) {
-                                fallbackNote = '⚠️ Primary search unavailable — playing a SoundCloud alternative';
-                            }
-                        } catch { }
-                    }
                 }
             }
 
-            if (!result || !result.tracks || result.tracks.length === 0) {
+            if (!result.tracks || result.tracks.length === 0) {
                 if (isAttachment) {
                     return interaction.editReply({
                         embeds: [errorEmbed(`Could not play **${truncate(rawQuery, 50)}**. Make sure the uploaded file is a valid, uncorrupted audio format.`)]

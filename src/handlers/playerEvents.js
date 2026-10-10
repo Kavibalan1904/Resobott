@@ -28,9 +28,6 @@ function setupLavalinkEvents(client) {
     // ── Diagnostic: Track time between tracks ──
     const trackGaps = new Map();
 
-    // Prevent duplicate queue-ended announcements when multiple end events race.
-    const lastQueueEndNoticeAt = new Map();
-
     // ── Bounded Retries: Track consecutive retries per guild ──
     const consecutiveRetries = new Map();
 
@@ -105,65 +102,61 @@ function setupLavalinkEvents(client) {
             // Build a search query from the clean track title + author
             const rawTitle = track?.info?.title || '';
             const cleanTitle = cleanVideoTitle(rawTitle) || rawTitle;
+            const author = track?.info?.author || '';
             const searchQuery = cleanTitle.trim();
+            const isrc = track?.info?.isrc || null;
+            const originalSource = (track?.info?.sourceName || '').toLowerCase();
 
             if (!searchQuery) return false;
             if (!player.node || !player.node.connected) return false;
 
-            // YouTube is primary. Retry through Spotify metadata only; LavaSrc must
-            // resolve that result to playable audio using application.yml providers.
-            // Keep this single-source policy intentional: avoid repeating the failed
-            // YouTube stream directly or silently switching to an unrequested provider.
-            const fallbackSources = [{ source: 'spsearch', label: 'Spotify' }];
+            // Simplify fallback behaviour: Do not hide YouTube errors with SoundCloud or Spotify.
+            // If a track fails, retry on YouTube, and pick the *second* search result if available.
+            const fallbackSources = ['ytsearch'];
 
-            for (const fallback of fallbackSources) {
-                const fallbackSource = fallback.source;
-                // Use the concise song query for every provider. YouTube's author is
-                // often a record label (e.g. "Sony Music South"), not the performer;
-                // appending it makes Spotify/SoundCloud searches less accurate.
+            for (const fallbackSource of fallbackSources) {
                 const ts = new Date().toISOString();
-                console.log(`[Reso ${ts}] ↻ RETRY: Quick retry for "${cleanTitle}" via ${fallback.label} (${fallbackSource}; reason: ${reason})`);
-                let timeoutId;
+                console.log(`[Reso ${ts}] ↻ RETRY: Quick retry for "${cleanTitle}" via ${fallbackSource} (reason: ${reason})`);
                 try {
                     const searchPromise = player.search({ query: searchQuery, source: fallbackSource }, track.requester);
+                    let timeoutId;
                     const timeoutPromise = new Promise((_, reject) => {
-                        timeoutId = setTimeout(() => reject(new Error('Retry search timeout')), 5000);
+                        timeoutId = setTimeout(() => reject(new Error('Retry search timeout')), 15000);
                     });
                     const result = await Promise.race([searchPromise, timeoutPromise]);
+                    clearTimeout(timeoutId);
 
-                    const foundCount = result?.tracks?.length || 0;
-                    console.log(`[Reso] 🔎 Retry search via ${fallback.label} returned ${foundCount} track(s) for "${searchQuery}"`);
-
-                    if (foundCount > 0) {
+                    if (result && result.tracks && result.tracks.length > 0) {
                         // Check if a new track started playing while we were searching (e.g. manual skip)
                         if (player.playing && player.queue.current && player.queue.current.info?.uri !== track.info?.uri) {
                             console.log(`[Reso] ⏭️ Retry aborted: A new track is already playing.`);
                             return false;
                         }
 
-                        const resolvedTrack = result.tracks[0];
+                        // Pick the second track to avoid playing the exact same broken video, unless there's only one.
+                        let trackIndex = 0;
+                        if ((fallbackSource === 'ytsearch' || fallbackSource === 'youtube') && result.tracks.length > 1) {
+                            trackIndex = 1;
+                        }
+                        const resolvedTrack = result.tracks[trackIndex];
                         resolvedTrack.requester = track.requester;
-                        const resolvedSource = resolvedTrack?.info?.sourceName
-                            ? capitalize(resolvedTrack.info.sourceName)
-                            : fallback.label;
+                        const resolvedSource = resolvedTrack?.info?.sourceName ? capitalize(resolvedTrack.info.sourceName) : fallbackSource;
                         console.log(`[Reso] ✓ Retry resolved: "${truncate(resolvedTrack.info?.title, 40)}" from ${resolvedSource}`);
 
-                        successfulRetries.add(guildId); // Mark before playing to suppress queueEnd race
+                        successfulRetries.add(guildId); // Mark as successfully retried BEFORE playing to suppress queueEnd race condition
                         await player.play({ clientTrack: resolvedTrack });
 
                         const channel = client.channels.cache.get(player.textChannelId);
                         if (channel) {
                             const embed = warningEmbed(
-                                `Track **${truncate(rawTitle, 50)}** ${reason}. Trying **${resolvedSource}**.`
+                                `Track **${truncate(rawTitle, 50)}** ${reason}. Switched to **${resolvedSource}**.`
                             );
                             channel.send({ embeds: [embed] }).catch(() => { });
                         }
                         return true;
                     }
                 } catch (err) {
-                    console.warn(`[Reso] ✗ Retry search on ${fallback.label} failed: ${err.message}`);
-                } finally {
-                    if (timeoutId) clearTimeout(timeoutId);
+                    console.warn(`[Reso] ✗ Retry search on ${fallbackSource} failed: ${err.message}`);
                 }
             }
 
@@ -265,48 +258,47 @@ function setupLavalinkEvents(client) {
         history.push(track);
         client.trackHistory.set(player.guildId, history);
 
+        // Update bot presence to show current song with VC elapsed time
+        const trackTitle = track?.info?.title ? truncate(track.info.title, 40) : 'music';
+        client.user.setPresence({
+            activities: [{
+                name: `${trackTitle} 🎵`,
+                type: 2, // Listening
+                timestamps: { start: Date.now() },
+            }],
+            status: 'online',
+        });
+
         const channel = client.channels.cache.get(player.textChannelId);
         if (!channel) return;
 
-        // ── Reuse the existing Now Playing message when possible ──
-        // Editing one message avoids a delete+send round trip on every track transition.
+        // ── Delete previous Now Playing message so only one active message exists ──
         const prevMsg = lastNowPlayingMessage.get(player.guildId);
+        if (prevMsg) {
+            try {
+                await prevMsg.delete().catch(() => {});
+            } catch { /* ignore */ }
+            lastNowPlayingMessage.delete(player.guildId);
+        }
 
-        // ── INSTANT: Publish Now Playing without waiting for recommendations ──
+        // ── INSTANT: Send Now Playing embed immediately (don't wait for recommendations) ──
         const embed = nowPlayingEmbed(track, player, client, []);
         const controls = createPlayerControls(false);
 
-        let sentMsg = null;
-        if (prevMsg) {
-            try {
-                sentMsg = await prevMsg.edit({ embeds: [embed], components: [controls] });
-            } catch {
-                // The old message may have been deleted or become uneditable; send a replacement.
-            }
+        let sentMsg;
+        try {
+            sentMsg = await channel.send({ embeds: [embed], components: [controls] });
+            lastNowPlayingMessage.set(player.guildId, sentMsg);
+        } catch {
+            lastNowPlayingMessage.delete(player.guildId);
         }
-        if (!sentMsg) {
-            try {
-                sentMsg = await channel.send({ embeds: [embed], components: [controls] });
-            } catch {
-                // A Discord send failure should not interrupt playback.
-            }
-        }
-        if (sentMsg) lastNowPlayingMessage.set(player.guildId, sentMsg);
-        else lastNowPlayingMessage.delete(player.guildId);
 
         // ── BACKGROUND: Fetch recommendations after audio buffer fills ──
         // Wait 4 seconds before fetching so the audio stream begins smoothly with zero CPU contention
         (async () => {
             try {
                 await new Promise(resolve => setTimeout(resolve, 4000));
-                // A later track may have started while recommendations were loading.
-                // Never let an older task overwrite the current Now Playing message.
-                if (
-                    !player.playing ||
-                    !sentMsg ||
-                    player.queue.current?.info?.uri !== track?.info?.uri ||
-                    lastNowPlayingMessage.get(player.guildId)?.id !== sentMsg.id
-                ) return;
+                if (!player.playing || !sentMsg) return;
 
                 const sessionHistory = client.trackHistory?.get(player.guildId) || [];
                 const recommendations = await getRecommendations(player, track, 5, sessionHistory);
@@ -400,6 +392,12 @@ function setupLavalinkEvents(client) {
             lastNowPlayingMessage.delete(player.guildId);
         }
 
+        // Reset bot presence to idle (no elapsed timer)
+        client.user.setPresence({
+            activities: [{ name: 'music 🎵 | /help', type: 2 }],
+            status: 'online',
+        });
+
         // ── Autoplay: auto-queue similar songs when queue ends ──
         if (client.autoplayGuilds?.has(player.guildId)) {
             try {
@@ -434,13 +432,6 @@ function setupLavalinkEvents(client) {
 
         const channel = client.channels.cache.get(player.textChannelId);
         if (!channel) return;
-
-        const lastNoticeAt = lastQueueEndNoticeAt.get(player.guildId) || 0;
-        if (Date.now() - lastNoticeAt < 5000) {
-            console.log(`[Reso] 🛡️ Suppressed duplicate queue-ended notice for guild ${player.guildId}`);
-            return;
-        }
-        lastQueueEndNoticeAt.set(player.guildId, Date.now());
 
         const embed = createEmbed('Info')
             .setDescription(`${EMOJIS.music} Queue has ended. Add more songs to keep the party going!\n*Use \`/autoplay\` to automatically queue similar songs!*\n*I'll stay here until everyone leaves or you use \`/leave\`.*`);
@@ -512,7 +503,6 @@ function setupLavalinkEvents(client) {
         // Clean up history and retry state
         client.trackHistory?.delete(player.guildId);
         retriedTracks.delete(player.guildId);
-        lastQueueEndNoticeAt.delete(player.guildId);
         client.recommendations?.delete(player.guildId);
         client.voteSkips?.delete(player.guildId);
 

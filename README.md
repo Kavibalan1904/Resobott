@@ -1,12 +1,12 @@
 # 🎵 Reso — High-Quality Discord Music Bot
 
-**Reso** (short for *Resonance*) is a feature-rich, high-performance Discord music bot powered by **Lavalink v4** and **discord.js v14**. It supports YouTube, YouTube Music, Spotify metadata mirroring, and native SoundCloud playback — with interactive button controls, audio filters, autoplay, and a sleek embed interface.
+**Reso** (short for *Resonance*) is a feature-rich, high-performance Discord music bot powered by **Lavalink v4** and **discord.js v14**. It supports YouTube, Spotify, SoundCloud, Apple Music, and more — with interactive button controls, audio filters, autoplay, and a sleek embed interface.
 
 ---
 
 ## ✨ Features
 
-- 🎶 **Multi-source streaming** — YouTube, YouTube Music, Spotify metadata mirroring, and SoundCloud
+- 🎶 **Multi-source streaming** — YouTube, YouTube Music, Spotify, SoundCloud, Apple Music, and more
 - 🎮 **Interactive Player Buttons** — Play/Pause, Skip, Back, Shuffle, and Stop directly from the Now Playing embed
 - 🔄 **Autoplay Mode** — Automatically finds and queues similar songs when your queue ends
 - ⏩ **Speed Control** — Adjust playback speed (0.5x to 2.0x) with pitch preservation
@@ -38,13 +38,11 @@ Edit `.env` and fill in your credentials:
 DISCORD_TOKEN=your_bot_token_here
 CLIENT_ID=your_client_id_here
 DEFAULT_VOLUME=50
-LAVALINK_HOST=lavalink1-7tbh.onrender.com
+LAVALINK_HOST=lava-v4.millohost.my.id
 LAVALINK_PORT=443
-LAVALINK_PASSWORD=<your-long-random-secret>
+LAVALINK_PASSWORD=https://discord.gg/mjS5J2K3ep
 LAVALINK_SECURE=true
 ```
-
-**Important:** Set a long random `LAVALINK_PASSWORD` in the Lavalink Render service and use the exact same value in the bot's environment. Never commit real tokens or passwords to GitHub.
 
 ### 3. Install Dependencies & Start
 ```bash
@@ -71,7 +69,7 @@ npm start
 ### Playback & Controls
 | Command | Description |
 |---|---|
-| `/play <query> [source]` | Play a song or playlist (YouTube, YT Music, Spotify, SoundCloud) |
+| `/play <query> [source]` | Play a song or playlist (YouTube, YT Music, Spotify, SoundCloud, Apple Music) |
 | `/playnext <query>` | Add a song to play next (front of queue) |
 | `/pause` | Pause playback |
 | `/resume` | Resume playback |

@@ -8,6 +8,7 @@ const SOURCE_MAP = {
     youtubemusic: 'ytmsearch',
     spotify: 'spsearch',
     soundcloud: 'scsearch',
+    apple: 'amsearch',
 };
 
 module.exports = {
@@ -25,9 +26,7 @@ module.exports = {
                 .setRequired(false)
                 .addChoices(
                     { name: '🔴 YouTube (Default - Fast & High Quality)', value: 'auto' },
-                    { name: '🎵 YouTube Music (Clean Studio Audio)', value: 'youtubemusic' },
-                    { name: '🟠 SoundCloud (Fast & Direct)', value: 'soundcloud' },
-                    { name: '🟢 Spotify', value: 'spotify' },
+                    { name: '🎵 YouTube Music (Clean Studio Audio)', value: 'youtubemusic' }
                 )
         ),
 
@@ -83,20 +82,9 @@ module.exports = {
                 console.warn(`[Reso] Search initial query error: ${searchErr.message}`);
             }
 
-            // Keep the default order YouTube → Spotify → SoundCloud. If the user
-            // explicitly selected another provider, respect it and use SoundCloud last.
-            if ((!result || !result.tracks || result.tracks.length === 0) && source === 'auto') {
-                try {
-                    result = await player.search({ query, source: 'spsearch' }, interaction.user);
-                } catch {}
-            }
-            if ((!result || !result.tracks || result.tracks.length === 0) && searchPlatform !== 'scsearch') {
-                try {
-                    result = await player.search({ query, source: 'scsearch' }, interaction.user);
-                } catch {}
-            }
 
-            if (!result || !result.tracks || result.tracks.length === 0) {
+
+            if (!result.tracks || result.tracks.length === 0) {
                 return interaction.editReply({
                     embeds: [errorEmbed(`No results found for **${truncate(query, 50)}**`)]
                 });

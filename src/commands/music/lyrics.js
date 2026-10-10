@@ -36,12 +36,7 @@ module.exports = {
 
         try {
             // Use lrclib.net API instead of Genius (which heavily blocks scraping)
-            // Avoid leaving the Discord interaction in a thinking state if the lyrics API hangs.
-            const response = await fetch(
-                `https://lrclib.net/api/search?q=${encodeURIComponent(query)}`,
-                { signal: AbortSignal.timeout(8000) }
-            );
-            if (!response.ok) throw new Error(`Lyrics API returned HTTP ${response.status}`);
+            const response = await fetch(`https://lrclib.net/api/search?q=${encodeURIComponent(query)}`);
             const data = await response.json();
 
             if (!data || data.length === 0 || !data[0].plainLyrics) {

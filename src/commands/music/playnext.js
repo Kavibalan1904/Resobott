@@ -23,6 +23,7 @@ const SOURCE_MAP = {
     youtubemusic: 'ytmsearch',
     spotify: 'spsearch',
     soundcloud: 'scsearch',
+    apple: 'amsearch',
 };
 
 module.exports = {
@@ -51,9 +52,7 @@ module.exports = {
                 .setRequired(false)
                 .addChoices(
                     { name: '🔴 YouTube (Default - Fast & High Quality)', value: 'auto' },
-                    { name: '🎵 YouTube Music (Clean Studio Audio)', value: 'youtubemusic' },
-                    { name: '🟠 SoundCloud (Fast & Direct)', value: 'soundcloud' },
-                    { name: '🟢 Spotify', value: 'spotify' },
+                    { name: '🎵 YouTube Music (Clean Studio Audio)', value: 'youtubemusic' }
                 )
         ),
 
@@ -181,29 +180,6 @@ module.exports = {
                     if (vid) {
                         try {
                             result = await player.search({ query: vid, source: 'ytsearch' }, interaction.user);
-                        } catch {}
-                    }
-                } else if (isUrlQuery && isSpotifyUrl(query)) {
-                    try {
-                        const oembedRes = await fetch(`https://open.spotify.com/oembed?url=${encodeURIComponent(query)}`, { signal: AbortSignal.timeout(3000) });
-                        if (oembedRes.ok) {
-                            const oembedData = await oembedRes.json();
-                            if (oembedData.title) {
-                                const cleanTitle = cleanVideoTitle(oembedData.title);
-                                result = await player.search({ query: cleanTitle, source: 'ytsearch' }, interaction.user);
-                            }
-                        }
-                    } catch {}
-                } else if (!isUrlQuery && !isAttachment && searchSource !== 'scsearch') {
-                    // Default order: YouTube first, Spotify second, SoundCloud last.
-                    if (source === 'auto') {
-                        try {
-                            result = await player.search({ query, source: 'spsearch' }, interaction.user);
-                        } catch {}
-                    }
-                    if (!result?.tracks?.length) {
-                        try {
-                            result = await player.search({ query, source: 'scsearch' }, interaction.user);
                         } catch {}
                     }
                 }
