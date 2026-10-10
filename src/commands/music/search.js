@@ -8,7 +8,6 @@ const SOURCE_MAP = {
     youtubemusic: 'ytmsearch',
     spotify: 'spsearch',
     soundcloud: 'scsearch',
-    apple: 'amsearch',
 };
 
 module.exports = {
@@ -29,7 +28,6 @@ module.exports = {
                     { name: '🎵 YouTube Music (Clean Studio Audio)', value: 'youtubemusic' },
                     { name: '🟠 SoundCloud (Fast & Direct)', value: 'soundcloud' },
                     { name: '🟢 Spotify', value: 'spotify' },
-                    { name: '🍎 Apple Music', value: 'apple' },
                 )
         ),
 
