@@ -394,7 +394,7 @@ function setupLavalinkEvents(client) {
 
         // Reset bot presence to idle (no elapsed timer)
         client.user.setPresence({
-            activities: [{ name: 'music 🎵 | /help', type: 2 }],
+            activities: [{ name: `music 🎵 | ${process.env.PREFIX || '>'}help`, type: 2 }],
             status: 'online',
         });
 
@@ -519,7 +519,7 @@ function setupLavalinkEvents(client) {
 
         // Reset bot presence to idle (no elapsed timer)
         client.user.setPresence({
-            activities: [{ name: 'music 🎵 | /help', type: 2 }],
+            activities: [{ name: `music 🎵 | ${process.env.PREFIX || '>'}help`, type: 2 }],
             status: 'online',
         });
     });

@@ -48,7 +48,7 @@ module.exports = {
                     `### ▶ Now Playing\n` +
                     `${source.color} **[${truncate(currentInfo.title, 50)}](${currentInfo.uri})** — \`${currentInfo.isStream ? 'Live' : formatMs(currentInfo.duration)}\`\n` +
                     `> ${currentInfo.author || 'Unknown'} • Requested by ${currentTrack.requester || 'Unknown'}\n\n` +
-                    `*No more tracks in queue. Use \`/play\` to add more!*`
+                    `*No more tracks in queue. Use \`${process.env.PREFIX || '>'}play\` to add more!*`
                 )
                 .addFields(
                     { name: '🔁 Loop', value: loopModes[player.repeatMode] || 'Off', inline: true },

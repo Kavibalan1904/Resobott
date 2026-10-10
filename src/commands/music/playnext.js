@@ -62,7 +62,7 @@ module.exports = {
             await interaction.deferReply();
             deferred = true;
         } catch (deferErr) {
-            console.warn('[Reso] deferReply failed for /playnext:', deferErr.message);
+            console.warn('[Reso] deferReply failed for playnext:', deferErr.message);
             return;
         }
 
@@ -209,7 +209,7 @@ module.exports = {
                 }
             }
 
-            // Insert at position 0 (front of queue) — this is the key difference from /play
+            // Insert at position 0 (front of queue) — this is the key difference from play
             player.queue.add(track, 0);
 
             if (!player.playing) {

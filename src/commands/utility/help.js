@@ -25,7 +25,7 @@ module.exports = {
 
             const embed = createEmbed('Info')
                 .setAuthor({ name: 'Command Help' })
-                .setTitle(`/${command.data.name}`)
+                .setTitle(`\\`${process.env.PREFIX || '>'}${command.data.name}\\``)
                 .setDescription(command.data.description)
                 .addFields(
                     { name: 'Category', value: `\`${command.category || 'Unknown'}\``, inline: true },
@@ -66,7 +66,7 @@ module.exports = {
             .setAuthor({ name: 'Reso — Command List', iconURL: client.user.displayAvatarURL() })
             .setDescription(
                 `Hey there! I'm **Reso**, your high-quality music companion.\n` +
-                `Use \`/help <command>\` for detailed info on a specific command.\n\n` +
+                `Use \`${process.env.PREFIX || '>'}help <command>\` for detailed info on a specific command.\n\n` +
                 `**Supported Sources:** YouTube, Spotify, SoundCloud, Apple Music & Audio File Uploads`
             )
             .setThumbnail(client.user.displayAvatarURL({ size: 256 }));
@@ -74,7 +74,7 @@ module.exports = {
         for (const [category, commands] of Object.entries(categories)) {
             const emoji = categoryEmojis[category] || '📁';
             const desc = categoryDescriptions[category] || '';
-            const commandList = commands.map(cmd => `\`/${cmd.data.name}\``).join(', ');
+            const commandList = commands.map(cmd => `\`${process.env.PREFIX || '>'}${cmd.data.name}\``).join(', ');
             embed.addFields({
                 name: `${emoji} ${category.charAt(0).toUpperCase() + category.slice(1)} ${desc ? `— ${desc}` : ''}`,
                 value: commandList,

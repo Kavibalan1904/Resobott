@@ -173,7 +173,7 @@ module.exports = {
             } catch (timeoutError) {
                 // Selection timed out
                 const timeoutEmbed = createEmbed('Warning')
-                    .setDescription(`${EMOJIS.warning} Search selection timed out. Use \`/play\` to play directly.`);
+                    .setDescription(`${EMOJIS.warning} Search selection timed out. Use \`${process.env.PREFIX || '>'}play\` to play directly.`);
                 await interaction.editReply({ embeds: [timeoutEmbed], components: [] }).catch(() => { });
             }
 

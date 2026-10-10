@@ -272,7 +272,7 @@ async function main() {
             // Set activity
             client.user.setPresence({
                 activities: [{
-                    name: 'music 🎵 | /help',
+                    name: `music 🎵 | ${process.env.PREFIX || '>'}help`,
                     type: 2, // Listening
                 }],
                 status: 'online',

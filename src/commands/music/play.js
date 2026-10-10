@@ -256,7 +256,7 @@ module.exports = {
                 let tipMessage = '\n\nTry a different search term or valid link.';
 
                 if (isUrl && isSpotifyUrl(rawQuery)) {
-                    tipMessage = '\n\n💡 **Tip**: Spotify URLs require the Lavalink server to have the **LavaSrc plugin** with Spotify credentials configured. Try using `/play` with just the song name instead.';
+                    tipMessage = `\n\n💡 **Tip**: Spotify URLs require the Lavalink server to have the **LavaSrc plugin** with Spotify credentials configured. Try using \`${process.env.PREFIX || '>'}play\` with just the song name instead.`;
                 } else if (isUrl && query.includes('youtube.com')) {
                     tipMessage = '\n\n💡 **Tip**: Make sure YouTube playlists are set to **Public** or **Unlisted** (Private playlists cannot be loaded).';
                 }
