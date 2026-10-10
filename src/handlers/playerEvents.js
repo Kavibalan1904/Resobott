@@ -114,9 +114,10 @@ function setupLavalinkEvents(client) {
             // Search results alone do not prove that a YouTube audio stream can be loaded.
             // A trackError means the selected track has already failed during playback.
             // Try SoundCloud first for failed YouTube tracks; only re-search YouTube if no alternative is found.
-            const fallbackSources = originalSource === 'soundcloud'
-                ? [{ source: 'scsearch', label: 'SoundCloud' }]
-                : [{ source: 'scsearch', label: 'SoundCloud' }, { source: 'ytsearch', label: 'YouTube' }];
+            const fallbackSources = [
+                { source: 'scsearch', label: 'SoundCloud' },
+                { source: 'ytsearch', label: 'YouTube' },
+            ];
 
             for (const fallback of fallbackSources) {
                 const fallbackSource = fallback.source;
