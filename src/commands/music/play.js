@@ -24,7 +24,6 @@ const SOURCE_MAP = {
     youtubemusic: 'ytmsearch',
     spotify: 'spsearch',
     soundcloud: 'scsearch',
-    apple: 'amsearch',
 };
 
 const SOURCE_EMOJIS = {
@@ -33,7 +32,6 @@ const SOURCE_EMOJIS = {
     youtubemusic: '🎵',
     spotify: '🟢',
     soundcloud: '🟠',
-    apple: '🍎',
     file: '📁',
 };
 
@@ -66,7 +64,6 @@ module.exports = {
                     { name: '🎵 YouTube Music (Clean Audio)', value: 'youtubemusic' },
                     { name: '🟠 SoundCloud (Fast & Direct)', value: 'soundcloud' },
                     { name: '🟢 Spotify', value: 'spotify' },
-                    { name: '🍎 Apple Music', value: 'apple' },
                 )
         ),
 
