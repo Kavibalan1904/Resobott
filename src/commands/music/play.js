@@ -214,9 +214,10 @@ module.exports = {
                     // File attachment: load directly
                     result = await player.search({ query }, interaction.user);
                 } else if (isUrl && ytVideoId) {
-                    // YouTube video URL: go STRAIGHT to ytsearch with video ID.
-                    console.log(`[Reso] 🔴 YouTube video link detected (${ytVideoId}). Loading via ytsearch...`);
-                    result = await player.search({ query: ytVideoId, source: 'ytsearch' }, interaction.user);
+                    // Load the exact requested video URL. Searching the ID as text can return
+                    // no result or an unrelated search result instead of the requested video.
+                    console.log(`[Reso] 🔴 YouTube video link detected (${ytVideoId}). Loading the direct URL...`);
+                    result = await player.search({ query }, interaction.user);
                 } else if (isUrl) {
                     // Non-YouTube URL (Spotify, SoundCloud, playlist, etc.): load directly
                     result = await player.search({ query }, interaction.user);
