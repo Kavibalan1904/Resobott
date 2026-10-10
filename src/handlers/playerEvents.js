@@ -258,13 +258,11 @@ function setupLavalinkEvents(client) {
         history.push(track);
         client.trackHistory.set(player.guildId, history);
 
-        // Update bot presence to show current song with VC elapsed time
-        const trackTitle = track?.info?.title ? truncate(track.info.title, 40) : 'music';
+        // Maintain default bot presence (don't show current song)
         client.user.setPresence({
             activities: [{
-                name: `${trackTitle} 🎵`,
+                name: `music 🎵 | ${process.env.PREFIX || '>'}help`,
                 type: 2, // Listening
-                timestamps: { start: Date.now() },
             }],
             status: 'online',
         });
