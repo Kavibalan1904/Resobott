@@ -81,7 +81,11 @@ const host = (process.env.LAVALINK_HOST || 'lavalink1-7tbh.onrender.com').trim()
     .replace(/^(https?|wss?):\/\//i, '') // Remove http://, https://, ws://, wss://
     .replace(/\/.*$/, ''); // Remove trailing slashes or paths
 const port = parseInt(process.env.LAVALINK_PORT) || 443;
-const password = process.env.LAVALINK_PASSWORD ? process.env.LAVALINK_PASSWORD.trim() : 'youshallnotpass';
+const password = process.env.LAVALINK_PASSWORD?.trim();
+if (!password) {
+    console.error('[Reso] Missing LAVALINK_PASSWORD. Set the same private secret configured on your Lavalink server.');
+    process.exit(1);
+}
 const isSecure = process.env.LAVALINK_SECURE !== undefined
     ? String(process.env.LAVALINK_SECURE).toLowerCase() === 'true'
     : port === 443;
