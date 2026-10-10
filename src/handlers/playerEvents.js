@@ -114,15 +114,12 @@ function setupLavalinkEvents(client) {
             // try Spotify search next (LavaSrc resolves Spotify metadata through its configured
             // audio providers), then SoundCloud as the final audio fallback. Avoid repeating
             // YouTube immediately after its stream extraction has already failed.
+            // YouTube is primary. On playback failure, retry through Spotify only.
+            // LavaSrc uses Spotify for metadata and resolves playable audio through
+            // the configured provider list in Lavalink's application.yml.
             const fallbackSources = originalSource === 'youtube'
-                ? [
-                    { source: 'spsearch', label: 'Spotify' },
-                    { source: 'scsearch', label: 'SoundCloud' },
-                ]
-                : [
-                    { source: 'ytsearch', label: 'YouTube' },
-                    { source: 'scsearch', label: 'SoundCloud' },
-                ];
+                ? [{ source: 'spsearch', label: 'Spotify' }]
+                : [{ source: 'spsearch', label: 'Spotify' }];
 
             for (const fallback of fallbackSources) {
                 const fallbackSource = fallback.source;
