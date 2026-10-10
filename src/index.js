@@ -31,6 +31,7 @@ const client = new Client({
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildVoiceStates,
         GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.MessageContent,
     ],
     rest: {
         timeout: 15000, // 15 seconds timeout instead of hanging forever
@@ -424,6 +425,78 @@ async function main() {
                 } else {
                     await interaction.reply(errorMsg).catch(() => { });
                 }
+            }
+        });
+
+        // ── Handle Prefix Commands ──
+        client.on('messageCreate', async (message) => {
+            if (message.author.bot || !message.guild) return;
+            const prefix = process.env.PREFIX || '>';
+            if (!message.content.startsWith(prefix)) return;
+
+            const args = message.content.slice(prefix.length).trim().split(/ +/);
+            const commandName = args.shift().toLowerCase();
+
+            const command = client.commands.get(commandName);
+            if (!command) return;
+
+            // Create a mock interaction object to support existing slash command logic
+            const interaction = {
+                isChatInputCommand: () => true,
+                isButton: () => false,
+                isStringSelectMenu: () => false,
+                commandName: commandName,
+                user: message.author,
+                member: message.member,
+                guild: message.guild,
+                channel: message.channel,
+                client: client,
+                deferred: false,
+                replied: false,
+                options: {
+                    getString: (name) => {
+                        if (name === 'query' && args.length > 0) return args.join(' ');
+                        return args[0] || null;
+                    },
+                    getInteger: (name) => {
+                        const val = parseInt(args[0], 10);
+                        return isNaN(val) ? null : val;
+                    },
+                    getNumber: (name) => {
+                        const val = parseFloat(args[0]);
+                        return isNaN(val) ? null : val;
+                    },
+                    getBoolean: (name) => {
+                        if (!args[0]) return null;
+                        return args[0].toLowerCase() === 'true';
+                    },
+                    getAttachment: (name) => {
+                        return message.attachments.first() || null;
+                    }
+                },
+                deferReply: async () => {
+                    interaction.deferred = true;
+                    return true;
+                },
+                editReply: async (data) => {
+                    interaction.replied = true;
+                    return await message.reply(data);
+                },
+                reply: async (data) => {
+                    interaction.replied = true;
+                    return await message.reply(data);
+                },
+                followUp: async (data) => {
+                    return await message.reply(data);
+                }
+            };
+
+            try {
+                await command.execute(interaction, client);
+            } catch (error) {
+                console.error(`[Reso] Command error (${commandName}):`, error);
+                const errorMsg = { content: '❌ An error occurred while executing this command.' };
+                await message.reply(errorMsg).catch(() => {});
             }
         });
 
