@@ -115,6 +115,7 @@ npm start
 | `/ping` | Check bot & WebSocket latency |
 | `/stats` | View memory, player, and node statistics |
 | `/invite` | Get bot invite link |
+| `/setchannel [action]` | Set this channel as the designated bot channel (or remove restriction) |
 
 ---
 
