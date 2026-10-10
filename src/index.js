@@ -201,7 +201,7 @@ client.on('voiceStateUpdate', (oldState, newState) => {
                         const { createEmbed, EMOJIS } = require('./utils/embeds');
                         const embed = createEmbed('Info')
                             .setDescription(`${EMOJIS.music} Everyone left the voice channel, so I've disconnected. 👋`);
-                        textChannel.send({ embeds: [embed] }).catch(() => {});
+                        textChannel.send({ embeds: [embed] }).catch(() => { });
                     }
                 }
             }, 5000);
@@ -262,7 +262,7 @@ async function main() {
                     const req = httpModule.get(keepAliveUrl, { headers: { 'Authorization': password }, timeout: 15000 }, (res) => {
                         res.resume();
                     });
-                    req.on('error', () => {});
+                    req.on('error', () => { });
                 };
                 pingRender(); // Warm up Render immediately on startup
                 setInterval(pingRender, 7 * 60 * 1000); // Reset Render 15-min idle timer every 7 mins
@@ -301,14 +301,14 @@ async function main() {
                     const guildId = interaction.guild?.id;
                     const voteData = client.voteSkips?.get(guildId);
                     if (!voteData) {
-                        return interaction.reply({ content: '🗳️ This vote has expired.', flags: MessageFlags.Ephemeral }).catch(() => {});
+                        return interaction.reply({ content: '🗳️ This vote has expired.', flags: MessageFlags.Ephemeral }).catch(() => { });
                     }
                     const memberVC = interaction.member?.voice?.channel;
                     if (!memberVC) {
-                        return interaction.reply({ content: '❌ You need to be in a voice channel to vote!', flags: MessageFlags.Ephemeral }).catch(() => {});
+                        return interaction.reply({ content: '❌ You need to be in a voice channel to vote!', flags: MessageFlags.Ephemeral }).catch(() => { });
                     }
                     if (voteData.voters.has(interaction.user.id)) {
-                        return interaction.reply({ content: '🗳️ You already voted!', flags: MessageFlags.Ephemeral }).catch(() => {});
+                        return interaction.reply({ content: '🗳️ You already voted!', flags: MessageFlags.Ephemeral }).catch(() => { });
                     }
                     voteData.voters.add(interaction.user.id);
                     const humanCount = memberVC.members.filter(m => !m.user.bot).size;
@@ -319,13 +319,13 @@ async function main() {
                         const player = client.lavalink.getPlayer(guildId);
                         if (player) await player.skip();
                         client.voteSkips.delete(guildId);
-                        await interaction.update({ content: `🗳️ Vote skip passed! (**${current}/${needed}** votes) ⏭️`, components: [] }).catch(() => {});
+                        await interaction.update({ content: `🗳️ Vote skip passed! (**${current}/${needed}** votes) ⏭️`, components: [] }).catch(() => { });
                     } else {
                         const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
                         const btn = new ActionRowBuilder().addComponents(
                             new ButtonBuilder().setCustomId(`voteskip_${guildId}`).setLabel(`🗳️ Vote Skip (${current}/${needed})`).setStyle(ButtonStyle.Primary)
                         );
-                        await interaction.update({ components: [btn] }).catch(() => {});
+                        await interaction.update({ components: [btn] }).catch(() => { });
                     }
                 } catch (err) {
                     console.error('[Reso] Vote skip button error:', err);
@@ -399,11 +399,22 @@ async function main() {
                     return interaction.reply({
                         content: '❌ Failed to queue recommendation.',
                         flags: MessageFlags.Ephemeral,
-                    }).catch(() => {});
+                    }).catch(() => { });
                 }
             }
 
             if (!interaction.isChatInputCommand()) return;
+
+            // Check designated command channel
+            const { getDesignatedChannel } = require('./utils/settings');
+            const designatedChannel = getDesignatedChannel(interaction.guildId);
+            if (designatedChannel && interaction.channelId !== designatedChannel) {
+                return interaction.reply({
+                    content: `❌ I only respond to commands in <#${designatedChannel}>.`,
+                    flags: MessageFlags.Ephemeral
+                }).catch(() => {});
+            }
+
             const command = client.commands.get(interaction.commandName);
             if (!command) return;
 
@@ -436,6 +447,13 @@ async function main() {
 
             const args = message.content.slice(prefix.length).trim().split(/ +/);
             const commandName = args.shift().toLowerCase();
+
+            // Check designated command channel
+            const { getDesignatedChannel } = require('./utils/settings');
+            const designatedChannel = getDesignatedChannel(message.guild.id);
+            if (designatedChannel && message.channel.id !== designatedChannel) {
+                return;
+            }
 
             const command = client.commands.get(commandName);
             if (!command) return;
@@ -496,7 +514,7 @@ async function main() {
             } catch (error) {
                 console.error(`[Reso] Command error (${commandName}):`, error);
                 const errorMsg = { content: '❌ An error occurred while executing this command.' };
-                await message.reply(errorMsg).catch(() => {});
+                await message.reply(errorMsg).catch(() => { });
             }
         });
 
@@ -524,7 +542,7 @@ async function main() {
                     await new Promise(r => setTimeout(r, delaySeconds * 1000));
 
                     // Destroy the previous client state before retrying
-                    try { client.destroy(); } catch {}
+                    try { client.destroy(); } catch { }
                 } else {
                     // Non-retryable error or exhausted retries
                     throw loginError;
