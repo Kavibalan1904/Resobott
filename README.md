@@ -38,11 +38,13 @@ Edit `.env` and fill in your credentials:
 DISCORD_TOKEN=your_bot_token_here
 CLIENT_ID=your_client_id_here
 DEFAULT_VOLUME=50
-LAVALINK_HOST=lava-v4.millohost.my.id
+LAVALINK_HOST=lavalink1-7tbh.onrender.com
 LAVALINK_PORT=443
-LAVALINK_PASSWORD=https://discord.gg/mjS5J2K3ep
+LAVALINK_PASSWORD=youshallnotpass
 LAVALINK_SECURE=true
 ```
+
+**Important:** `LAVALINK_PASSWORD` in the bot's environment must exactly match `LAVALINK_PASSWORD` on the Render Lavalink service. The value `youshallnotpass` matches the current `render.yaml` default only; if you changed the password in Render, use that same value in the bot's environment. Never commit real tokens or passwords to GitHub.
 
 ### 3. Install Dependencies & Start
 ```bash
