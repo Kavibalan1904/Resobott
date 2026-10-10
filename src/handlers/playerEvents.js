@@ -317,7 +317,14 @@ function setupLavalinkEvents(client) {
         (async () => {
             try {
                 await new Promise(resolve => setTimeout(resolve, 4000));
-                if (!player.playing || !sentMsg) return;
+                // A later track may have started while recommendations were loading.
+                // Never let an older task overwrite the current Now Playing message.
+                if (
+                    !player.playing ||
+                    !sentMsg ||
+                    player.queue.current?.info?.uri !== track?.info?.uri ||
+                    lastNowPlayingMessage.get(player.guildId)?.id !== sentMsg.id
+                ) return;
 
                 const sessionHistory = client.trackHistory?.get(player.guildId) || [];
                 const recommendations = await getRecommendations(player, track, 5, sessionHistory);
