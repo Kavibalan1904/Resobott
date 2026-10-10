@@ -286,26 +286,31 @@ function setupLavalinkEvents(client) {
         const channel = client.channels.cache.get(player.textChannelId);
         if (!channel) return;
 
-        // ── Delete previous Now Playing message so only one active message exists ──
+        // ── Reuse the existing Now Playing message when possible ──
+        // Editing one message avoids a delete+send round trip on every track transition.
         const prevMsg = lastNowPlayingMessage.get(player.guildId);
-        if (prevMsg) {
-            try {
-                await prevMsg.delete().catch(() => {});
-            } catch { /* ignore */ }
-            lastNowPlayingMessage.delete(player.guildId);
-        }
 
-        // ── INSTANT: Send Now Playing embed immediately (don't wait for recommendations) ──
+        // ── INSTANT: Publish Now Playing without waiting for recommendations ──
         const embed = nowPlayingEmbed(track, player, client, []);
         const controls = createPlayerControls(false);
 
-        let sentMsg;
-        try {
-            sentMsg = await channel.send({ embeds: [embed], components: [controls] });
-            lastNowPlayingMessage.set(player.guildId, sentMsg);
-        } catch {
-            lastNowPlayingMessage.delete(player.guildId);
+        let sentMsg = null;
+        if (prevMsg) {
+            try {
+                sentMsg = await prevMsg.edit({ embeds: [embed], components: [controls] });
+            } catch {
+                // The old message may have been deleted or become uneditable; send a replacement.
+            }
         }
+        if (!sentMsg) {
+            try {
+                sentMsg = await channel.send({ embeds: [embed], components: [controls] });
+            } catch {
+                // A Discord send failure should not interrupt playback.
+            }
+        }
+        if (sentMsg) lastNowPlayingMessage.set(player.guildId, sentMsg);
+        else lastNowPlayingMessage.delete(player.guildId);
 
         // ── BACKGROUND: Fetch recommendations after audio buffer fills ──
         // Wait 4 seconds before fetching so the audio stream begins smoothly with zero CPU contention
