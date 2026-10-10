@@ -102,10 +102,7 @@ function setupLavalinkEvents(client) {
             // Build a search query from the clean track title + author
             const rawTitle = track?.info?.title || '';
             const cleanTitle = cleanVideoTitle(rawTitle) || rawTitle;
-            const author = track?.info?.author || '';
             const searchQuery = cleanTitle.trim();
-            const isrc = track?.info?.isrc || null;
-            const originalSource = (track?.info?.sourceName || '').toLowerCase();
 
             if (!searchQuery) return false;
             if (!player.node || !player.node.connected) return false;
@@ -141,9 +138,7 @@ function setupLavalinkEvents(client) {
                             return false;
                         }
 
-                        // For YouTube, avoid the first result that just failed; for SoundCloud, use its top result.
-                        const trackIndex = fallbackSource === 'ytsearch' && result.tracks.length > 1 ? 1 : 0;
-                        const resolvedTrack = result.tracks[trackIndex];
+                        const resolvedTrack = result.tracks[0];
                         resolvedTrack.requester = track.requester;
                         const resolvedSource = resolvedTrack?.info?.sourceName
                             ? capitalize(resolvedTrack.info.sourceName)
