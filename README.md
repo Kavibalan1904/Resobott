@@ -69,53 +69,53 @@ npm start
 ### Playback & Controls
 | Command | Description |
 |---|---|
-| `/play <query> [source]` | Play a song or playlist (YouTube, YT Music, Spotify, SoundCloud, Apple Music) |
-| `/playnext <query>` | Add a song to play next (front of queue) |
-| `/pause` | Pause playback |
-| `/resume` | Resume playback |
-| `/stop` | Stop playback and disconnect |
-| `/skip` | Skip the current track |
-| `/voteskip` | Start a democratic vote to skip current track |
-| `/back` | Play the previous track from history |
-| `/seek <time>` | Seek to a specific timestamp |
-| `/speed <multiplier>` | Change playback speed (0.5x to 2.0x) |
-| `/nowplaying` | Show current track with interactive controls |
-| `/replay` | Restart the current track from beginning |
+| `>play <query> [source]` | Play a song or playlist (YouTube, YT Music, Spotify, SoundCloud, Apple Music) |
+| `>playnext <query>` | Add a song to play next (front of queue) |
+| `>pause` | Pause playback |
+| `>resume` | Resume playback |
+| `>stop` | Stop playback and disconnect |
+| `>skip` | Skip the current track |
+| `>voteskip` | Start a democratic vote to skip current track |
+| `>back` | Play the previous track from history |
+| `>seek <time>` | Seek to a specific timestamp |
+| `>speed <multiplier>` | Change playback speed (0.5x to 2.0x) |
+| `>nowplaying` | Show current track with interactive controls |
+| `>replay` | Restart the current track from beginning |
 
 ### Queue & Discovery
 | Command | Description |
 |---|---|
-| `/queue [page]` | View current queue with total duration and source tags |
-| `/autoplay` | Toggle automatic recommendations queueing |
-| `/recommend` | Get song recommendations based on current track |
-| `/search <query>` | Search and pick from top 10 results |
-| `/shuffle` | Shuffle the queue |
-| `/clear` | Clear all tracks from the queue |
-| `/remove <position>` | Remove a track from the queue |
-| `/move <from> <to>` | Move a track to a new position |
-| `/skipto <position>` | Skip directly to a specific track |
-| `/loop <mode>` | Set loop mode (Off, Track, Queue) |
+| `>queue [page]` | View current queue with total duration and source tags |
+| `>autoplay` | Toggle automatic recommendations queueing |
+| `>recommend` | Get song recommendations based on current track |
+| `>search <query>` | Search and pick from top 10 results |
+| `>shuffle` | Shuffle the queue |
+| `>clear` | Clear all tracks from the queue |
+| `>remove <position>` | Remove a track from the queue |
+| `>move <from> <to>` | Move a track to a new position |
+| `>skipto <position>` | Skip directly to a specific track |
+| `>loop <mode>` | Set loop mode (Off, Track, Queue) |
 
 ### Audio & Customization
 | Command | Description |
 |---|---|
-| `/volume [level]` | View or set playback volume (0-100) |
-| `/filter <name>` | Toggle an audio filter (Bass Boost, Nightcore, 8D, Lo-Fi, etc.) |
-| `/filters` | List all available filters and active status |
+| `>volume [level]` | View or set playback volume (0-100) |
+| `>filter <name>` | Toggle an audio filter (Bass Boost, Nightcore, 8D, Lo-Fi, etc.) |
+| `>filters` | List all available filters and active status |
 
 ### Utilities & Tools
 | Command | Description |
 |---|---|
-| `/247` | Toggle 24/7 voice channel mode |
-| `/join` | Summon the bot to your voice channel |
-| `/leave` | Disconnect the bot from voice channel |
-| `/grab` | Send current song details to your DMs |
-| `/lyrics [query]` | Fetch song lyrics |
-| `/help [command]` | Interactive help menu |
-| `/ping` | Check bot & WebSocket latency |
-| `/stats` | View memory, player, and node statistics |
-| `/invite` | Get bot invite link |
-| `/setchannel [action]` | Set this channel as the designated bot channel (or remove restriction) |
+| `>247` | Toggle 24/7 voice channel mode |
+| `>join` | Summon the bot to your voice channel |
+| `>leave` | Disconnect the bot from voice channel |
+| `>grab` | Send current song details to your DMs |
+| `>lyrics [query]` | Fetch song lyrics |
+| `>help [command]` | Interactive help menu |
+| `>ping` | Check bot & WebSocket latency |
+| `>stats` | View memory, player, and node statistics |
+| `>invite` | Get bot invite link |
+| `>setchannel [action]` | Set this channel as the designated bot channel (or remove restriction) |
 
 ---
 
