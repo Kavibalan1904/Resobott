@@ -44,7 +44,7 @@ LAVALINK_PASSWORD=youshallnotpass
 LAVALINK_SECURE=true
 ```
 
-**Important:** `LAVALINK_PASSWORD` in the bot's environment must exactly match `LAVALINK_PASSWORD` on the Render Lavalink service. The value `youshallnotpass` matches the current `render.yaml` default only; if you changed the password in Render, use that same value in the bot's environment. Never commit real tokens or passwords to GitHub.
+**Important:** Set a long random `LAVALINK_PASSWORD` in the Lavalink Render service and use the exact same value in the bot's environment. Never commit real tokens or passwords to GitHub.
 
 ### 3. Install Dependencies & Start
 ```bash
