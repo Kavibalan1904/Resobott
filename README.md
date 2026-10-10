@@ -40,7 +40,7 @@ CLIENT_ID=your_client_id_here
 DEFAULT_VOLUME=50
 LAVALINK_HOST=lavalink1-7tbh.onrender.com
 LAVALINK_PORT=443
-LAVALINK_PASSWORD=youshallnotpass
+LAVALINK_PASSWORD=<your-long-random-secret>
 LAVALINK_SECURE=true
 ```
 
