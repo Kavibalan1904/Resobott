@@ -6,7 +6,7 @@
 
 ## ✨ Features
 
-- 🎶 **Multi-source streaming** — YouTube, YouTube Music, Spotify, SoundCloud, Apple Music, and more
+- 🎶 **Multi-source streaming** — YouTube, YouTube Music, Spotify metadata mirroring, and SoundCloud
 - 🎮 **Interactive Player Buttons** — Play/Pause, Skip, Back, Shuffle, and Stop directly from the Now Playing embed
 - 🔄 **Autoplay Mode** — Automatically finds and queues similar songs when your queue ends
 - ⏩ **Speed Control** — Adjust playback speed (0.5x to 2.0x) with pitch preservation
