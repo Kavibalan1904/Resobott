@@ -110,14 +110,19 @@ function setupLavalinkEvents(client) {
             if (!searchQuery) return false;
             if (!player.node || !player.node.connected) return false;
 
-            // Normalize Lavalink source names and try a different provider if YouTube playback fails.
-            // Search results alone do not prove that a YouTube audio stream can be loaded.
-            // A trackError means the selected track has already failed during playback.
-            // Try SoundCloud first for failed YouTube tracks; only re-search YouTube if no alternative is found.
-            const fallbackSources = [
-                { source: 'scsearch', label: 'SoundCloud' },
-                { source: 'ytsearch', label: 'YouTube' },
-            ];
+            // YouTube is the primary source. If a YouTube track fails during playback,
+            // try Spotify search next (LavaSrc resolves Spotify metadata through its configured
+            // audio providers), then SoundCloud as the final audio fallback. Avoid repeating
+            // YouTube immediately after its stream extraction has already failed.
+            const fallbackSources = originalSource === 'youtube'
+                ? [
+                    { source: 'spsearch', label: 'Spotify' },
+                    { source: 'scsearch', label: 'SoundCloud' },
+                ]
+                : [
+                    { source: 'ytsearch', label: 'YouTube' },
+                    { source: 'scsearch', label: 'SoundCloud' },
+                ];
 
             for (const fallback of fallbackSources) {
                 const fallbackSource = fallback.source;
