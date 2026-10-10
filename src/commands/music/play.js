@@ -283,7 +283,7 @@ module.exports = {
                 }
             }
 
-            if (!result.tracks || result.tracks.length === 0) {
+            if (!result || !result.tracks || result.tracks.length === 0) {
                 if (isAttachment) {
                     return interaction.editReply({
                         embeds: [errorEmbed(`Could not play **${truncate(rawQuery, 50)}**. Make sure the uploaded file is a valid, uncorrupted audio format.`)]
