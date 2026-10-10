@@ -464,17 +464,27 @@ async function getRecommendations(player, currentTrack, limit = 5, sessionHistor
 
     // ── Step 5: Fire searches in parallel with source fallback and strict timeout ──
     const searchPromises = queries.map(async (q) => {
+        let timeoutId;
+        let timedOut = false;
         try {
-            const timeoutPromise = new Promise((_, reject) =>
-                setTimeout(() => reject(new Error('Recommendation search timeout')), 3500)
-            );
+            // Bound each recommendation query and stop launching fallback searches after its deadline.
+            // Promise.race alone does not cancel the original request; the timedOut checks prevent
+            // a slow first provider from triggering additional requests after the user-facing timeout.
+            const timeoutPromise = new Promise((_, reject) => {
+                timeoutId = setTimeout(() => {
+                    timedOut = true;
+                    reject(new Error('Recommendation search timeout'));
+                }, 3500);
+            });
 
             const searchExec = (async () => {
-                // Try YouTube Music first (clean audio), then Spotify / SoundCloud
+                // Keep YouTube Music primary, Spotify secondary, SoundCloud last.
                 let res = await searchNode.search({ query: q.query, source: 'ytmsearch' }, currentTrack.requester).catch(() => null);
+                if (timedOut) return null;
                 if (!res || !res.tracks || res.tracks.length === 0) {
                     res = await searchNode.search({ query: q.query, source: 'spsearch' }, currentTrack.requester).catch(() => null);
                 }
+                if (timedOut) return null;
                 if (!res || !res.tracks || res.tracks.length === 0) {
                     res = await searchNode.search({ query: q.query, source: 'scsearch' }, currentTrack.requester).catch(() => null);
                 }
@@ -482,7 +492,6 @@ async function getRecommendations(player, currentTrack, limit = 5, sessionHistor
             })();
 
             const result = await Promise.race([searchExec, timeoutPromise]).catch(() => null);
-
             return {
                 tier: q.tier,
                 label: q.label,
@@ -491,6 +500,8 @@ async function getRecommendations(player, currentTrack, limit = 5, sessionHistor
             };
         } catch {
             return { tier: q.tier, label: q.label, count: q.count, tracks: [] };
+        } finally {
+            if (timeoutId) clearTimeout(timeoutId);
         }
     });
 

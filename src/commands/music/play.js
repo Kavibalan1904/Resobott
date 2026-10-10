@@ -272,14 +272,26 @@ module.exports = {
                         }
                     } catch { }
                 } else if (!isUrl && !isAttachment && searchSource !== 'scsearch') {
-                    // If text search found nothing, try SoundCloud once
-                    try {
-                        console.log(`[Reso] ↻ Quick SoundCloud fallback for: "${truncate(query, 50)}"...`);
-                        result = await player.search({ query, source: 'scsearch' }, interaction.user);
-                        if (result?.tracks?.length > 0) {
-                            fallbackNote = '⚠️ YouTube search returned no results — playing SoundCloud alternative';
-                        }
-                    } catch { }
+                    // Default order: YouTube first, Spotify second, SoundCloud last.
+                    // Only search secondary providers when the primary query returned no tracks.
+                    if (source === 'auto') {
+                        try {
+                            console.log(`[Reso] ↻ YouTube returned no results; trying Spotify for "${truncate(query, 50)}"...`);
+                            result = await player.search({ query, source: 'spsearch' }, interaction.user);
+                            if (result?.tracks?.length > 0) {
+                                fallbackNote = 'Matched via Spotify search';
+                            }
+                        } catch { }
+                    }
+                    if (!result?.tracks?.length) {
+                        try {
+                            console.log(`[Reso] ↻ Trying SoundCloud fallback for "${truncate(query, 50)}"...`);
+                            result = await player.search({ query, source: 'scsearch' }, interaction.user);
+                            if (result?.tracks?.length > 0) {
+                                fallbackNote = '⚠️ Primary search unavailable — playing a SoundCloud alternative';
+                            }
+                        } catch { }
+                    }
                 }
             }
 

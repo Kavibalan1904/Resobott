@@ -85,14 +85,20 @@ module.exports = {
                 console.warn(`[Reso] Search initial query error: ${searchErr.message}`);
             }
 
-            // Quick fallback to SoundCloud only if primary search returned empty
+            // Keep the default order YouTube → Spotify → SoundCloud. If the user
+            // explicitly selected another provider, respect it and use SoundCloud last.
+            if ((!result || !result.tracks || result.tracks.length === 0) && source === 'auto') {
+                try {
+                    result = await player.search({ query, source: 'spsearch' }, interaction.user);
+                } catch {}
+            }
             if ((!result || !result.tracks || result.tracks.length === 0) && searchPlatform !== 'scsearch') {
                 try {
                     result = await player.search({ query, source: 'scsearch' }, interaction.user);
                 } catch {}
             }
 
-            if (!result.tracks || result.tracks.length === 0) {
+            if (!result || !result.tracks || result.tracks.length === 0) {
                 return interaction.editReply({
                     embeds: [errorEmbed(`No results found for **${truncate(query, 50)}**`)]
                 });
