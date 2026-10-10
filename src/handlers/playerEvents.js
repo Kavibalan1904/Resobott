@@ -126,14 +126,14 @@ function setupLavalinkEvents(client) {
 
             for (const fallback of fallbackSources) {
                 const fallbackSource = fallback.source;
-                const fallbackQuery = fallbackSource === 'scsearch'
-                    ? [searchQuery, author].filter(Boolean).join(' ')
-                    : searchQuery;
+                // Use the concise song query for every provider. YouTube's author is
+                // often a record label (e.g. "Sony Music South"), not the performer;
+                // appending it makes Spotify/SoundCloud searches less accurate.
                 const ts = new Date().toISOString();
                 console.log(`[Reso ${ts}] ↻ RETRY: Quick retry for "${cleanTitle}" via ${fallback.label} (${fallbackSource}; reason: ${reason})`);
                 let timeoutId;
                 try {
-                    const searchPromise = player.search({ query: fallbackQuery, source: fallbackSource }, track.requester);
+                    const searchPromise = player.search({ query: searchQuery, source: fallbackSource }, track.requester);
                     const timeoutPromise = new Promise((_, reject) => {
                         timeoutId = setTimeout(() => reject(new Error('Retry search timeout')), 5000);
                     });
