@@ -139,7 +139,10 @@ function setupLavalinkEvents(client) {
                     });
                     const result = await Promise.race([searchPromise, timeoutPromise]);
 
-                    if (result && result.tracks && result.tracks.length > 0) {
+                    const foundCount = result?.tracks?.length || 0;
+                    console.log(`[Reso] 🔎 Retry search via ${fallback.label} returned ${foundCount} track(s) for "${searchQuery}"`);
+
+                    if (foundCount > 0) {
                         // Check if a new track started playing while we were searching (e.g. manual skip)
                         if (player.playing && player.queue.current && player.queue.current.info?.uri !== track.info?.uri) {
                             console.log(`[Reso] ⏭️ Retry aborted: A new track is already playing.`);
