@@ -110,21 +110,26 @@ function setupLavalinkEvents(client) {
             if (!searchQuery) return false;
             if (!player.node || !player.node.connected) return false;
 
-            // Simplify fallback behaviour: Do not hide YouTube errors with SoundCloud.
-            // If YouTube fails, retry once on YouTube, but we will pick the *second* search result if available.
-            const fallbackSources = [originalSource || 'ytsearch'];
+            // Normalize Lavalink source names and try a different provider if YouTube playback fails.
+            // Search results alone do not prove that a YouTube audio stream can be loaded.
+            const fallbackSources = originalSource === 'soundcloud'
+                ? [{ source: 'scsearch', label: 'SoundCloud' }]
+                : [{ source: 'ytsearch', label: 'YouTube' }, { source: 'scsearch', label: 'SoundCloud' }];
 
-            for (const fallbackSource of fallbackSources) {
+            for (const fallback of fallbackSources) {
+                const fallbackSource = fallback.source;
+                const fallbackQuery = fallbackSource === 'scsearch'
+                    ? [searchQuery, author].filter(Boolean).join(' ')
+                    : searchQuery;
                 const ts = new Date().toISOString();
-                console.log(`[Reso ${ts}] ↻ RETRY: Quick retry for "${cleanTitle}" via ${fallbackSource} (reason: ${reason})`);
+                console.log(`[Reso ${ts}] ↻ RETRY: Quick retry for "${cleanTitle}" via ${fallback.label} (${fallbackSource}; reason: ${reason})`);
+                let timeoutId;
                 try {
-                    const searchPromise = player.search({ query: searchQuery, source: fallbackSource }, track.requester);
-                    let timeoutId;
+                    const searchPromise = player.search({ query: fallbackQuery, source: fallbackSource }, track.requester);
                     const timeoutPromise = new Promise((_, reject) => {
                         timeoutId = setTimeout(() => reject(new Error('Retry search timeout')), 5000);
                     });
                     const result = await Promise.race([searchPromise, timeoutPromise]);
-                    clearTimeout(timeoutId);
 
                     if (result && result.tracks && result.tracks.length > 0) {
                         // Check if a new track started playing while we were searching (e.g. manual skip)
@@ -133,30 +138,31 @@ function setupLavalinkEvents(client) {
                             return false;
                         }
 
-                        // Pick the second track to avoid playing the exact same broken video, unless there's only one.
-                        let trackIndex = 0;
-                        if ((fallbackSource === 'ytsearch' || fallbackSource === 'youtube') && result.tracks.length > 1) {
-                            trackIndex = 1;
-                        }
+                        // For YouTube, avoid the first result that just failed; for SoundCloud, use its top result.
+                        const trackIndex = fallbackSource === 'ytsearch' && result.tracks.length > 1 ? 1 : 0;
                         const resolvedTrack = result.tracks[trackIndex];
                         resolvedTrack.requester = track.requester;
-                        const resolvedSource = resolvedTrack?.info?.sourceName ? capitalize(resolvedTrack.info.sourceName) : fallbackSource;
+                        const resolvedSource = resolvedTrack?.info?.sourceName
+                            ? capitalize(resolvedTrack.info.sourceName)
+                            : fallback.label;
                         console.log(`[Reso] ✓ Retry resolved: "${truncate(resolvedTrack.info?.title, 40)}" from ${resolvedSource}`);
 
-                        successfulRetries.add(guildId); // Mark as successfully retried BEFORE playing to suppress queueEnd race condition
+                        successfulRetries.add(guildId); // Mark before playing to suppress queueEnd race
                         await player.play({ clientTrack: resolvedTrack });
 
                         const channel = client.channels.cache.get(player.textChannelId);
                         if (channel) {
                             const embed = warningEmbed(
-                                `Track **${truncate(rawTitle, 50)}** ${reason}. Switched to **${resolvedSource}**.`
+                                `Track **${truncate(rawTitle, 50)}** ${reason}. Trying **${resolvedSource}**.`
                             );
                             channel.send({ embeds: [embed] }).catch(() => { });
                         }
                         return true;
                     }
                 } catch (err) {
-                    console.warn(`[Reso] ✗ Retry search on ${fallbackSource} failed: ${err.message}`);
+                    console.warn(`[Reso] ✗ Retry search on ${fallback.label} failed: ${err.message}`);
+                } finally {
+                    if (timeoutId) clearTimeout(timeoutId);
                 }
             }
 
