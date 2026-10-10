@@ -97,16 +97,28 @@ defaultNodes.push({
     retryDelay: 5000,      // Fast 5s reconnect attempts
 });
 
-// ── Fallback Backup Node (Ensures 100% uptime when primary is restarting/sleeping) ──
-defaultNodes.push({
-    id: 'backup-millohost',
-    host: 'lava-v4.millohost.my.id',
-    port: 443,
-    authorization: 'https://discord.gg/mjS5J2K3ep',
-    secure: true,
-    retryAmount: Infinity,
-    retryDelay: 10000,
-});
+// ── Optional backup Lavalink node ──────────────────────────────
+// Only enable a backup server when its operator has supplied valid credentials.
+// Never hard-code a public invite URL as Lavalink authorization.
+const backupHost = process.env.BACKUP_LAVALINK_HOST?.trim();
+const backupPassword = process.env.BACKUP_LAVALINK_PASSWORD?.trim();
+const backupPort = Number.parseInt(process.env.BACKUP_LAVALINK_PORT, 10) || 443;
+if (backupHost && backupPassword) {
+    defaultNodes.push({
+        id: 'backup-custom',
+        host: backupHost.replace(/^(https?|wss?):\/\//i, '').replace(/\/.*$/, ''),
+        port: backupPort,
+        authorization: backupPassword,
+        secure: process.env.BACKUP_LAVALINK_SECURE !== undefined
+            ? String(process.env.BACKUP_LAVALINK_SECURE).toLowerCase() === 'true'
+            : backupPort === 443,
+        retryAmount: Infinity,
+        retryDelay: 10000,
+    });
+    console.log(`[Reso] 🔁 Optional backup Lavalink node configured: ${backupHost}:${backupPort}`);
+} else {
+    console.log('[Reso] ℹ️ No backup Lavalink node configured; using primary node only.');
+}
 
 client.lavalink = new LavalinkManager({
     nodes: defaultNodes,
