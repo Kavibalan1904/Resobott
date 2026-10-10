@@ -625,19 +625,33 @@ function isUrl(query) {
 }
 
 /**
- * Clean a raw YouTube or media title by removing noisy metadata, pipes, and movie credits
+ * Clean a YouTube/media title into a short search query.
+ * Keep the movie/song identity but remove video labels, resolution tags and credits
+ * so Spotify/SoundCloud searches don't receive the entire YouTube title.
  */
 function cleanVideoTitle(rawTitle) {
     if (!rawTitle || typeof rawTitle !== 'string') return '';
-    let title = rawTitle;
-    // Strip common YouTube tag suffixes: | Official Video, - Full Song, (4K Remaster), etc.
-    title = title.replace(/\s*[\|\-–—]\s*(Official\s+)?(Video|Audio|Music\s+Video|Lyric\s+Video|Full\s+Song|Full\s+Video|4K|HD|Remastered|Visualizer).*/i, '');
-    // If multiple pipe delimiters (e.g. "Charlie| Puthumazhayai| Dulquer Salmaan..."), extract primary movie + song name
-    const segments = title.split(/\s*\|\s*/).map(s => s.trim()).filter(Boolean);
-    if (segments.length >= 2) {
-        return segments.slice(0, 2).join(' ');
-    }
-    return title.trim();
+
+    // YouTube titles commonly append artist/label/credits after pipes. Keep only
+    // the first two meaningful segments (e.g. "Charlie | Pularikalo Full Song").
+    let title = rawTitle
+        .split(/\s*\|\s*/)
+        .map(s => s.trim())
+        .filter(Boolean)
+        .slice(0, 2)
+        .join(' ');
+
+    // Remove common promotional suffixes anywhere they occur in the query.
+    title = title
+        .replace(/\b(official\s+)?(music\s+video|lyric\s+video|video\s+song|full\s+song|full\s+video|official\s+audio|audio\s+song|visualizer|lyrics?|4k|hd|remastered)\b.*$/i, '')
+        .replace(/\s*[\[(](?:4k|hd|official|lyrics?|remastered)[^\])]*[\])]/ig, '')
+        .replace(/[|–—]+/g, ' ')
+        .replace(/\s+-\s+/g, ' ')
+        .replace(/\s{2,}/g, ' ')
+        .replace(/[\s:;,.-]+$/g, '')
+        .trim();
+
+    return title || rawTitle.trim();
 }
 
 module.exports = {
