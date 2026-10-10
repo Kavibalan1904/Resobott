@@ -1,6 +1,6 @@
 # 🎵 Reso — High-Quality Discord Music Bot
 
-**Reso** (short for *Resonance*) is a feature-rich, high-performance Discord music bot powered by **Lavalink v4** and **discord.js v14**. It supports YouTube, Spotify, SoundCloud, Apple Music, and more — with interactive button controls, audio filters, autoplay, and a sleek embed interface.
+**Reso** (short for *Resonance*) is a feature-rich, high-performance Discord music bot powered by **Lavalink v4** and **discord.js v14**. It supports YouTube, YouTube Music, Spotify metadata mirroring, and native SoundCloud playback — with interactive button controls, audio filters, autoplay, and a sleek embed interface.
 
 ---
 
@@ -71,7 +71,7 @@ npm start
 ### Playback & Controls
 | Command | Description |
 |---|---|
-| `/play <query> [source]` | Play a song or playlist (YouTube, YT Music, Spotify, SoundCloud, Apple Music) |
+| `/play <query> [source]` | Play a song or playlist (YouTube, YT Music, Spotify, SoundCloud) |
 | `/playnext <query>` | Add a song to play next (front of queue) |
 | `/pause` | Pause playback |
 | `/resume` | Resume playback |
