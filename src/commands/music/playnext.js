@@ -197,9 +197,17 @@ module.exports = {
                         }
                     } catch {}
                 } else if (!isUrlQuery && !isAttachment && searchSource !== 'scsearch') {
-                    try {
-                        result = await player.search({ query, source: 'scsearch' }, interaction.user);
-                    } catch {}
+                    // Default order: YouTube first, Spotify second, SoundCloud last.
+                    if (source === 'auto') {
+                        try {
+                            result = await player.search({ query, source: 'spsearch' }, interaction.user);
+                        } catch {}
+                    }
+                    if (!result?.tracks?.length) {
+                        try {
+                            result = await player.search({ query, source: 'scsearch' }, interaction.user);
+                        } catch {}
+                    }
                 }
             }
 
