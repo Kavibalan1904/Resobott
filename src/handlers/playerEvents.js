@@ -28,6 +28,9 @@ function setupLavalinkEvents(client) {
     // ── Diagnostic: Track time between tracks ──
     const trackGaps = new Map();
 
+    // Prevent duplicate queue-ended announcements when multiple end events race.
+    const lastQueueEndNoticeAt = new Map();
+
     // ── Bounded Retries: Track consecutive retries per guild ──
     const consecutiveRetries = new Map();
 
@@ -431,6 +434,13 @@ function setupLavalinkEvents(client) {
 
         const channel = client.channels.cache.get(player.textChannelId);
         if (!channel) return;
+
+        const lastNoticeAt = lastQueueEndNoticeAt.get(player.guildId) || 0;
+        if (Date.now() - lastNoticeAt < 5000) {
+            console.log(`[Reso] 🛡️ Suppressed duplicate queue-ended notice for guild ${player.guildId}`);
+            return;
+        }
+        lastQueueEndNoticeAt.set(player.guildId, Date.now());
 
         const embed = createEmbed('Info')
             .setDescription(`${EMOJIS.music} Queue has ended. Add more songs to keep the party going!\n*Use \`/autoplay\` to automatically queue similar songs!*\n*I'll stay here until everyone leaves or you use \`/leave\`.*`);
