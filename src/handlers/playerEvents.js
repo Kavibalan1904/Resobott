@@ -512,6 +512,7 @@ function setupLavalinkEvents(client) {
         // Clean up history and retry state
         client.trackHistory?.delete(player.guildId);
         retriedTracks.delete(player.guildId);
+        lastQueueEndNoticeAt.delete(player.guildId);
         client.recommendations?.delete(player.guildId);
         client.voteSkips?.delete(player.guildId);
 
