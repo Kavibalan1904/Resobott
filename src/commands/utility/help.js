@@ -25,7 +25,7 @@ module.exports = {
 
             const embed = createEmbed('Info')
                 .setAuthor({ name: 'Command Help' })
-                .setTitle(`\\`${process.env.PREFIX || '>'}${command.data.name}\\``)
+                .setTitle(`${process.env.PREFIX || '>'}${command.data.name}`)
                 .setDescription(command.data.description)
                 .addFields(
                     { name: 'Category', value: `\`${command.category || 'Unknown'}\``, inline: true },
