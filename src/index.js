@@ -80,11 +80,15 @@ const defaultNodes = [];
 const host = (process.env.LAVALINK_HOST || 'lavalink1-7tbh.onrender.com').trim()
     .replace(/^(https?|wss?):\/\//i, '') // Remove http://, https://, ws://, wss://
     .replace(/\/.*$/, ''); // Remove trailing slashes or paths
-const port = parseInt(process.env.LAVALINK_PORT) || 443;
-const password = process.env.LAVALINK_PASSWORD ? process.env.LAVALINK_PASSWORD.trim() : 'youshallnotpass';
-const isSecure = process.env.LAVALINK_SECURE !== undefined
-    ? String(process.env.LAVALINK_SECURE).toLowerCase() === 'true'
-    : port === 443;
+const port = Number.parseInt(process.env.LAVALINK_PORT || '443', 10);
+const password = process.env.LAVALINK_PASSWORD?.trim();
+const isSecure = String(process.env.LAVALINK_SECURE ?? (port === 443)).toLowerCase() === 'true';
+
+// Fail early instead of repeatedly attempting a connection with an implicit,
+// possibly incorrect default password. Set this in the bot host's environment.
+if (!password) {
+    throw new Error('LAVALINK_PASSWORD is missing. Set it to exactly the same value as the Lavalink server password.');
+}
 
 console.log(`[Reso] 🔒 Loading DEDICATED private Lavalink node: ${host}:${port}`);
 defaultNodes.push({
@@ -219,8 +223,13 @@ client.on('voiceStateUpdate', (oldState, newState) => {
 client.on('error', (err) => console.error('[Reso Discord Error]:', err));
 client.on('warn', (msg) => console.warn('[Reso Discord Warning]:', msg));
 client.on('debug', (info) => {
-    // Filter out noisy debug events to reduce console I/O overhead
-    const lower = info.toLowerCase();
+    // Never print token-bearing Discord debug lines to production logs.
+    const lower = String(info).toLowerCase();
+    if (lower.includes('provided token') || lower.includes('token:')) {
+        console.warn('[Reso Discord Debug]: Sensitive token-bearing debug message suppressed.');
+        return;
+    }
+    // Filter noisy debug events to reduce console I/O overhead.
     if (lower.includes('heartbeat') || lower.includes('session') || lower.includes('gateway')
         || lower.includes('shard') || lower.includes('identify') || lower.includes('connecting to')) return;
     console.log('[Reso Discord Debug]:', info);
