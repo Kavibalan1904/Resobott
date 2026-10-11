@@ -8,15 +8,16 @@ const BaseAIProvider = require('./baseProvider');
 class GeminiProvider extends BaseAIProvider {
     constructor(config = {}) {
         super(config);
-        this.model = config.model || 'gemini-2.5-flash';
+        this.model = config.model || 'gemini-3.8-flash';
         this.baseUrl = config.baseUrl || 'https://generativelanguage.googleapis.com';
     }
 
     /**
      * Dynamically discover active models supported by this API key
+     * @param {Set<string>} [triedModels]
      * @returns {Promise<string | null>}
      */
-    async discoverAvailableModel() {
+    async discoverAvailableModel(triedModels = new Set()) {
         try {
             const endpoint = `${this.baseUrl.replace(/\/+$/, '')}/v1beta/models?key=${encodeURIComponent(this.apiKey)}`;
             const controller = new AbortController();
@@ -28,21 +29,31 @@ class GeminiProvider extends BaseAIProvider {
             const data = await res.json();
             const models = Array.isArray(data?.models) ? data.models : [];
 
-            // Filter models supporting generateContent
-            const usable = models.filter(m =>
-                Array.isArray(m.supportedGenerationMethods) &&
-                m.supportedGenerationMethods.includes('generateContent')
-            );
+            // Filter models supporting generateContent and not already tried
+            const usable = models.filter(m => {
+                const name = (m.name || '').replace(/^models\//, '');
+                return Array.isArray(m.supportedGenerationMethods) &&
+                    m.supportedGenerationMethods.includes('generateContent') &&
+                    !triedModels.has(name);
+            });
             if (usable.length === 0) return null;
 
-            // Priority: flash models first, then pro, then anything available
-            const candidate = usable.find(m => m.name?.includes('2.5-flash'))
-                || usable.find(m => m.name?.includes('2.0-flash'))
-                || usable.find(m => m.name?.includes('3.8-flash'))
-                || usable.find(m => m.name?.includes('flash-lite'))
-                || usable.find(m => m.name?.includes('flash'))
-                || usable.find(m => m.name?.includes('pro'))
-                || usable[0];
+            // Filter out deprecated versions: 1.5, 2.0, 2.5
+            const notDeprecated = usable.filter(m =>
+                !m.name?.includes('1.5') &&
+                !m.name?.includes('2.0') &&
+                !m.name?.includes('2.5')
+            );
+            const pool = notDeprecated.length > 0 ? notDeprecated : usable;
+
+            // Priority: 3.8-flash first, then 3.5-flash-lite, then 3.x, then flash
+            const candidate = pool.find(m => m.name?.includes('3.8-flash'))
+                || pool.find(m => m.name?.includes('3.5-flash-lite'))
+                || pool.find(m => m.name?.includes('3.8'))
+                || pool.find(m => m.name?.includes('3.6-flash'))
+                || pool.find(m => m.name?.includes('flash'))
+                || pool.find(m => m.name?.includes('pro'))
+                || pool[0];
 
             if (candidate?.name) {
                 return candidate.name.replace(/^models\//, '');
@@ -56,21 +67,21 @@ class GeminiProvider extends BaseAIProvider {
     /**
      * Call Gemini generateContent API
      */
-    async generateCompletion({ prompt, systemPrompt, schema }) {
+    async generateCompletion({ prompt, systemPrompt, schema }, triedModels = new Set()) {
         if (!this.apiKey) {
             throw new Error('Gemini API key is not configured');
         }
 
         const fallbackCandidates = [
+            'gemini-3.8-flash',
+            'gemini-3.5-flash-lite',
+            'gemini-3.6-flash',
             'gemini-2.5-flash',
             'gemini-2.0-flash',
-            'gemini-2.0-flash-lite',
-            'gemini-1.5-flash-latest',
-            'gemini-1.5-flash',
-            'gemini-pro',
         ];
 
         const cleanModel = this.model.replace(/^models\//, '');
+        triedModels.add(cleanModel);
         const endpoint = `${this.baseUrl.replace(/\/+$/, '')}/v1beta/models/${encodeURIComponent(cleanModel)}:generateContent?key=${encodeURIComponent(this.apiKey)}`;
 
         const bodyPayload = {
@@ -118,23 +129,23 @@ class GeminiProvider extends BaseAIProvider {
                         errorBody = response.statusText;
                     }
 
-                    // 404 handler: Auto-discover active models and retry
-                    if (status === 404 && attempt === 1) {
-                        console.warn(`[Reso AI] Gemini model "${cleanModel}" returned 404 (${errorBody}). Auto-discovering available models...`);
-                        const discovered = await this.discoverAvailableModel();
-                        if (discovered && discovered !== cleanModel) {
-                            console.log(`[Reso AI] ✓ Discovered available model "${discovered}". Switching and retrying...`);
+                    // 404 handler: Auto-discover active models and retry (preventing infinite loops)
+                    if (status === 404) {
+                        console.warn(`[Reso AI] Gemini model "${cleanModel}" returned 404 (${errorBody}). Finding active model...`);
+                        const discovered = await this.discoverAvailableModel(triedModels);
+                        if (discovered && !triedModels.has(discovered)) {
+                            console.log(`[Reso AI] ✓ Switching to active model "${discovered}"...`);
                             this.model = discovered;
-                            return this.generateCompletion({ prompt, systemPrompt, schema });
+                            return this.generateCompletion({ prompt, systemPrompt, schema }, triedModels);
                         }
 
-                        // Try static candidate list
+                        // Try static candidate list that hasn't been tried yet
                         for (const alt of fallbackCandidates) {
-                            if (alt !== cleanModel) {
+                            if (!triedModels.has(alt)) {
                                 console.log(`[Reso AI] Trying fallback candidate model "${alt}"...`);
                                 this.model = alt;
                                 try {
-                                    return await this.generateCompletion({ prompt, systemPrompt, schema });
+                                    return await this.generateCompletion({ prompt, systemPrompt, schema }, triedModels);
                                 } catch (e) {
                                     if (e.message?.includes('404')) continue;
                                     throw e;
