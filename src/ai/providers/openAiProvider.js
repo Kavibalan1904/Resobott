@@ -29,7 +29,7 @@ class OpenAIProvider extends BaseAIProvider {
             model: this.model,
             messages,
             temperature: 0.3,
-            max_tokens: 600,
+            max_tokens: 2048,
             response_format: { type: 'json_object' },
         };
 
@@ -78,11 +78,24 @@ class OpenAIProvider extends BaseAIProvider {
                     throw new Error('OpenAI returned empty message content');
                 }
 
+                const trimmed = rawText.trim();
                 try {
-                    return JSON.parse(rawText.trim());
-                } catch {
-                    const cleaned = rawText.replace(/```(?:json)?/gi, '').replace(/```/g, '').trim();
-                    return JSON.parse(cleaned);
+                    return JSON.parse(trimmed);
+                } catch (parseErr) {
+                    const cleaned = trimmed
+                        .replace(/^```(?:json)?\s*/i, '')
+                        .replace(/\s*```$/i, '')
+                        .trim();
+                    try {
+                        return JSON.parse(cleaned);
+                    } catch {
+                        const start = cleaned.indexOf('{');
+                        const end = cleaned.lastIndexOf('}');
+                        if (start !== -1 && end > start) {
+                            return JSON.parse(cleaned.slice(start, end + 1));
+                        }
+                        throw parseErr;
+                    }
                 }
             } catch (err) {
                 clearTimeout(timeoutId);

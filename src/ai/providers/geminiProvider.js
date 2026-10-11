@@ -96,7 +96,7 @@ class GeminiProvider extends BaseAIProvider {
             } : undefined,
             generationConfig: {
                 temperature: 0.3,
-                maxOutputTokens: 600,
+                maxOutputTokens: 2048,
                 responseMimeType: 'application/json',
             },
         };
@@ -175,13 +175,25 @@ class GeminiProvider extends BaseAIProvider {
                     throw new Error('Gemini candidate returned no text');
                 }
 
-                // Parse structured JSON
+                // Parse structured JSON with robust cleanup
+                const trimmed = rawText.trim();
                 try {
-                    return JSON.parse(rawText.trim());
+                    return JSON.parse(trimmed);
                 } catch (parseErr) {
-                    // Strip potential markdown code blocks (e.g. ```json ... ```)
-                    const cleaned = rawText.replace(/```(?:json)?/gi, '').replace(/```/g, '').trim();
-                    return JSON.parse(cleaned);
+                    const cleaned = trimmed
+                        .replace(/^```(?:json)?\s*/i, '')
+                        .replace(/\s*```$/i, '')
+                        .trim();
+                    try {
+                        return JSON.parse(cleaned);
+                    } catch {
+                        const start = cleaned.indexOf('{');
+                        const end = cleaned.lastIndexOf('}');
+                        if (start !== -1 && end > start) {
+                            return JSON.parse(cleaned.slice(start, end + 1));
+                        }
+                        throw parseErr;
+                    }
                 }
             } catch (err) {
                 clearTimeout(timeoutId);
