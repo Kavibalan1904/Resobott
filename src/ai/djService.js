@@ -11,7 +11,7 @@ const { cleanVideoTitle, truncate } = require('../utils/helpers');
 
 class DJService {
     constructor(options = {}) {
-        this.provider = options.provider || createAIProvider();
+        this.provider = options.provider !== undefined ? options.provider : createAIProvider();
         this.userCooldowns = new Map(); // userId -> timestamp
         this.activeLocks = new Set();   // guildId:userId locks
     }

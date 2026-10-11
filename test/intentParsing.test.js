@@ -106,4 +106,41 @@ describe('AI Provider Factory & Fallback Handling', () => {
         assert.ok(provider instanceof BaseAIProvider);
         assert.strictEqual(provider.model, 'gpt-4o-mini');
     });
+
+    it('should pick up GEMINI_API_KEY from environment when AI_API_KEY is unset', () => {
+        const originalAIKey = process.env.AI_API_KEY;
+        const originalGeminiKey = process.env.GEMINI_API_KEY;
+        try {
+            delete process.env.AI_API_KEY;
+            process.env.GEMINI_API_KEY = 'test_gemini_key_123';
+            const provider = createAIProvider();
+            assert.ok(provider instanceof BaseAIProvider);
+            assert.strictEqual(provider.apiKey, 'test_gemini_key_123');
+            assert.strictEqual(provider.model, 'gemini-1.5-flash');
+        } finally {
+            if (originalAIKey) process.env.AI_API_KEY = originalAIKey;
+            else delete process.env.AI_API_KEY;
+            if (originalGeminiKey) process.env.GEMINI_API_KEY = originalGeminiKey;
+            else delete process.env.GEMINI_API_KEY;
+        }
+    });
+
+    it('should pick up GOOGLE_API_KEY from environment when AI_API_KEY is unset', () => {
+        const originalAIKey = process.env.AI_API_KEY;
+        const originalGoogleKey = process.env.GOOGLE_API_KEY;
+        try {
+            delete process.env.AI_API_KEY;
+            delete process.env.GEMINI_API_KEY;
+            process.env.GOOGLE_API_KEY = 'test_google_key_456';
+            const provider = createAIProvider();
+            assert.ok(provider instanceof BaseAIProvider);
+            assert.strictEqual(provider.apiKey, 'test_google_key_456');
+            assert.strictEqual(provider.model, 'gemini-1.5-flash');
+        } finally {
+            if (originalAIKey) process.env.AI_API_KEY = originalAIKey;
+            else delete process.env.AI_API_KEY;
+            if (originalGoogleKey) process.env.GOOGLE_API_KEY = originalGoogleKey;
+            else delete process.env.GOOGLE_API_KEY;
+        }
+    });
 });

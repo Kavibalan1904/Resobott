@@ -254,6 +254,20 @@ async function main() {
             client.lavalink.init({ id: client.user.id, username: client.user.username });
             console.log('[Reso] ✓ Lavalink manager initialized');
 
+            // Log AI DJ status
+            try {
+                const { createAIProvider } = require('./ai/providers/factory');
+                const aiProvider = createAIProvider();
+                if (aiProvider) {
+                    const providerName = aiProvider.constructor.name === 'GeminiProvider' ? 'Google Gemini' : 'OpenAI-compatible';
+                    console.log(`[Reso AI] ✓ AI DJ active using ${providerName} (${aiProvider.model})`);
+                } else {
+                    console.log('[Reso AI] ℹ AI DJ running in deterministic fallback mode (No AI_API_KEY / GEMINI_API_KEY configured)');
+                }
+            } catch (err) {
+                console.warn('[Reso AI] Warning checking AI provider:', err.message);
+            }
+
             // ── Keep Render node awake (prevents free-tier 15min inactivity sleep) ──
             if (host.includes('onrender.com')) {
                 const keepAliveUrl = `${isSecure ? 'https' : 'http'}://${host}:${port}/version`;
