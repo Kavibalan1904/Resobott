@@ -37,8 +37,10 @@ module.exports = {
                 await player.setRepeatMode('off').catch(() => {});
             }
 
-            // Stop the current track first, then clear anything waiting in the queue.
-            // Keep the player alive so Reso remains in the voice channel.
+            // Flag manual stop to prevent autoplay and redundant queue-ended messages
+            player.setData('manualStop', true);
+
+            // Stop the current track and clear queue, but keep player alive in voice channel
             await player.stopPlaying(true, false);
 
             return interaction.reply({

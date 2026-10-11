@@ -1,6 +1,6 @@
 const { nowPlayingEmbed, createRecommendationComponents, createPlayerControls, createDisabledControls, createEmbed, errorEmbed, warningEmbed, EMOJIS, capitalize } = require('../utils/embeds');
 const { truncate, markNodeError, getHealthyNodes, getBestNode, computeNodeScore, cleanVideoTitle, PRIMARY_NODE_ID } = require('../utils/helpers');
-const { getRecommendations, getAutoplayTrack } = require('../utils/recommendations');
+const { getRecommendations, getAutoplayTrack, updateSessionState } = require('../utils/recommendations');
 
 /**
  * Setup all Lavalink event listeners on the LavalinkManager
@@ -258,6 +258,11 @@ function setupLavalinkEvents(client) {
         history.push(track);
         client.trackHistory.set(player.guildId, history);
 
+        // Update session language and musical vibe for user-requested tracks
+        if (track && track.requester && track.requester.id !== 'autoplay') {
+            updateSessionState(player.guildId, track);
+        }
+
         // Maintain default bot presence (don't show current song)
         client.user.setPresence({
             activities: [{
@@ -395,6 +400,12 @@ function setupLavalinkEvents(client) {
             activities: [{ name: `music 🎵 | ${process.env.PREFIX || '>'}help`, type: 2 }],
             status: 'online',
         });
+
+        // ── Manual Stop Guard: suppress autoplay and queue-ended message ──
+        if (player.getData('manualStop')) {
+            player.setData('manualStop', void 0);
+            return;
+        }
 
         // ── Autoplay: auto-queue similar songs when queue ends ──
         if (client.autoplayGuilds?.has(player.guildId)) {

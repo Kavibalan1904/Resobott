@@ -154,8 +154,17 @@ async function handlePlayerButton(interaction, client) {
             }
 
             case 'player_stop': {
-                player.queue.clear();
-                await player.destroy();
+                if (player.repeatMode && player.repeatMode !== 'off') {
+                    await player.setRepeatMode('off').catch(() => {});
+                }
+
+                player.setData('manualStop', true);
+
+                if (player.queue?.tracks?.length > 0) {
+                    await player.queue.splice(0, player.queue.tracks.length);
+                }
+
+                await player.stopPlaying(true, false);
 
                 // Delete the Now Playing message to keep channel clean
                 try {
@@ -163,7 +172,7 @@ async function handlePlayerButton(interaction, client) {
                 } catch { /* ignore */ }
 
                 await interaction.reply({
-                    embeds: [successEmbed('⏹️ Stopped playback and cleared queue.')],
+                    embeds: [successEmbed('⏹️ Stopped playback and cleared queue. Use `/leave` to disconnect.')],
                     flags: MessageFlags.Ephemeral,
                 }).catch(() => {});
                 break;
