@@ -39,8 +39,7 @@ module.exports = {
 
             // Stop the current track first, then clear anything waiting in the queue.
             // Keep the player alive so Reso remains in the voice channel.
-            await player.stopPlaying(false, false);
-            player.queue.clear();
+            await player.stopPlaying(true, false);
 
             return interaction.reply({
                 embeds: [
