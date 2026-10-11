@@ -473,7 +473,7 @@ async function main() {
                 replied: false,
                 options: {
                     getString: (name) => {
-                        if (name === 'query' && args.length > 0) return args.join(' ');
+                        if ((name === 'query' || name === 'request') && args.length > 0) return args.join(' ');
                         return args[0] || null;
                     },
                     getInteger: (name) => {

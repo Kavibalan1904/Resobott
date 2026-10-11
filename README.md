@@ -6,6 +6,7 @@
 
 ## ✨ Features
 
+- 🎧 **AI Music DJ (`/vibe`)** — Interpret natural language requests ("relaxing 2000s Tamil melodies", "ranked gaming hype EDM") and generate curated, deduplicated playlists with interactive previews and preference feedback
 - 🎶 **Multi-source streaming** — YouTube, YouTube Music, Spotify, SoundCloud, Apple Music, and more
 - 🎮 **Interactive Player Buttons** — Play/Pause, Skip, Back, Shuffle, and Stop directly from the Now Playing embed
 - 🔄 **Autoplay Mode** — Automatically finds and queues similar songs when your queue ends
@@ -18,7 +19,7 @@
 - 📝 **Lyrics Search** — Powered by Genius
 - 🎧 **24/7 Mode** — Keep the bot in voice channel indefinitely
 - 💾 **Grab** — Save track information to your DMs
-- ⚡ **34 Slash Commands** — Modern Discord interactions with auto-complete
+- ⚡ **35 Slash Commands** — Modern Discord interactions with auto-complete and prefix support
 
 ---
 
@@ -85,6 +86,7 @@ npm start
 ### Queue & Discovery
 | Command | Description |
 |---|---|
+| `>vibe <request> [count]` | 🎧 **AI DJ**: Generate smart playlists matching any vibe, mood, or era |
 | `>queue [page]` | View current queue with total duration and source tags |
 | `>autoplay` | Toggle automatic recommendations queueing |
 | `>recommend` | Get song recommendations based on current track |
@@ -116,6 +118,62 @@ npm start
 | `>stats` | View memory, player, and node statistics |
 | `>invite` | Get bot invite link |
 | `>setchannel [action]` | Set this channel as the designated bot channel (or remove restriction) |
+
+---
+
+## 🎧 Reso AI Music DJ
+
+Reso includes an intelligent, production-quality AI Music DJ that interprets natural-language music requests and curates tailored playlists using Reso's existing Lavalink audio nodes and search engine.
+
+### Example Requests
+* `>vibe Play relaxing Tamil melodies from the 2000s`
+* `>vibe Give me energetic music for ranked gaming`
+* `>vibe Play nostalgic Tamil songs from the 1990s`
+* `>vibe Make a chill English indie playlist with 15 songs`
+* `>vibe Find songs similar to the current track`
+* `>vibe Give me upbeat songs without sad romantic tracks`
+* `>vibe Create a 12-song midnight lo-fi study playlist`
+
+Or via Slash Command:
+`/vibe request:"late-night Tamil melodies from the 2000s" count:12`
+
+### Interactive Controls
+Every generated vibe presents a rich preview embed with interactive buttons:
+* **➕ Add to Queue**: Safely enqueues the tracks to your current session without interrupting any currently playing song.
+* **🔀 Add & Shuffle**: Adds the curated tracks and instantly shuffles the queue.
+* **❌ Cancel**: Cancels the playlist request without modifying the queue.
+* **👍 More like this**: Records your preference to favor this artist/mood in future DJ sessions.
+* **👎 Less like this**: Reduces this artist/mood in future sessions.
+
+### Provider Configuration
+The AI DJ supports Google Gemini and any OpenAI-compatible provider (Groq, OpenRouter, Ollama) via native HTTP REST without external heavyweight dependencies.
+
+Configure in `.env`:
+```env
+# AI Provider: "gemini" (default) or "openai"
+AI_PROVIDER=gemini
+AI_API_KEY=your_api_key_here
+AI_MODEL=gemini-1.5-flash
+# AI_BASE_URL=https://api.openai.com/v1 # Optional custom endpoint
+```
+
+### Running Without AI Credentials (Offline Fallback)
+AI is completely optional! If `AI_API_KEY` is not provided (or if the AI service experiences a timeout or network glitch), Reso automatically switches to its deterministic offline rule engine. It recognizes moods, languages, decades, genres, and negative exclusions locally with zero API cost.
+
+### Testing Locally
+Reso includes an automated test suite verifying intent parsing, deduplication, queue safety, timeouts, and preference isolation:
+```bash
+npm test
+```
+
+### Known Limitations
+* Track discovery relies on Lavalink's configured search providers (YouTube / YouTube Music).
+* Highly niche independent releases with unusual spelling may fall back to broader genre hits.
+* Live streams and videos shorter than 30s or longer than 20m are automatically excluded to preserve playlist pacing.
+
+### Deployment & Rollback Instructions
+* **Deploy**: Upload files or pull `main`, ensure `.env` contains your Discord token and Lavalink credentials, run `npm test` to verify, and start with `npm start`.
+* **Rollback**: To disable AI features instantly, simply remove `AI_API_KEY` from `.env` and restart the bot — Reso will automatically operate via its offline deterministic rules without any downtime.
 
 ---
 

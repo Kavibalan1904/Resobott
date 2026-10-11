@@ -5,7 +5,8 @@
   "main": "index.js",
   "scripts": {
     "start": "node --trace-warnings --optimize_for_size --max-old-space-size=460 index.js",
-    "dev": "node --trace-warnings --watch index.js"
+    "dev": "node --trace-warnings --watch index.js",
+    "test": "node --test"
   },
   "engines": {
     "node": ">=18.0.0"

@@ -66,7 +66,8 @@ module.exports = {
             .setAuthor({ name: 'Reso — Command List', iconURL: client.user.displayAvatarURL() })
             .setDescription(
                 `Hey there! I'm **Reso**, your high-quality music companion.\n` +
-                `Use \`${process.env.PREFIX || '>'}help <command>\` for detailed info on a specific command.\n\n` +
+                `Use \`${process.env.PREFIX || '>'}help <command>\` for detailed info on a specific command.\n` +
+                `🎧 **AI Music DJ:** Try \`${process.env.PREFIX || '>'}vibe <request>\` to generate smart mood playlists!\n\n` +
                 `**Supported Sources:** YouTube, Spotify, SoundCloud, Apple Music & Audio File Uploads`
             )
             .setThumbnail(client.user.displayAvatarURL({ size: 256 }));
