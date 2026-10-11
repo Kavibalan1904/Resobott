@@ -12,18 +12,21 @@ const OpenAIProvider = require('./openAiProvider');
  * @returns {import('./baseProvider') | null}
  */
 function createAIProvider(overrides = {}) {
-    const apiKey = (
+    const rawKey = (
         overrides.apiKey ||
         process.env.AI_API_KEY ||
         process.env.GEMINI_API_KEY ||
         process.env.GOOGLE_API_KEY ||
+        process.env.GEMINI_KEY ||
         ''
     ).trim();
+    // Strip accidental surrounding quotes (e.g. 'key' or "key") from .env
+    const apiKey = rawKey.replace(/^['"]+|['"]+$/g, '').trim();
     if (!apiKey) {
         return null; // AI disabled, deterministic fallback will handle all requests
     }
 
-    const defaultProvider = (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY) ? 'gemini' : (process.env.AI_PROVIDER || 'gemini');
+    const defaultProvider = (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || process.env.GEMINI_KEY) ? 'gemini' : (process.env.AI_PROVIDER || 'gemini');
     const providerType = (overrides.provider || defaultProvider).trim().toLowerCase();
     const model = overrides.model || process.env.AI_MODEL || (providerType === 'gemini' ? 'gemini-1.5-flash' : 'gpt-4o-mini');
     const baseUrl = overrides.baseUrl || process.env.AI_BASE_URL || undefined;
@@ -32,7 +35,7 @@ function createAIProvider(overrides = {}) {
         apiKey,
         model,
         baseUrl,
-        timeoutMs: 8000,
+        timeoutMs: 12000,
     };
 
     switch (providerType) {

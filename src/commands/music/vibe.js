@@ -133,7 +133,7 @@ module.exports = {
             } : null;
 
             // 7. Interpret Request (AI -> Deterministic Fallback)
-            const { intent, isFallback } = await djService.interpretRequest(rawRequest, targetCount, context);
+            const { intent, isFallback, fallbackReason } = await djService.interpretRequest(rawRequest, targetCount, context);
 
             // 8. Discover and rank genuine tracks
             const discovery = await djService.discoverAndRankTracks(player, intent, interaction.user, interaction.guild.id);
@@ -171,13 +171,17 @@ module.exports = {
             if (intent.energy) vibeDetails.push(`**Energy**: \`${intent.energy}\``);
             if (intent.excludedTerms?.length > 0) vibeDetails.push(`**Excluded**: \`${intent.excludedTerms.join(', ')}\``);
 
+            const engineTag = isFallback
+                ? (fallbackReason ? `*(Offline Rules Engine — ${truncate(fallbackReason, 45)})*` : '*(Offline Rules Engine)*')
+                : '*(AI Powered)*';
+
             const embed = createEmbed('Music')
                 .setAuthor({
                     name: `🎧 Reso AI DJ — ${intent.summary || 'Curated Vibe'}`,
                     iconURL: interaction.client.user.displayAvatarURL(),
                 })
                 .setDescription(
-                    `> *"${truncate(rawRequest, 100)}"* ${isFallback ? '*(Offline Rules Engine)*' : '*(AI Powered)*'}\n\n` +
+                    `> *"${truncate(rawRequest, 100)}"* ${engineTag}\n\n` +
                     vibeDetails.join(' • ') + '\n\n' +
                     `### 🎶 Playlist Preview (${tracks.length} Songs • ${totalDurationStr})\n` +
                     `${trackLines}\n\n` +

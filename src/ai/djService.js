@@ -11,9 +11,24 @@ const { cleanVideoTitle, truncate } = require('../utils/helpers');
 
 class DJService {
     constructor(options = {}) {
-        this.provider = options.provider !== undefined ? options.provider : createAIProvider();
+        this._providerExplicitlySet = ('provider' in options);
+        this.provider = options.provider !== undefined ? options.provider : null;
         this.userCooldowns = new Map(); // userId -> timestamp
         this.activeLocks = new Set();   // guildId:userId locks
+    }
+
+    /**
+     * Resolve configured AI provider lazily
+     * @returns {import('./providers/baseProvider') | null}
+     */
+    getProvider() {
+        if (this._providerExplicitlySet) {
+            return this.provider;
+        }
+        if (!this.provider) {
+            this.provider = createAIProvider();
+        }
+        return this.provider;
     }
 
     /**
@@ -80,10 +95,12 @@ class DJService {
         }
 
         // If no AI provider configured, use deterministic fallback immediately
-        if (!this.provider) {
+        const provider = this.getProvider();
+        if (!provider) {
             return {
                 intent: parseDeterministicRequest(sanitizedPrompt, overrideCount, context),
                 isFallback: true,
+                fallbackReason: 'No AI key found in environment (AI_API_KEY or GEMINI_API_KEY)',
             };
         }
 
@@ -108,7 +125,7 @@ class DJService {
         ].filter(Boolean).join('\n');
 
         try {
-            const rawJson = await this.provider.generateCompletion({
+            const rawJson = await provider.generateCompletion({
                 prompt: userPrompt,
                 systemPrompt,
                 schema: INTENT_JSON_SCHEMA,
@@ -142,6 +159,7 @@ class DJService {
             return {
                 intent: parseDeterministicRequest(sanitizedPrompt, overrideCount, context),
                 isFallback: true,
+                fallbackReason: err.message,
             };
         }
     }
