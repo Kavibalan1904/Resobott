@@ -16,6 +16,8 @@ const {
     isUrl: isUrlHelper,
     cleanVideoTitle,
 } = require('../../utils/helpers');
+const { resolveSpotify } = require('../../utils/spotifyResolver');
+const { setTrackMetadata } = require('../../utils/trackMetadata');
 
 // Map user-friendly source names to Lavalink search platforms
 const SOURCE_MAP = {
@@ -227,8 +229,17 @@ module.exports = {
 
             // Quick fallbacks only if primary search found nothing
             if (!result || !result.tracks || result.tracks.length === 0) {
+                // 1. Text search fallback: if spsearch returned nothing, try YouTube search
+                if (!isUrl && !isAttachment && searchSource === 'spsearch') {
+                    try {
+                        console.log(`[Reso] ↻ spsearch yielded no results, falling back to ytsearch...`);
+                        result = await player.search({ query, source: 'ytsearch' }, interaction.user);
+                        if (result?.tracks?.length > 0) fallbackNote = 'Searched via YouTube';
+                    } catch {}
+                }
+
+                // 2. YouTube URL fallback
                 if (isUrl && isYouTubeUrl(query)) {
-                    // YouTube URL failed — try direct URL as last resort (handles playlists)
                     if (ytVideoId) {
                         try {
                             console.log(`[Reso] ↻ YouTube ytsearch failed, trying direct URL...`);
@@ -236,16 +247,129 @@ module.exports = {
                             if (result?.tracks?.length > 0) fallbackNote = 'Loaded via direct YouTube stream';
                         } catch { }
                     } else {
-                        // Playlist URL — retry
                         try {
                             console.log(`[Reso] ↻ YouTube playlist failed, retrying...`);
                             result = await player.search({ query }, interaction.user);
                         } catch { }
                     }
                 }
+
+                // 3. Spotify URL fallback (individual song or playlist/album)
+                if (isUrl && isSpotifyUrl(rawQuery || query)) {
+                    try {
+                        console.log(`[Reso] 🟢 Lavalink returned no tracks for Spotify URL. Resolving via Spotify resolver: ${truncate(query, 80)}`);
+                        const spotifyData = await resolveSpotify(query);
+                        if (spotifyData) {
+                            if (spotifyData.type === 'track') {
+                                console.log(`[Reso] 🟢 Searching YouTube for Spotify track: "${spotifyData.searchQuery}"`);
+                                let trackSearch = await player.search({ query: spotifyData.searchQuery, source: 'ytsearch' }, interaction.user);
+                                if (!trackSearch?.tracks?.length && spotifyData.title) {
+                                    trackSearch = await player.search({ query: spotifyData.title, source: 'ytsearch' }, interaction.user);
+                                }
+
+                                if (trackSearch?.tracks?.length > 0) {
+                                    const matchedTrack = trackSearch.tracks[0];
+                                    if (spotifyData.thumbnail) matchedTrack.info.artworkUrl = spotifyData.thumbnail;
+                                    if (spotifyData.uri) matchedTrack.info.uri = spotifyData.uri;
+                                    matchedTrack.info.sourceName = 'spotify';
+                                    result = {
+                                        loadType: 'track',
+                                        tracks: [matchedTrack],
+                                    };
+                                    detectedPlatform = 'spotify';
+                                    fallbackNote = 'Resolved from Spotify';
+                                }
+                            } else if (spotifyData.type === 'playlist' && spotifyData.tracks?.length > 0) {
+                                console.log(`[Reso] 🟢 Resolved Spotify playlist/album "${spotifyData.name}" with ${spotifyData.tracks.length} tracks`);
+                                const firstItem = spotifyData.tracks[0];
+                                let firstSearch = await player.search({ query: firstItem.searchQuery, source: 'ytsearch' }, interaction.user);
+                                if (!firstSearch?.tracks?.length && firstItem.title) {
+                                    firstSearch = await player.search({ query: firstItem.title, source: 'ytsearch' }, interaction.user);
+                                }
+
+                                if (firstSearch?.tracks?.length > 0) {
+                                    const firstTrack = firstSearch.tracks[0];
+                                    if (spotifyData.thumbnail) firstTrack.info.artworkUrl = spotifyData.thumbnail;
+                                    if (firstItem.uri) firstTrack.info.uri = firstItem.uri;
+                                    firstTrack.info.sourceName = 'spotify';
+                                    firstTrack.requester = interaction.user;
+                                    firstTrack.isAutoplay = false;
+                                    firstTrack.isRecommendation = false;
+                                    setTrackMetadata(interaction.guild.id, firstTrack, {
+                                        isAutoplay: false,
+                                        isRecommendation: false,
+                                        requester: interaction.user,
+                                    });
+
+                                    player.queue.add(firstTrack);
+                                    if (!player.playing) {
+                                        await player.play();
+                                    }
+
+                                    // Asynchronously queue remaining playlist tracks in small batches
+                                    const remainingItems = spotifyData.tracks.slice(1);
+                                    if (remainingItems.length > 0) {
+                                        (async () => {
+                                            const BATCH_SIZE = 4;
+                                            for (let i = 0; i < remainingItems.length; i += BATCH_SIZE) {
+                                                if (!player || player.destroyed || !player.connected) break;
+                                                const batch = remainingItems.slice(i, i + BATCH_SIZE);
+                                                const batchPromises = batch.map(async (item) => {
+                                                    try {
+                                                        let res = await player.search({ query: item.searchQuery, source: 'ytsearch' }, interaction.user);
+                                                        if (!res?.tracks?.length && item.title) {
+                                                            res = await player.search({ query: item.title, source: 'ytsearch' }, interaction.user);
+                                                        }
+                                                        if (res?.tracks?.length > 0) {
+                                                            const t = res.tracks[0];
+                                                            if (item.uri) t.info.uri = item.uri;
+                                                            t.info.sourceName = 'spotify';
+                                                            t.requester = interaction.user;
+                                                            t.isAutoplay = false;
+                                                            t.isRecommendation = false;
+                                                            setTrackMetadata(interaction.guild.id, t, {
+                                                                isAutoplay: false,
+                                                                isRecommendation: false,
+                                                                requester: interaction.user,
+                                                            });
+                                                            return t;
+                                                        }
+                                                    } catch {}
+                                                    return null;
+                                                });
+
+                                                const resolvedTracks = (await Promise.all(batchPromises)).filter(Boolean);
+                                                if (!player || player.destroyed || !player.connected) break;
+                                                if (resolvedTracks.length > 0) {
+                                                    player.queue.add(resolvedTracks);
+                                                }
+                                            }
+                                        })().catch(err => console.error('[Reso] Error in background Spotify playlist loader:', err));
+                                    }
+
+                                    const playlistTitle = spotifyData.name || 'Spotify Playlist';
+                                    const embed = createEmbed('Success')
+                                        .setAuthor({ name: '📀 Spotify Playlist Queued' })
+                                        .setTitle(truncate(playlistTitle, 60))
+                                        .setURL(/^https?:\/\//.test(query) ? query : undefined)
+                                        .setDescription(`${EMOJIS.success} Added **${spotifyData.tracks.length}** tracks to the queue.`)
+                                        .setThumbnail(spotifyData.thumbnail || null)
+                                        .addFields(
+                                            { name: `${EMOJIS.disc} Source`, value: 'Spotify', inline: true },
+                                            { name: `${EMOJIS.dj} Requested by`, value: `${interaction.user}`, inline: true },
+                                        );
+
+                                    return interaction.editReply({ embeds: [embed] });
+                                }
+                            }
+                        }
+                    } catch (spotifyErr) {
+                        console.warn(`[Reso] Spotify resolver fallback error: ${spotifyErr.message}`);
+                    }
+                }
             }
 
-            if (!result.tracks || result.tracks.length === 0) {
+            if (!result || !result.tracks || result.tracks.length === 0) {
                 if (isAttachment) {
                     return interaction.editReply({
                         embeds: [errorEmbed(`Could not play **${truncate(rawQuery, 50)}**. Make sure the uploaded file is a valid, uncorrupted audio format.`)]
@@ -256,7 +380,7 @@ module.exports = {
                 let tipMessage = '\n\nTry a different search term or valid link.';
 
                 if (isUrl && isSpotifyUrl(rawQuery)) {
-                    tipMessage = `\n\n💡 **Tip**: Spotify URLs require the Lavalink server to have the **LavaSrc plugin** with Spotify credentials configured. Try using \`${process.env.PREFIX || '>'}play\` with just the song name instead.`;
+                    tipMessage = `\n\n💡 **Tip**: Make sure this Spotify link is public and accessible, or try searching with \`${process.env.PREFIX || '>'}play\` and the song name.`;
                 } else if (isUrl && query.includes('youtube.com')) {
                     tipMessage = '\n\n💡 **Tip**: Make sure YouTube playlists are set to **Public** or **Unlisted** (Private playlists cannot be loaded).';
                 }

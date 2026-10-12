@@ -68,7 +68,14 @@ plugins:
       flowerytts: false
       youtube: true
     spotify:
+      clientId: "${SPOTIFY_CLIENT_ID:}"
+      clientSecret: "${SPOTIFY_CLIENT_SECRET:}"
+      spDc: "${SPOTIFY_SP_DC:}"
       countryCode: "US"
+      playlistLoadLimit: 100
+      albumLoadLimit: 50
+      resolveArtistsInSearch: true
+      preferAnonymousToken: true
 
 logging:
   level:

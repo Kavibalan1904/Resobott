@@ -603,8 +603,9 @@ function isYouTubeUrl(query) {
  */
 function isSpotifyUrl(query) {
     if (!query || typeof query !== 'string') return false;
-    return /^(https?:\/\/)?(www\.)?open\.spotify\.com\//i.test(query)
-        || /^spotify:/i.test(query);
+    const str = query.trim();
+    return /^(https?:\/\/)?(www\.)?(open\.spotify\.com|spotify\.link|spoti\.fi)\//i.test(str)
+        || /^spotify:/i.test(str);
 }
 
 /**
@@ -612,7 +613,7 @@ function isSpotifyUrl(query) {
  */
 function isSoundCloudUrl(query) {
     if (!query || typeof query !== 'string') return false;
-    return /^(https?:\/\/)?(www\.)?soundcloud\.com\//i.test(query);
+    return /^(https?:\/\/)?(www\.)?soundcloud\.com\//i.test(query.trim());
 }
 
 /**
@@ -620,7 +621,7 @@ function isSoundCloudUrl(query) {
  */
 function isUrl(query) {
     if (!query || typeof query !== 'string') return false;
-    const pattern = /^(https?:\/\/|spotify:|www\.|open\.spotify\.com|music\.youtube\.com|youtube\.com|youtu\.be|soundcloud\.com)/i;
+    const pattern = /^(https?:\/\/|spotify:|www\.|open\.spotify\.com|spotify\.link|spoti\.fi|music\.youtube\.com|youtube\.com|youtu\.be|soundcloud\.com)/i;
     return pattern.test(query.trim());
 }
 
