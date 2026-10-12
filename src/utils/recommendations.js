@@ -1263,4 +1263,5 @@ module.exports = {
     getSessionLanguage,
     getRecommendations,
     getAutoplayTrack,
+    isFuzzyDuplicate,
 };
