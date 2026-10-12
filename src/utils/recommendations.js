@@ -532,11 +532,9 @@ function detectLanguage(title = '', author = '', fallbackLang = null) {
     // 6. If fallback language provided, preserve it
     if (fallbackLang) return fallbackLang;
 
-    // 7. ASCII English fallback if clean latin text
-    if (/^[a-zA-Z0-9\s\-_.,!?'"()&]+$/.test(title) && !/[^\x00-\x7F]/.test(title)) {
-        return 'english';
-    }
-
+    // Do not infer English merely because a title uses Latin characters.
+    // Romanized Tamil/Hindi/etc. titles (e.g. "Devan Magale") are common;
+    // unknown language should stay unknown rather than locking autoplay to English.
     return null;
 }
 
@@ -1125,10 +1123,11 @@ async function getAutoplayTrack(player, trackHistoryMap) {
             return {
                 type: q.type,
                 label: q.label,
+                weight: q.weight,
                 tracks: result?.tracks || [],
             };
         } catch {
-            return { type: q.type, label: q.label, tracks: [] };
+            return { type: q.type, label: q.label, weight: q.weight, tracks: [] };
         }
     });
 
@@ -1260,8 +1259,7 @@ async function getAutoplayTrack(player, trackHistoryMap) {
             candidateTracks.push({
                 track,
                 score,
-                label,
-                isImmediateSameArtist
+                label
             });
         }
     }
@@ -1274,7 +1272,7 @@ async function getAutoplayTrack(player, trackHistoryMap) {
     // Keep exploration controlled: only candidates within 14 points of the
     // strongest result may be selected. This preserves relevance while avoiding
     // a completely deterministic radio sequence.
-    candidateTracks.sort((a, b) => b.score - a.score || a.rank - b.rank);
+    candidateTracks.sort((a, b) => b.score - a.score);
     const topScore = candidateTracks[0].score;
     const eligible = candidateTracks.filter(c => c.score >= topScore - 14).slice(0, 4);
     const selected = eligible[Math.floor(Math.random() * eligible.length)];
