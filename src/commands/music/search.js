@@ -1,6 +1,7 @@
 const { SlashCommandBuilder, ActionRowBuilder, StringSelectMenuBuilder } = require('discord.js');
 const { errorEmbed, createEmbed, EMOJIS, capitalize } = require('../../utils/embeds');
 const { getVoiceChannel, checkVoicePermissions, truncate, formatMs, ensurePlayerNode, getBestNode } = require('../../utils/helpers');
+const { setTrackMetadata } = require('../../utils/trackMetadata');
 
 const SOURCE_MAP = {
     auto: 'ytsearch',
@@ -147,7 +148,6 @@ module.exports = {
                     await player.connect();
                 }
 
-                const { setTrackMetadata } = require('../../utils/trackMetadata');
                 selectedTrack.requester = interaction.user;
                 selectedTrack.isAutoplay = false;
                 selectedTrack.isRecommendation = false;

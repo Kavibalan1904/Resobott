@@ -1,6 +1,7 @@
 const { SlashCommandBuilder } = require('discord.js');
 const { errorEmbed, successEmbed } = require('../../utils/embeds');
 const { getVoiceChannel } = require('../../utils/helpers');
+const { setTrackMetadata } = require('../../utils/trackMetadata');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -32,7 +33,6 @@ module.exports = {
             // Get the previous track (second to last in history)
             const previousTrack = history[history.length - 2];
 
-            const { setTrackMetadata } = require('../../utils/trackMetadata');
             previousTrack.requester = interaction.user;
             previousTrack.isAutoplay = false;
             previousTrack.isRecommendation = false;

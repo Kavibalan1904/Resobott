@@ -1,6 +1,7 @@
 const { MessageFlags } = require('discord.js');
 const { nowPlayingEmbed, createPlayerControls, successEmbed, errorEmbed, warningEmbed, EMOJIS } = require('../utils/embeds');
 const { truncate } = require('../utils/helpers');
+const { setTrackMetadata } = require('../utils/trackMetadata');
 
 /**
  * Handle all player button interactions (⏮ ⏸ ⏭ 🔀 ⏹)
@@ -65,7 +66,6 @@ async function handlePlayerButton(interaction, client) {
                     }).catch(() => {});
                 }
 
-                const { setTrackMetadata } = require('../utils/trackMetadata');
                 previousTrack.requester = interaction.user;
                 previousTrack.isAutoplay = false;
                 previousTrack.isRecommendation = false;

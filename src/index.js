@@ -12,6 +12,7 @@ const { loadCommands, registerSlashCommands } = require('./handlers/commandHandl
 const { setupLavalinkEvents } = require('./handlers/playerEvents');
 const { handlePlayerButton } = require('./handlers/buttonHandler');
 const { getBestNode, ensurePlayerNode } = require('./utils/helpers');
+const { setTrackMetadata } = require('./utils/trackMetadata');
 
 // ── HTTP Health Check Server (Optional) ─────────────────────────
 const http = require('http');
@@ -394,7 +395,6 @@ async function main() {
 
                     await ensurePlayerNode(player, client);
 
-                    const { setTrackMetadata } = require('./utils/trackMetadata');
                     recommendedTrack.requester = interaction.user;
                     recommendedTrack.isAutoplay = false;
                     recommendedTrack.isRecommendation = true;
