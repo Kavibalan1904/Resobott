@@ -463,7 +463,7 @@ function setupLavalinkEvents(client) {
                             .setAuthor({ name: '🔄 Autoplay' })
                             .setDescription(
                                 `▶️ Starting **[${truncate(nextTrack.info?.title || 'Unknown', 50)}](${nextTrack.info?.uri || ''})**\\n` +
-                                `> ${categoryTag} • Picked from your listening session • Use \`/autoplay\` to toggle`
+                                `> 🔄 Autoplay pick • Based on your listening session • Use \`/autoplay\` to toggle`
                             )
                             .setThumbnail(nextTrack.info?.artworkUrl || null);
                         channel.send({ embeds: [embed] }).catch(() => {});

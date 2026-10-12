@@ -1295,13 +1295,12 @@ async function getAutoplayTrack(player, trackHistoryMap) {
     const selected = eligible[Math.floor(Math.random() * eligible.length)];
     const pickedTrack = selected.track;
 
-    // Do not claim "similar" based only on language or the query that returned it.
-    // If metadata gives no relation signal, present it as discovery rather than similarity.
-    pickedTrack.categoryLabel = selected.hasSimilarityEvidence
-        ? selected.label
-        : (targetLanguage ? `🌱 ${targetLanguage.toUpperCase()} Discovery` : '🌱 New Discovery');
+    // Autoplay is an automatic playback flow, not the manual Recommendations feature.
+    // Keep its classification separate from the recommendation cards' category labels.
+    pickedTrack.categoryLabel = '🔄 Autoplay Pick';
     pickedTrack.autoplayRelation = selected.relationSignals;
-    pickedTrack.isRecommendation = true;
+    pickedTrack.isAutoplay = true;
+    pickedTrack.isRecommendation = false;
 
     console.log(`[Reso] 🔄 Autoplay Selected: "${truncate(pickedTrack.info?.title, 40)}" | Score: ${selected.score} | Lang: ${targetLanguage || 'unknown'} | Vibe: ${detectedVibe || 'unknown'} | Relation: ${JSON.stringify(selected.relationSignals)}`);
     return pickedTrack;
