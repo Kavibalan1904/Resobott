@@ -66,6 +66,9 @@ describe('Autoplay safety and relevance', () => {
         assert.ok(queries.length > 0);
         assert.ok(queries.every(q => !/\btamil\b/i.test(q)));
         assert.ok(queries.some(q => /popular songs similar to current track/i.test(q)));
+        // Language-neutral search results without shared metadata should not be
+        // advertised as similar just because they were returned by autoplay.
+        assert.match(result.categoryLabel, /Discovery/i);
     });
 
     it('only treats exact normalized titles as duplicates, not arbitrary substrings', () => {
