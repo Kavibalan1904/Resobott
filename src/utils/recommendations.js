@@ -552,7 +552,7 @@ function detectVibe(title = '', author = '') {
         }
     }
 
-    return 'mass'; // Default to upbeat/mass if general hit
+    return null; // Unknown vibe: do not invent a mood
 }
 
 /**
@@ -1000,11 +1000,11 @@ async function getAutoplayTrack(player, trackHistoryMap) {
 
     // ── 1. Resolve Target Language (Zero Drift Anchor) ──
     const targetLanguage = getSessionLanguage(guildId, history) ||
-        detectLanguage(lastTrack.info?.title || '', lastTrack.info?.author || '', 'tamil');
+        detectLanguage(lastTrack.info?.title || '', lastTrack.info?.author || '');
 
     // ── 2. Resolve Vibe / Mood of the Session ──
     const detectedVibe = detectVibe(lastTrack.info?.title || '', lastTrack.info?.author || '');
-    const vibeData = VIBE_CATEGORIES[detectedVibe] || VIBE_CATEGORIES.mass;
+    const vibeData = detectedVibe ? VIBE_CATEGORIES[detectedVibe] : null;
 
     // ── 3. Parse Last Track Metadata & Artist Cooldown ──
     const lastMeta = parseTrackMetadata(lastTrack.info?.title || '', lastTrack.info?.author || '');
@@ -1039,21 +1039,25 @@ async function getAutoplayTrack(player, trackHistoryMap) {
     const freshPeers = knownPeers.filter(p => !recentArtists.has(p.toLowerCase()));
     const selectedPeer = freshPeers.length > 0 ? freshPeers[0] : (knownPeers[0] || null);
 
-    // ── 5. Build 3 High-Relevance Autoplay Search Queries ──
+    // ── 5. Build bounded, complementary autoplay search queries ──
     const autoplayQueries = [];
 
     // Query 1: Vibe Match in Target Language
-    const vibeQuery = vibeData.searchTerms[targetLanguage] || `${targetLanguage} ${detectedVibe} hit songs`;
+    const vibeQuery = vibeData && targetLanguage
+        ? (vibeData.searchTerms[targetLanguage] || `${targetLanguage} ${detectedVibe} hit songs`)
+        : (targetLanguage ? `${targetLanguage} popular songs` : 'popular songs similar to current track');
     autoplayQueries.push({
         query: vibeQuery,
-        type: 'VIBE',
-        label: `${vibeData.label} • ${targetLanguage.toUpperCase()}`,
+        type: vibeData ? 'VIBE' : 'POPULARITY',
+        label: vibeData
+            ? `${vibeData.label} • ${targetLanguage.toUpperCase()}`
+            : '🎧 Similar Music',
     });
 
     // Query 2: Radio / Similar Songs (YouTube Music radio mixes)
     const cleanSongName = lastMeta.songName || cleanSongTitle(lastTrack.info?.title);
     autoplayQueries.push({
-        query: `songs like ${cleanSongName} ${targetLanguage}`.trim(),
+        query: `songs like ${cleanSongName}${targetLanguage ? ` ${targetLanguage}` : ''}`.trim(),
         type: 'RADIO',
         label: `🎧 Radio Mix • Similar to "${truncate(cleanSongName, 18)}"`,
     });
@@ -1061,7 +1065,7 @@ async function getAutoplayTrack(player, trackHistoryMap) {
     // Query 3: Fresh Peer Artist with Same Vibe
     if (selectedPeer) {
         autoplayQueries.push({
-            query: `${selectedPeer} ${targetLanguage} hit songs`.trim(),
+            query: `${selectedPeer}${targetLanguage ? ` ${targetLanguage}` : ''} hit songs`.trim(),
             type: 'PEER',
             label: `✨ ${truncate(selectedPeer, 18)} • Similar Vibe`,
         });
@@ -1203,7 +1207,7 @@ async function getAutoplayTrack(player, trackHistoryMap) {
 
             // Vibe bonus: reward tracks matching the session vibe
             const candVibe = detectVibe(title, author);
-            if (candVibe === detectedVibe) {
+            if (detectedVibe && candVibe === detectedVibe) {
                 score += 40;
             }
 
@@ -1231,11 +1235,14 @@ async function getAutoplayTrack(player, trackHistoryMap) {
         return null;
     }
 
-    // Sort descending by score
+    // Sort descending by score. Prefer the best candidate, but allow a small
+    // amount of exploration among the top 3 so autoplay does not become
+    // deterministic/repetitive when several candidates are similarly good.
     candidateTracks.sort((a, b) => b.score - a.score);
-
-    // Pick the top-scoring candidate
-    const selected = candidateTracks[0];
+    const topCandidates = candidateTracks.slice(0, Math.min(3, candidateTracks.length));
+    const topScore = topCandidates[0].score;
+    const eligible = topCandidates.filter(c => c.score >= topScore - 25);
+    const selected = eligible[Math.floor(Math.random() * eligible.length)];
     const pickedTrack = selected.track;
     pickedTrack.categoryLabel = selected.label;
     pickedTrack.isRecommendation = true;
