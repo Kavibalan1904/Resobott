@@ -1028,7 +1028,6 @@ async function getAutoplayTrack(player, trackHistoryMap) {
     const cleanLastComposer = (lastMeta.composer || '').toLowerCase();
 
     // Collect all artists played in the last 6 tracks
-    const recentHistory = history.slice(-8);
     const recentArtists = new Set();
     const artistPlayCounts = {};
 
