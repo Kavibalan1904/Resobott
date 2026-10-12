@@ -15,6 +15,11 @@ describe('Autoplay safety and relevance', () => {
         );
     });
 
+    it('does not mistake romanized South Asian song titles for English', () => {
+        const { detectLanguage } = require('../src/utils/recommendations');
+        assert.strictEqual(detectLanguage('Devan Magale', 'Unknown Artist'), null);
+    });
+
     it('does not force Tamil when language cannot be detected', async () => {
         const queries = [];
         const candidate = {
