@@ -1011,7 +1011,14 @@ async function getAutoplayTrack(player, trackHistoryMap) {
         detectLanguage(lastTrack.info?.title || '', lastTrack.info?.author || '');
 
     // ── 2. Resolve Vibe / Mood of the Session ──
-    const detectedVibe = detectVibe(lastTrack.info?.title || '', lastTrack.info?.author || '');
+    const recentHistory = history.slice(-8);
+    const vibeCounts = {};
+    for (const item of recentHistory) {
+        const vibe = detectVibe(item.info?.title || '', item.info?.author || '');
+        if (vibe) vibeCounts[vibe] = (vibeCounts[vibe] || 0) + 1;
+    }
+    const lastVibe = detectVibe(lastTrack.info?.title || '', lastTrack.info?.author || '');
+    const detectedVibe = Object.entries(vibeCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || lastVibe || null;
     const vibeData = detectedVibe ? VIBE_CATEGORIES[detectedVibe] : null;
 
     // ── 3. Parse Last Track Metadata & Artist Cooldown ──
@@ -1021,7 +1028,6 @@ async function getAutoplayTrack(player, trackHistoryMap) {
     const cleanLastComposer = (lastMeta.composer || '').toLowerCase();
 
     // Collect all artists played in the last 6 tracks
-    const recentHistory = history.slice(-6);
     const recentArtists = new Set();
     const artistPlayCounts = {};
 
@@ -1047,7 +1053,10 @@ async function getAutoplayTrack(player, trackHistoryMap) {
     const freshPeers = knownPeers.filter(p => !recentArtists.has(p.toLowerCase()));
     const selectedPeer = freshPeers.length > 0 ? freshPeers[0] : (knownPeers[0] || null);
 
-    // ── 5. Build bounded, complementary autoplay search queries ──
+    // ── 5. Build complementary candidate pools ───────────────────
+    // The seed-song pool gets the highest weight; broad vibe/popularity is
+    // deliberately weaker. This is closer to YouTube Autoplay than simply
+    // selecting the first result from a generic genre search.
     const autoplayQueries = [];
 
     // Query 1: Vibe Match in Target Language
@@ -1058,8 +1067,9 @@ async function getAutoplayTrack(player, trackHistoryMap) {
         query: vibeQuery,
         type: vibeData ? 'VIBE' : 'POPULARITY',
         label: vibeData
-            ? `${vibeData.label} • ${targetLanguage.toUpperCase()}`
+            ? `${vibeData.label}${targetLanguage ? ` • ${targetLanguage.toUpperCase()}` : ''}`
             : '🎧 Similar Music',
+        weight: vibeData ? 26 : 18,
     });
 
     // Query 2: Radio / Similar Songs (YouTube Music radio mixes)
@@ -1067,7 +1077,8 @@ async function getAutoplayTrack(player, trackHistoryMap) {
     autoplayQueries.push({
         query: `songs like ${cleanSongName}${targetLanguage ? ` ${targetLanguage}` : ''}`.trim(),
         type: 'RADIO',
-        label: `🎧 Radio Mix • Similar to "${truncate(cleanSongName, 18)}"`,
+        label: `🎧 Similar to "${truncate(cleanSongName, 18)}"`,
+        weight: 42,
     });
 
     // Query 3: Fresh Peer Artist with Same Vibe
@@ -1075,7 +1086,8 @@ async function getAutoplayTrack(player, trackHistoryMap) {
         autoplayQueries.push({
             query: `${selectedPeer}${targetLanguage ? ` ${targetLanguage}` : ''} hit songs`.trim(),
             type: 'PEER',
-            label: `✨ ${truncate(selectedPeer, 18)} • Similar Vibe`,
+            label: `✨ ${truncate(selectedPeer, 18)} • Fresh Artist`,
+            weight: 14,
         });
     }
 
@@ -1140,12 +1152,12 @@ async function getAutoplayTrack(player, trackHistoryMap) {
         if (t.info?.title) excludedTitles.add(t.info.title.toLowerCase());
     }
 
-    // ── 8. Candidate Evaluation & Intelligent Scoring ──
+    // ── 8. Candidate Evaluation & YouTube-style relevance scoring ──
     const candidateTracks = [];
 
     for (const settled of searchResults) {
         if (settled.status !== 'fulfilled') continue;
-        const { type, label, tracks } = settled.value;
+        const { type, label, tracks, weight = 10 } = settled.value;
 
         for (const track of tracks) {
             if (!track || !track.info) continue;
@@ -1184,50 +1196,66 @@ async function getAutoplayTrack(player, trackHistoryMap) {
             const candArtist = (candMeta.primaryArtist || '').toLowerCase();
             const candComposer = (candMeta.composer || '').toLowerCase();
 
-            // ── Scoring Algorithm ──
-            let score = 100;
+            // ── YouTube-style relevance score ───────────────────────
+            // Each signal is intentionally bounded so one noisy metadata field
+            // cannot overpower all other evidence.
+            let score = 100 + weight;
 
-            // CRITICAL: Artist Cooldown Penalty
-            // Check if candidate matches the immediate last track artist/composer
-            const isImmediateSameArtist =
-                (cleanLastAuthor && authorLower.includes(cleanLastAuthor)) ||
-                (cleanLastArtist && (candArtist.includes(cleanLastArtist) || authorLower.includes(cleanLastArtist))) ||
-                (cleanLastComposer && (candComposer.includes(cleanLastComposer) || authorLower.includes(cleanLastComposer)));
+            // Search position is a weak relevance signal; never let it dominate.
+            const resultRank = tracks.indexOf(track);
+            score += Math.max(0, 24 - Math.max(0, resultRank) * 4);
 
-            if (isImmediateSameArtist) {
-                // Heavily penalize immediate back-to-back artist repeat
-                score -= 500;
-            } else {
-                // Reward artist variety!
-                score += 60;
-            }
-
-            // Frequency penalty: if artist played 2+ times in last 6 songs, penalize
-            const recentPlays = (artistPlayCounts[candArtist] || 0) + (artistPlayCounts[authorLower] || 0);
-            if (recentPlays >= 2) {
-                score -= 150 * recentPlays;
-            }
-
-            // Peer bonus: reward tracks by the selected fresh peer
-            if (selectedPeer && (authorLower.includes(selectedPeer.toLowerCase()) || candArtist.includes(selectedPeer.toLowerCase()))) {
-                score += 50;
-            }
-
-            // Vibe bonus: reward tracks matching the session vibe
             const candVibe = detectVibe(title, author);
-            if (detectedVibe && candVibe === detectedVibe) {
-                score += 40;
+            const seedWords = new Set(cleanSongTitle(lastTrack.info?.title || '').toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length >= 3));
+            const candidateWords = new Set(cleanSongTitle(title).toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length >= 3));
+            let overlap = 0;
+            for (const word of candidateWords) if (seedWords.has(word)) overlap++;
+            score += Math.min(24, overlap * 8);
+
+            const sameArtist =
+                (cleanLastArtist && (candArtist.includes(cleanLastArtist) || cleanLastArtist.includes(candArtist))) ||
+                (cleanLastAuthor && (authorLower.includes(cleanLastAuthor) || cleanLastAuthor.includes(authorLower)));
+            const sameComposer = cleanLastComposer && (candComposer.includes(cleanLastComposer) || cleanLastComposer.includes(candComposer));
+
+            if (sameComposer) score += 16;
+            if (sameArtist) score += 8;
+            if (detectedVibe && candVibe === detectedVibe) score += 30;
+            else if (detectedVibe && candVibe) score -= 10;
+
+            if (targetLanguage && detectLanguage(title, author) === targetLanguage) score += 18;
+
+            const candidateDuration = Number(track.info.duration || 0);
+            const seedDuration = Number(lastTrack.info?.duration || 0);
+            if (seedDuration > 0 && candidateDuration > 0) {
+                const durationRatio = Math.abs(candidateDuration - seedDuration) / seedDuration;
+                score += Math.max(-8, 12 - Math.round(durationRatio * 20));
             }
 
-            // Explicit language bonus
-            if (titleLower.includes(targetLanguage) || SCRIPT_PATTERNS[targetLanguage]?.test(title)) {
-                score += 30;
+            const recentPlays = Math.max(
+                artistPlayCounts[candArtist] || 0,
+                artistPlayCounts[authorLower] || 0,
+                artistPlayCounts[candComposer] || 0
+            );
+            // One prior play is not enough to reject a highly relevant artist;
+            // repeated appearances in the recent window are what trigger cooldown.
+            if (recentPlays > 1) score -= recentPlays * 28;
+            if (sameArtist && recentPlays > 1) score -= 35;
+            else if (sameArtist && recentPlays === 1) score -= 8;
+
+            if (selectedPeer && (authorLower.includes(selectedPeer.toLowerCase()) || candArtist.includes(selectedPeer.toLowerCase()))) {
+                score += 28;
             }
 
-            // YouTube Music official audio bonus
-            if (track.info.sourceName === 'youtube' && !titleLower.includes('cover') && !titleLower.includes('remix')) {
-                score += 15;
+            // Avoid low-quality variants unless the user explicitly seeded one.
+            const qualityPenalties = [
+                ['karaoke', -35], ['instrumental', -20], ['cover', -18],
+                ['nightcore', -18], ['slowed', -15], ['sped up', -15],
+                ['8d', -12], ['remix', -8], ['live', -8]
+            ];
+            for (const [term, penalty] of qualityPenalties) {
+                if (titleLower.includes(term)) score += penalty;
             }
+            if (/\\b(official audio|official video|audio song|lyric video)\\b/i.test(title)) score += 5;
 
             candidateTracks.push({
                 track,
@@ -1243,13 +1271,12 @@ async function getAutoplayTrack(player, trackHistoryMap) {
         return null;
     }
 
-    // Sort descending by score. Prefer the best candidate, but allow a small
-    // amount of exploration among the top 3 so autoplay does not become
-    // deterministic/repetitive when several candidates are similarly good.
-    candidateTracks.sort((a, b) => b.score - a.score);
-    const topCandidates = candidateTracks.slice(0, Math.min(3, candidateTracks.length));
-    const topScore = topCandidates[0].score;
-    const eligible = topCandidates.filter(c => c.score >= topScore - 25);
+    // Keep exploration controlled: only candidates within 14 points of the
+    // strongest result may be selected. This preserves relevance while avoiding
+    // a completely deterministic radio sequence.
+    candidateTracks.sort((a, b) => b.score - a.score || a.rank - b.rank);
+    const topScore = candidateTracks[0].score;
+    const eligible = candidateTracks.filter(c => c.score >= topScore - 14).slice(0, 4);
     const selected = eligible[Math.floor(Math.random() * eligible.length)];
     const pickedTrack = selected.track;
     pickedTrack.categoryLabel = selected.label;
