@@ -1,6 +1,7 @@
 const { nowPlayingEmbed, createRecommendationComponents, createPlayerControls, createDisabledControls, createEmbed, errorEmbed, warningEmbed, EMOJIS, capitalize } = require('../utils/embeds');
 const { truncate, markNodeError, getHealthyNodes, getBestNode, computeNodeScore, cleanVideoTitle, PRIMARY_NODE_ID } = require('../utils/helpers');
 const { getRecommendations, getAutoplayTrack, updateSessionState } = require('../utils/recommendations');
+const { guildContextManager, autoplayStore, setTrackMetadata, getTrackMetadata } = require('../autoplay');
 
 /**
  * Setup all Lavalink event listeners on the LavalinkManager
@@ -34,8 +35,8 @@ function setupLavalinkEvents(client) {
     // ── Queue advancement guard ──
     const isAdvancingQueue = new Set();
 
-    // Prevent duplicate asynchronous autoplay searches per guild.
-    const autoplayLocks = new Set();
+    // ── Autoplay resolution lock to prevent duplicate queueEnd execution ──
+    const activeAutoplayResolutions = client.activeAutoplayResolutions || (client.activeAutoplayResolutions = new Set());
 
     async function advanceQueueSafely(player) {
         if (isAdvancingQueue.has(player.guildId)) {
@@ -261,9 +262,22 @@ function setupLavalinkEvents(client) {
         history.push(track);
         client.trackHistory.set(player.guildId, history);
 
+        // Check if track is an autoplay pick
+        const trackMeta = getTrackMetadata(player.guildId, track);
+        const isAutoplayTrack = trackMeta?.isAutoplay ?? track?.isAutoplay ?? (track?.requester?.id === 'autoplay');
+
         // Update session language and musical vibe for user-requested tracks
-        if (track && track.requester && track.requester.id !== 'autoplay') {
+        if (track && !isAutoplayTrack && track.requester && track.requester.id !== 'autoplay') {
             updateSessionState(player.guildId, track);
+        }
+
+        // Update Resonance AI DJ listening session context
+        const autoContext = guildContextManager.getContext(player.guildId);
+        if (autoContext) {
+            autoContext.recordTrackStart(track);
+            if (track && !isAutoplayTrack && track.requester && track.requester.id !== 'autoplay') {
+                autoContext.recordManualRequest(track);
+            }
         }
 
         // Maintain default bot presence (don't show current song)
@@ -306,14 +320,17 @@ function setupLavalinkEvents(client) {
                 await new Promise(resolve => setTimeout(resolve, 4000));
                 if (!player.playing || !sentMsg) return;
 
+                // Hide or collapse manual recommendations while autoplay is actively selecting or starting
+                if (activeAutoplayResolutions.has(player.guildId)) return;
+
                 const sessionHistory = client.trackHistory?.get(player.guildId) || [];
                 const recommendations = await getRecommendations(player, track, 5, sessionHistory);
                 if (client.recommendations) {
                     client.recommendations.set(player.guildId, recommendations);
                 }
 
-                // Only edit if we got recommendations AND the message still exists
-                if (recommendations.length > 0 && sentMsg) {
+                // Only edit if we got recommendations AND the message still exists AND not actively resolving autoplay
+                if (recommendations.length > 0 && sentMsg && player.playing && !activeAutoplayResolutions.has(player.guildId)) {
                     const updatedEmbed = nowPlayingEmbed(track, player, client, recommendations);
                     const recRow = createRecommendationComponents(recommendations, player.guildId);
                     const updatedComponents = [controls];
@@ -341,6 +358,18 @@ function setupLavalinkEvents(client) {
         // ── Handle disconnected node on track end ──
         if (endReason === 'finished') {
             consecutiveRetries.delete(player.guildId); // Reset consecutive retries only on natural progression (not on replace)
+        }
+
+        // Update Resonance AI DJ completion / skip metrics
+        const autoContext = guildContextManager.getContext(player.guildId);
+        if (autoContext && track) {
+            if (endReason === 'finished') {
+                autoContext.recordTrackCompletion(track);
+            } else if (endReason !== 'replaced') {
+                const startTime = player.get('trackStartTime') || 0;
+                const elapsedMs = startTime ? Date.now() - startTime : null;
+                autoContext.recordTrackSkip(track, elapsedMs);
+            }
         }
         if (player && player.queue.tracks.length > 0) {
             if (!player.node || !player.node.connected) {
@@ -410,41 +439,80 @@ function setupLavalinkEvents(client) {
             return;
         }
 
-        // ── Autoplay: auto-queue similar songs when queue ends ──
-        if (client.autoplayGuilds?.has(player.guildId)) {
-            const guildId = player.guildId;
+        // ── Concurrency & State Guard: prevent duplicate autoplay runs ──
+        if (activeAutoplayResolutions.has(player.guildId)) {
+            console.log(`[Reso] 🛡️ Autoplay already resolving for guild ${player.guildId}, ignoring duplicate queueEnd.`);
+            return;
+        }
 
-            if (autoplayLocks.has(guildId)) {
-                console.log(`[Reso] 🛡️ Autoplay already resolving for guild ${guildId}; ignoring duplicate queueEnd.`);
-                return;
-            }
+        // If player is already playing or paused with active track, do not run autoplay
+        if (player.playing || (player.paused && player.queue?.current)) {
+            console.log(`[Reso] 🛡️ Autoplay suppressed: Player is already active.`);
+            return;
+        }
 
-            // Never compete with a manual queue/playback change.
-            if (player.queue?.tracks?.length > 0 || player.playing) {
-                console.log(`[Reso] 🛡️ Autoplay skipped: player state changed before search.`);
-                return;
-            }
+        // If queue already has tracks waiting, do not run autoplay
+        if (player.queue?.tracks?.length > 0) {
+            console.log(`[Reso] 🛡️ Autoplay suppressed: Queue is not empty (${player.queue.tracks.length} tracks).`);
+            return;
+        }
 
-            autoplayLocks.add(guildId);
-            const historyBefore = client.trackHistory?.get(guildId) || [];
+        // Guard against disconnected player
+        if (!player.connected || !player.voiceChannelId) {
+            console.log(`[Reso] 🛡️ Autoplay suppressed: Player is disconnected.`);
+            return;
+        }
+
+        // ── Autoplay: auto-queue next song when queue ends ──
+        const isAutoplayEnabled = client.autoplayGuilds?.has(player.guildId) || autoplayStore.isEnabled(player.guildId);
+        if (isAutoplayEnabled) {
+            activeAutoplayResolutions.add(player.guildId);
+            const historyBefore = client.trackHistory?.get(player.guildId) || [];
             const lastHistoryUri = historyBefore.at(-1)?.info?.uri || null;
 
             try {
+                // Ensure client.autoplayGuilds is in sync
+                client.autoplayGuilds?.add(player.guildId);
+
                 console.log(`[Reso] 🔄 Autoplay: Finding next song using session history (${historyBefore.length} tracks)`);
 
                 const nextTrack = await getAutoplayTrack(player, client.trackHistory);
 
-                // Search is asynchronous; discard stale results if the user changed state.
-                if (!client.autoplayGuilds?.has(guildId)) {
-                    console.log(`[Reso] 🛑 Autoplay aborted: autoplay was disabled during search.`);
-                    return;
-                }
-                if (player.queue?.tracks?.length > 0 || player.playing) {
-                    console.log(`[Reso] 🛑 Autoplay aborted: manual playback/queue activity occurred during search.`);
+                // ── Safety Checks after asynchronous resolution ──
+                // 1. Manual stop occurred during resolution
+                if (player.getData('manualStop')) {
+                    console.log(`[Reso] 🛡️ Autoplay suppressed: Manual stop occurred during resolution.`);
+                    player.setData('manualStop', void 0);
                     return;
                 }
 
-                const historyAfter = client.trackHistory?.get(guildId) || [];
+                // 2. Autoplay was disabled during resolution
+                if (!client.autoplayGuilds?.has(player.guildId) && !autoplayStore.isEnabled(player.guildId)) {
+                    console.log(`[Reso] 🛡️ Autoplay suppressed: Autoplay disabled during resolution.`);
+                    return;
+                }
+
+                // 3. Player disconnected during resolution
+                if (!player.connected || !player.voiceChannelId) {
+                    console.log(`[Reso] 🛡️ Autoplay suppressed: Player disconnected during resolution.`);
+                    return;
+                }
+
+                // 4. Manual tracks queued during resolution (Manual Queue Priority)
+                if (player.queue?.tracks?.some(t => !t.requester || t.requester.id !== 'autoplay')) {
+                    console.log(`[Reso] 🛡️ Autoplay suppressed: Manual tracks were added during candidate resolution.`);
+                    await advanceQueueSafely(player);
+                    return;
+                }
+
+                // 5. Playback already resumed
+                if (player.playing) {
+                    console.log(`[Reso] 🛡️ Autoplay suppressed: Playback already active.`);
+                    return;
+                }
+
+                // 6. History changed while resolving
+                const historyAfter = client.trackHistory?.get(player.guildId) || [];
                 const currentHistoryUri = historyAfter.at(-1)?.info?.uri || null;
                 if (lastHistoryUri && currentHistoryUri && lastHistoryUri !== currentHistoryUri) {
                     console.log(`[Reso] 🛑 Autoplay aborted: playback history changed during search.`);
@@ -452,30 +520,48 @@ function setupLavalinkEvents(client) {
                 }
 
                 if (nextTrack) {
+                    // Strictly Autoplay, NEVER Recommendation
                     nextTrack.requester = { username: 'Autoplay', id: 'autoplay' };
-                    player.queue.add(nextTrack);
-                    await player.play();
+                    nextTrack.isAutoplay = true;
+                    nextTrack.isRecommendation = false;
+                    delete nextTrack.categoryLabel;
 
-                    const categoryTag = nextTrack.categoryLabel || '🎵 Recommended';
+                    setTrackMetadata(player.guildId, nextTrack, {
+                        isAutoplay: true,
+                        isRecommendation: false,
+                        selectionReason: nextTrack.selectionReason || null,
+                        categoryLabel: null,
+                        requester: { username: 'Autoplay', id: 'autoplay' },
+                    });
+
+                    player.queue.add(nextTrack);
+
+                    // If player is not already playing and not paused, start playback
+                    if (!player.playing && !player.paused) {
+                        await player.play();
+                    }
+
                     const channel = client.channels.cache.get(player.textChannelId);
                     if (channel) {
                         const embed = createEmbed('Autoplay')
-                            .setAuthor({ name: '🔄 Autoplay' })
+                            .setAuthor({ name: '🔄 Reso Autoplay' })
                             .setDescription(
-                                `▶️ Starting **[${truncate(nextTrack.info?.title || 'Unknown', 50)}](${nextTrack.info?.uri || ''})**\\n` +
-                                `> 🔄 Autoplay pick • Based on your listening session • Use \`/autoplay\` to toggle`
+                                `**[${truncate(nextTrack.info?.title || 'Unknown Track', 55)}](${nextTrack.info?.uri || ''})**\n` +
+                                `by **${truncate(nextTrack.info?.author || 'Unknown Artist', 40)}**\n\n` +
+                                `🔄 Autoplay • Now playing a new pick based on your listening session.\n` +
+                                `*Use \`/autoplay\` to toggle.*`
                             )
                             .setThumbnail(nextTrack.info?.artworkUrl || null);
                         channel.send({ embeds: [embed] }).catch(() => {});
                     }
 
-                    console.log(`[Reso] 🔄 Autoplay: Queued "${truncate(nextTrack.info?.title, 40)}" [${categoryTag}]`);
-                    return;
+                    console.log(`[Reso] 🔄 Autoplay: Queued "${truncate(nextTrack.info?.title, 40)}" (isAutoplay: true, isRecommendation: false)`);
+                    return; // Don't show "queue ended" message
                 }
             } catch (e) {
                 console.error('[Reso] Autoplay error:', e.message);
             } finally {
-                autoplayLocks.delete(guildId);
+                activeAutoplayResolutions.delete(player.guildId);
             }
         }
 

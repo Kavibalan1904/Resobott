@@ -65,7 +65,15 @@ async function handlePlayerButton(interaction, client) {
                     }).catch(() => {});
                 }
 
-                // Re-add the previous track and play it
+                const { setTrackMetadata } = require('../utils/trackMetadata');
+                previousTrack.requester = interaction.user;
+                previousTrack.isAutoplay = false;
+                previousTrack.isRecommendation = false;
+                setTrackMetadata(guildId, previousTrack, {
+                    isAutoplay: false,
+                    isRecommendation: false,
+                    requester: interaction.user,
+                });
                 player.queue.add(previousTrack, 0);
                 await player.skip(0, false);
 
@@ -159,6 +167,10 @@ async function handlePlayerButton(interaction, client) {
                 }
 
                 player.setData('manualStop', true);
+                try {
+                    const { guildContextManager } = require('../autoplay');
+                    guildContextManager.getContext(guildId)?.nextGeneration();
+                } catch { /* ignore */ }
 
                 if (player.queue?.tracks?.length > 0) {
                     await player.queue.splice(0, player.queue.tracks.length);

@@ -394,7 +394,16 @@ async function main() {
 
                     await ensurePlayerNode(player, client);
 
+                    const { setTrackMetadata } = require('./utils/trackMetadata');
                     recommendedTrack.requester = interaction.user;
+                    recommendedTrack.isAutoplay = false;
+                    recommendedTrack.isRecommendation = true;
+                    setTrackMetadata(guildId, recommendedTrack, {
+                        isAutoplay: false,
+                        isRecommendation: true,
+                        requester: interaction.user,
+                        categoryLabel: recommendedTrack.categoryLabel || null,
+                    });
                     player.queue.add(recommendedTrack);
 
                     if (!player.playing) {

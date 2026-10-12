@@ -26,6 +26,14 @@ module.exports = {
         const title = currentTrack?.info?.title || 'Unknown';
 
         try {
+            // Record skip event in autoplay listening context
+            try {
+                const { guildContextManager } = require('../../autoplay');
+                const startTime = player.get('trackStartTime') || 0;
+                const elapsedMs = startTime ? Date.now() - startTime : null;
+                guildContextManager.getContext(interaction.guild.id)?.recordTrackSkip(currentTrack, elapsedMs);
+            } catch { /* ignore */ }
+
             // Use (0, false) so skipping the last track does not throw RangeError
             await player.skip(0, false);
             return interaction.reply({ embeds: [successEmbed(`Skipped **${truncate(title, 50)}** ⏭️`)] });

@@ -147,8 +147,15 @@ module.exports = {
                     await player.connect();
                 }
 
-                // Play the selected track
+                const { setTrackMetadata } = require('../../utils/trackMetadata');
                 selectedTrack.requester = interaction.user;
+                selectedTrack.isAutoplay = false;
+                selectedTrack.isRecommendation = false;
+                setTrackMetadata(interaction.guild.id, selectedTrack, {
+                    isAutoplay: false,
+                    isRecommendation: false,
+                    requester: interaction.user,
+                });
                 player.queue.add(selectedTrack);
 
                 if (!player.playing) {

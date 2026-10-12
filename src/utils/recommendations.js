@@ -1,4 +1,5 @@
 const { truncate, cleanVideoTitle } = require('./helpers');
+const { setTrackMetadata } = require('./trackMetadata');
 
 // ══════════════════════════════════════════════════════════════════
 //  Reso — High-Fidelity Recommendation & Autoplay Engine
@@ -409,8 +410,19 @@ function parseTrackMetadata(title = '', author = '') {
         songName = cleanedSegments[0];
     } else if (cleanedSegments.length === 2) {
         if (title.includes(' - ') && !title.includes('|')) {
-            primaryArtist = cleanedSegments[0];
-            songName = cleanedSegments[1];
+            const cleanedAuthorName = cleanAuthor(author).toLowerCase();
+            const seg0Lower = cleanedSegments[0].toLowerCase();
+            const seg1Lower = cleanedSegments[1].toLowerCase();
+            if (cleanedAuthorName && seg1Lower.includes(cleanedAuthorName)) {
+                songName = cleanedSegments[0];
+                primaryArtist = cleanedSegments[1];
+            } else if (cleanedAuthorName && seg0Lower.includes(cleanedAuthorName)) {
+                primaryArtist = cleanedSegments[0];
+                songName = cleanedSegments[1];
+            } else {
+                primaryArtist = cleanedSegments[0];
+                songName = cleanedSegments[1];
+            }
         } else {
             songName = cleanedSegments[0];
             const seg1Lower = cleanedSegments[1].toLowerCase();
@@ -934,6 +946,7 @@ async function getRecommendations(player, currentTrack, limit = 5, sessionHistor
 
         track.categoryLabel = label;
         track.isRecommendation = true;
+        track.isAutoplay = false;
         finalRecommendations.push(track);
         return true;
     }
@@ -998,6 +1011,14 @@ async function getRecommendations(player, currentTrack, limit = 5, sessionHistor
 async function getAutoplayTrack(player, trackHistoryMap) {
     if (!player) return null;
 
+    try {
+        const { autoplayEngine } = require('../autoplay');
+        const next = await autoplayEngine.getNextTrack(player, trackHistoryMap);
+        if (next) return next;
+    } catch (engineErr) {
+        console.warn('[Reso] Autoplay engine error, using internal fallback:', engineErr.message);
+    }
+
     const guildId = player.guildId;
     const history = trackHistoryMap?.get(guildId) || [];
     const lastTrack = history[history.length - 1];
@@ -1035,11 +1056,10 @@ async function getAutoplayTrack(player, trackHistoryMap) {
         const art = (m.primaryArtist || '').toLowerCase();
         const comp = (m.composer || '').toLowerCase();
 
-        for (const name of [auth, art, comp]) {
-            if (name && name.length > 2) {
-                recentArtists.add(name);
-                artistPlayCounts[name] = (artistPlayCounts[name] || 0) + 1;
-            }
+        const trackArtists = new Set([auth, art, comp].filter(name => name && name.length > 2));
+        for (const name of trackArtists) {
+            recentArtists.add(name);
+            artistPlayCounts[name] = (artistPlayCounts[name] || 0) + 1;
         }
     }
 
@@ -1071,14 +1091,13 @@ async function getAutoplayTrack(player, trackHistoryMap) {
     });
 
     // Query 2: Radio / Similar Songs (YouTube Music radio mixes)
-    const cleanSongName = lastMeta.songName || cleanSongTitle(lastTrack.info?.title);
+    const cleanSongName = cleanSongTitle(lastTrack.info?.title) || lastMeta.songName;
     const seedArtist = cleanAuthor(lastTrack.info?.author || '').trim();
-    const seedQuery = [`songs similar to "${cleanSongName}"`, seedArtist, targetLanguage]
-        .filter(Boolean).join(' ');
+    const seedQuery = `songs like ${cleanSongName}${seedArtist ? ` ${seedArtist}` : ''}${targetLanguage ? ` ${targetLanguage}` : ''}`.trim();
     autoplayQueries.push({
         query: seedQuery,
         type: 'RADIO',
-        label: `🎧 Related to "${truncate(cleanSongName, 18)}"`,
+        label: `🎧 Radio Mix`,
         weight: 42,
     });
 
@@ -1087,7 +1106,7 @@ async function getAutoplayTrack(player, trackHistoryMap) {
         autoplayQueries.push({
             query: `${selectedPeer}${targetLanguage ? ` ${targetLanguage}` : ''} hit songs`.trim(),
             type: 'PEER',
-            label: `✨ ${truncate(selectedPeer, 18)} • Fresh Artist`,
+            label: `✨ ${truncate(selectedPeer, 18)} Hits`,
             weight: 14,
         });
     }
@@ -1286,21 +1305,25 @@ async function getAutoplayTrack(player, trackHistoryMap) {
         return null;
     }
 
-    // Keep exploration controlled: only candidates within 14 points of the
-    // strongest result may be selected. This preserves relevance while avoiding
-    // a completely deterministic radio sequence.
+    // Sort descending by score
     candidateTracks.sort((a, b) => b.score - a.score);
-    const topScore = candidateTracks[0].score;
-    const eligible = candidateTracks.filter(c => c.score >= topScore - 14).slice(0, 4);
-    const selected = eligible[Math.floor(Math.random() * eligible.length)];
-    const pickedTrack = selected.track;
 
-    // Autoplay is an automatic playback flow, not the manual Recommendations feature.
-    // Keep its classification separate from the recommendation cards' category labels.
+    // Pick the top-scoring candidate
+    const selected = candidateTracks[0];
+    const pickedTrack = selected.track;
+    pickedTrack.requester = { username: 'Autoplay', id: 'autoplay' };
     pickedTrack.categoryLabel = '🔄 Autoplay Pick';
-    pickedTrack.autoplayRelation = selected.relationSignals;
     pickedTrack.isAutoplay = true;
     pickedTrack.isRecommendation = false;
+
+    setTrackMetadata(guildId, pickedTrack, {
+        isAutoplay: true,
+        isRecommendation: false,
+        categoryLabel: '🔄 Autoplay Pick',
+        requester: { username: 'Autoplay', id: 'autoplay' },
+    });
+
+    pickedTrack.autoplayRelation = selected.relationSignals;
 
     console.log(`[Reso] 🔄 Autoplay Selected: "${truncate(pickedTrack.info?.title, 40)}" | Score: ${selected.score} | Lang: ${targetLanguage || 'unknown'} | Vibe: ${detectedVibe || 'unknown'} | Relation: ${JSON.stringify(selected.relationSignals)}`);
     return pickedTrack;

@@ -39,7 +39,10 @@ module.exports = {
         const totalDuration = formatMs(totalDurationMs);
 
         // Autoplay status
-        const autoplayOn = interaction.client.autoplayGuilds?.has(interaction.guild.id);
+        const { autoplayStore } = require('../../autoplay');
+        const autoplayOn = interaction.client.autoplayGuilds?.has(interaction.guild.id) || autoplayStore.isEnabled(interaction.guild.id);
+
+        const currentRequester = currentTrack.requester?.username || currentTrack.requester?.tag || currentTrack.requester || 'Unknown';
 
         if (tracks.length === 0) {
             const embed = createEmbed('Queue')
@@ -47,7 +50,7 @@ module.exports = {
                 .setDescription(
                     `### ▶ Now Playing\n` +
                     `${source.color} **[${truncate(currentInfo.title, 50)}](${currentInfo.uri})** — \`${currentInfo.isStream ? 'Live' : formatMs(currentInfo.duration)}\`\n` +
-                    `> ${currentInfo.author || 'Unknown'} • Requested by ${currentTrack.requester || 'Unknown'}\n\n` +
+                    `> ${currentInfo.author || 'Unknown'} • Requested by ${currentRequester}\n\n` +
                     `*No more tracks in queue. Use \`${process.env.PREFIX || '>'}play\` to add more!*`
                 )
                 .addFields(
@@ -60,12 +63,14 @@ module.exports = {
 
         const { items, currentPage, totalPages, totalItems } = paginate(tracks, page);
 
+        const currentReq = currentTrack.requester?.username || currentTrack.requester?.tag || currentTrack.requester || 'Unknown';
         const trackList = items.map((track, index) => {
             const info = track.info || {};
             const position = (currentPage - 1) * 10 + index + 1;
             const dur = info.isStream ? 'Live' : formatMs(info.duration);
             const src = getSourceBadge(info.sourceName);
-            return `\`${position}.\` ${src.color} **[${truncate(info.title, 42)}](${info.uri})** — \`${dur}\`\n　　 ${info.author || 'Unknown'} • ${track.requester || 'Unknown'}`;
+            const req = track.requester?.username || track.requester?.tag || track.requester || 'Unknown';
+            return `\`${position}.\` ${src.color} **[${truncate(info.title, 42)}](${info.uri})** — \`${dur}\`\n　　 ${info.author || 'Unknown'} • ${req}`;
         }).join('\n');
 
         const embed = createEmbed('Queue')

@@ -39,6 +39,10 @@ module.exports = {
 
             // Flag manual stop to prevent autoplay and redundant queue-ended messages
             player.setData('manualStop', true);
+            try {
+                const { guildContextManager } = require('../../autoplay');
+                guildContextManager.getContext(interaction.guild.id)?.nextGeneration();
+            } catch { /* ignore */ }
 
             // Stop the current track and clear queue, but keep player alive in voice channel
             await player.stopPlaying(true, false);

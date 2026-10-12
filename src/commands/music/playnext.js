@@ -209,6 +209,15 @@ module.exports = {
                 }
             }
 
+            const { setTrackMetadata } = require('../../utils/trackMetadata');
+            track.isAutoplay = false;
+            track.isRecommendation = false;
+            setTrackMetadata(interaction.guild.id, track, {
+                isAutoplay: false,
+                isRecommendation: false,
+                requester: interaction.user,
+            });
+
             // Insert at position 0 (front of queue) — this is the key difference from play
             player.queue.add(track, 0);
 

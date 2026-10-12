@@ -32,8 +32,15 @@ module.exports = {
             // Get the previous track (second to last in history)
             const previousTrack = history[history.length - 2];
 
-            // Add it to the front of the queue
+            const { setTrackMetadata } = require('../../utils/trackMetadata');
             previousTrack.requester = interaction.user;
+            previousTrack.isAutoplay = false;
+            previousTrack.isRecommendation = false;
+            setTrackMetadata(interaction.guild.id, previousTrack, {
+                isAutoplay: false,
+                isRecommendation: false,
+                requester: interaction.user,
+            });
             player.queue.add(previousTrack, 0);
 
             // Skip current track to play the previous one

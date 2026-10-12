@@ -271,10 +271,19 @@ module.exports = {
                 // 24/7 mode: keep player alive
             }
 
+            const { setTrackMetadata } = require('../../utils/trackMetadata');
+
             // If it's a playlist or album
             if (result.loadType === 'playlist' || result.playlist) {
                 const tracks = result.tracks.map(track => {
                     track.requester = interaction.user;
+                    track.isAutoplay = false;
+                    track.isRecommendation = false;
+                    setTrackMetadata(interaction.guild.id, track, {
+                        isAutoplay: false,
+                        isRecommendation: false,
+                        requester: interaction.user,
+                    });
                     return track;
                 });
                 player.queue.add(tracks);
@@ -306,6 +315,13 @@ module.exports = {
             // Single track
             let track = result.tracks[0];
             track.requester = interaction.user;
+            track.isAutoplay = false;
+            track.isRecommendation = false;
+            setTrackMetadata(interaction.guild.id, track, {
+                isAutoplay: false,
+                isRecommendation: false,
+                requester: interaction.user,
+            });
 
             if (isAttachment) {
                 if (!track.info.title || track.info.title === 'Unknown title' || track.info.title.startsWith('http')) {
@@ -317,6 +333,12 @@ module.exports = {
             }
 
             player.queue.add(track);
+
+            // Update Resonance AI DJ session context with manual request seed
+            try {
+                const { guildContextManager } = require('../../autoplay');
+                guildContextManager.getContext(interaction.guild.id)?.recordManualRequest(track);
+            } catch { /* ignore */ }
 
             if (!player.playing) {
                 await player.play();

@@ -1,5 +1,6 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder } = require('discord.js');
 const { createProgressBar, formatMs, truncate } = require('./helpers');
+const { getTrackMetadata } = require('./trackMetadata');
 
 // ── Reso Premium Color Palette ─────────────────────────────────
 // Signature gradient-inspired palette: deep violet → electric pink → warm coral
@@ -163,9 +164,16 @@ function nowPlayingEmbed(track, player, client, recommendations = []) {
     const activeFilters = player.activeFilters ? player.activeFilters.size : 0;
     const filterText = activeFilters > 0 ? ` • 🎛️ ${activeFilters} filter${activeFilters !== 1 ? 's' : ''}` : '';
 
-    // Autoplay status
-    const autoplayOn = client?.autoplayGuilds?.has(player.guildId);
-    const autoplayText = autoplayOn ? ' • 🔄 Autoplay' : '';
+    // Autoplay status & track classification
+    const meta = getTrackMetadata(player?.guildId, track);
+    const isTrackAutoplay = meta?.isAutoplay ?? track?.isAutoplay ?? (track?.requester?.id === 'autoplay');
+    const autoplayOn = client?.autoplayGuilds?.has(player?.guildId);
+    let autoplayText = '';
+    if (isTrackAutoplay) {
+        autoplayText = ' • 🔄 Autoplay Pick';
+    } else if (autoplayOn) {
+        autoplayText = ' • 🔄 Autoplay On';
+    }
 
     // Build the rich description
     const description = [
@@ -177,6 +185,10 @@ function nowPlayingEmbed(track, player, client, recommendations = []) {
         `${volEmoji} \`${player.volume}%\`  ${loop.emoji} \`${loop.label}\`  ${EMOJIS.queue} \`${queueText}\`${filterText}${autoplayText}`,
     ].join('\n');
 
+    const requesterName = isTrackAutoplay
+        ? 'Autoplay'
+        : (track?.requester?.username || track?.requester?.tag || 'Unknown');
+
     const embed = new EmbedBuilder()
         .setColor(Colors.NowPlaying)
         .setAuthor({
@@ -186,7 +198,7 @@ function nowPlayingEmbed(track, player, client, recommendations = []) {
         .setDescription(description)
         .setThumbnail(info.artworkUrl || null)
         .setFooter({
-            text: `Reso  ♪  ${bitrateLabel ? bitrateLabel + ' • ' : ''}Requested by ${track.requester?.username || track.requester?.tag || 'Unknown'}`,
+            text: `Reso  ♪  ${bitrateLabel ? bitrateLabel + ' • ' : ''}Requested by ${requesterName}`,
         })
         .setTimestamp();
 
@@ -289,7 +301,7 @@ function createRecommendationComponents(recommendations = [], guildId = '') {
 
     const selectMenu = new StringSelectMenuBuilder()
         .setCustomId(`rec_select_${guildId}`)
-        .setPlaceholder('✨ Pick a recommended song to add to queue...')
+        .setPlaceholder('Optional recommendations — add a song to the queue')
         .addOptions(options);
 
     return new ActionRowBuilder().addComponents(selectMenu);
