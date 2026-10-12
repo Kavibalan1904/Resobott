@@ -68,7 +68,9 @@ describe('Autoplay safety and relevance', () => {
         assert.ok(queries.some(q => /popular songs similar to current track/i.test(q)));
         // Language-neutral search results without shared metadata should not be
         // advertised as similar just because they were returned by autoplay.
-        assert.match(result.categoryLabel, /Discovery/i);
+        assert.equal(result.categoryLabel, '🔄 Autoplay Pick');
+        assert.equal(result.isAutoplay, true);
+        assert.equal(result.isRecommendation, false);
     });
 
     it('only treats exact normalized titles as duplicates, not arbitrary substrings', () => {
