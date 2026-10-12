@@ -497,6 +497,12 @@ async function main() {
                 options: {
                     getString: (name) => {
                         if ((name === 'query' || name === 'request') && args.length > 0) return args.join(' ');
+                        if (name === 'source') {
+                            const validSources = ['auto', 'youtube', 'youtubemusic', 'spotify', 'soundcloud', 'apple'];
+                            const lastArg = args[args.length - 1]?.toLowerCase();
+                            if (args.length > 1 && validSources.includes(lastArg)) return lastArg;
+                            return 'auto';
+                        }
                         return args[0] || null;
                     },
                     getInteger: (name) => {

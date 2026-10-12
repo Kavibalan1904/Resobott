@@ -95,7 +95,9 @@ module.exports = {
 
         const rawStringQuery = interaction.options.getString('query')?.trim();
         const attachment = interaction.options.getAttachment('file');
-        const source = interaction.options.getString('source') || 'auto';
+        const rawSource = interaction.options.getString('source');
+        const validSources = ['auto', 'youtube', 'youtubemusic', 'spotify', 'soundcloud', 'apple'];
+        const source = (rawSource && validSources.includes(rawSource.toLowerCase())) ? rawSource.toLowerCase() : 'auto';
         const manager = interaction.client.lavalink;
 
         if (!rawStringQuery && !attachment) {
@@ -281,33 +283,40 @@ module.exports = {
                                 }
                             } else if (spotifyData.type === 'playlist' && spotifyData.tracks?.length > 0) {
                                 console.log(`[Reso] 🟢 Resolved Spotify playlist/album "${spotifyData.name}" with ${spotifyData.tracks.length} tracks`);
-                                const firstItem = spotifyData.tracks[0];
-                                let firstSearch = await player.search({ query: firstItem.searchQuery, source: 'ytsearch' }, interaction.user);
-                                if (!firstSearch?.tracks?.length && firstItem.title) {
-                                    firstSearch = await player.search({ query: firstItem.title, source: 'ytsearch' }, interaction.user);
+                                let firstTrack = null;
+                                let firstIndex = 0;
+                                for (let i = 0; i < Math.min(5, spotifyData.tracks.length); i++) {
+                                    const item = spotifyData.tracks[i];
+                                    let search = await player.search({ query: item.searchQuery, source: 'ytsearch' }, interaction.user);
+                                    if (!search?.tracks?.length && item.title) {
+                                        search = await player.search({ query: item.title, source: 'ytsearch' }, interaction.user);
+                                    }
+                                    if (search?.tracks?.length > 0) {
+                                        firstTrack = search.tracks[0];
+                                        if (spotifyData.thumbnail) firstTrack.info.artworkUrl = spotifyData.thumbnail;
+                                        if (item.uri) firstTrack.info.uri = item.uri;
+                                        firstTrack.info.sourceName = 'spotify';
+                                        firstTrack.requester = interaction.user;
+                                        firstTrack.isAutoplay = false;
+                                        firstTrack.isRecommendation = false;
+                                        setTrackMetadata(interaction.guild.id, firstTrack, {
+                                            isAutoplay: false,
+                                            isRecommendation: false,
+                                            requester: interaction.user,
+                                        });
+                                        firstIndex = i;
+                                        break;
+                                    }
                                 }
 
-                                if (firstSearch?.tracks?.length > 0) {
-                                    const firstTrack = firstSearch.tracks[0];
-                                    if (spotifyData.thumbnail) firstTrack.info.artworkUrl = spotifyData.thumbnail;
-                                    if (firstItem.uri) firstTrack.info.uri = firstItem.uri;
-                                    firstTrack.info.sourceName = 'spotify';
-                                    firstTrack.requester = interaction.user;
-                                    firstTrack.isAutoplay = false;
-                                    firstTrack.isRecommendation = false;
-                                    setTrackMetadata(interaction.guild.id, firstTrack, {
-                                        isAutoplay: false,
-                                        isRecommendation: false,
-                                        requester: interaction.user,
-                                    });
-
+                                if (firstTrack) {
                                     player.queue.add(firstTrack);
                                     if (!player.playing) {
                                         await player.play();
                                     }
 
                                     // Asynchronously queue remaining playlist tracks in small batches
-                                    const remainingItems = spotifyData.tracks.slice(1);
+                                    const remainingItems = spotifyData.tracks.filter((_, idx) => idx !== firstIndex);
                                     if (remainingItems.length > 0) {
                                         (async () => {
                                             const BATCH_SIZE = 4;
@@ -394,8 +403,6 @@ module.exports = {
             if (interaction.client.twentyFourSeven?.has(interaction.guild.id)) {
                 // 24/7 mode: keep player alive
             }
-
-            const { setTrackMetadata } = require('../../utils/trackMetadata');
 
             // If it's a playlist or album
             if (result.loadType === 'playlist' || result.playlist) {

@@ -241,32 +241,41 @@ async function resolveSpotifyViaEmbed(type, id) {
                 const json = JSON.parse(match[1]);
                 const entity = json.props?.pageProps?.state?.data?.entity;
                 if (entity) {
+                    const cleanText = (str) => (str || '')
+                        .replace(/[\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]/g, ' ')
+                        .replace(/\s+/g, ' ')
+                        .trim();
+
                     if (type === 'track') {
-                        const artist = entity.artists?.[0]?.name || entity.subtitle || '';
-                        const title = entity.title || entity.name || '';
+                        const artist = cleanText(entity.artists?.[0]?.name || entity.subtitle || '');
+                        const title = cleanText(entity.title || entity.name || '');
+                        const primaryArtist = artist.split(',')[0].trim();
+                        const searchQuery = primaryArtist ? `${title} ${primaryArtist}` : title;
                         return {
                             type: 'track',
                             title,
                             artist,
                             duration: entity.duration || 0,
-                            searchQuery: `${title} ${artist}`.trim(),
+                            searchQuery,
                             thumbnail: entity.visualIdentity?.image?.[0]?.url || null,
                             uri: `https://open.spotify.com/track/${id}`,
                         };
                     }
 
                     if (type === 'playlist' || type === 'album' || type === 'artist') {
-                        const playlistName = entity.name || entity.title || (type === 'album' ? 'Spotify Album' : 'Spotify Playlist');
-                        const author = entity.subtitle || (entity.artists?.[0]?.name) || 'Spotify';
+                        const playlistName = cleanText(entity.name || entity.title || (type === 'album' ? 'Spotify Album' : 'Spotify Playlist'));
+                        const author = cleanText(entity.subtitle || (entity.artists?.[0]?.name) || 'Spotify');
                         const rawTracks = entity.trackList || [];
                         const tracks = rawTracks.map(t => {
-                            const trackTitle = t.title || t.name || '';
-                            const trackArtist = t.subtitle || (entity.type === 'artist' ? entity.name : '') || '';
+                            const trackTitle = cleanText(t.title || t.name || '');
+                            const trackArtist = cleanText(t.subtitle || (entity.type === 'artist' ? entity.name : '') || '');
+                            const primaryArtist = trackArtist.split(',')[0].trim();
+                            const searchQuery = primaryArtist ? `${trackTitle} ${primaryArtist}` : trackTitle;
                             return {
                                 title: trackTitle,
                                 artist: trackArtist,
                                 duration: t.duration || 0,
-                                searchQuery: `${trackTitle} ${trackArtist}`.trim(),
+                                searchQuery,
                                 uri: t.uri ? (t.uri.startsWith('spotify:track:') ? `https://open.spotify.com/track/${t.uri.split(':')[2]}` : t.uri) : null,
                             };
                         }).filter(t => Boolean(t.title));
