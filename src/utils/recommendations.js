@@ -706,13 +706,21 @@ function getSessionLanguage(guildId, history = []) {
  */
 function isFuzzyDuplicate(titleA, titleB) {
     if (!titleA || !titleB) return false;
-    const a = titleA.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim();
-    const b = titleB.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim();
-    if (a === b) return true;
-    if (a.length > 5 && b.length > 5) {
-        if (a.includes(b) || b.includes(a)) return true;
-    }
-    return false;
+
+    // Be conservative: substring matching incorrectly merges distinct tracks
+    // such as "Love Story" and "Love Story 2026". Normalize common upload
+    // descriptors, then require the actual song titles to match.
+    const normalize = (value) => String(value)
+        .toLowerCase()
+        .replace(/[\(\[\{].*?[\)\]\}]/g, ' ')
+        .replace(/\b(official|music|video|audio|lyric|lyrics|full|song|songs|hd|4k|remastered|visualizer|mv)\b/g, ' ')
+        .replace(/[^a-z0-9\s]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    const a = normalize(titleA);
+    const b = normalize(titleB);
+    return Boolean(a && b && a === b);
 }
 
 // ══════════════════════════════════════════════════════════════════
