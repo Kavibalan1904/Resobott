@@ -1072,10 +1072,13 @@ async function getAutoplayTrack(player, trackHistoryMap) {
 
     // Query 2: Radio / Similar Songs (YouTube Music radio mixes)
     const cleanSongName = lastMeta.songName || cleanSongTitle(lastTrack.info?.title);
+    const seedArtist = cleanAuthor(lastTrack.info?.author || '').trim();
+    const seedQuery = [`songs similar to "${cleanSongName}"`, seedArtist, targetLanguage]
+        .filter(Boolean).join(' ');
     autoplayQueries.push({
-        query: `songs like ${cleanSongName}${targetLanguage ? ` ${targetLanguage}` : ''}`.trim(),
+        query: seedQuery,
         type: 'RADIO',
-        label: `🎧 Similar to "${truncate(cleanSongName, 18)}"`,
+        label: `🎧 Related to "${truncate(cleanSongName, 18)}"`,
         weight: 42,
     });
 
@@ -1245,6 +1248,18 @@ async function getAutoplayTrack(player, trackHistoryMap) {
                 score += 28;
             }
 
+            // A search query or shared language alone is not proof of similarity.
+            // Keep track of explicit metadata signals so we can describe the pick honestly.
+            const relationSignals = {
+                titleOverlap: overlap > 0,
+                sameArtist: Boolean(sameArtist),
+                sameComposer: Boolean(sameComposer),
+                sameVibe: Boolean(detectedVibe && candVibe === detectedVibe),
+                freshPeer: Boolean(selectedPeer && (authorLower.includes(selectedPeer.toLowerCase()) || candArtist.includes(selectedPeer.toLowerCase()))),
+            };
+            const hasSimilarityEvidence = relationSignals.titleOverlap ||
+                relationSignals.sameArtist || relationSignals.sameComposer || relationSignals.sameVibe;
+
             // Avoid low-quality variants unless the user explicitly seeded one.
             const qualityPenalties = [
                 ['karaoke', -35], ['instrumental', -20], ['cover', -18],
@@ -1259,7 +1274,9 @@ async function getAutoplayTrack(player, trackHistoryMap) {
             candidateTracks.push({
                 track,
                 score,
-                label
+                label,
+                hasSimilarityEvidence,
+                relationSignals
             });
         }
     }
@@ -1277,10 +1294,16 @@ async function getAutoplayTrack(player, trackHistoryMap) {
     const eligible = candidateTracks.filter(c => c.score >= topScore - 14).slice(0, 4);
     const selected = eligible[Math.floor(Math.random() * eligible.length)];
     const pickedTrack = selected.track;
-    pickedTrack.categoryLabel = selected.label;
+
+    // Do not claim "similar" based only on language or the query that returned it.
+    // If metadata gives no relation signal, present it as discovery rather than similarity.
+    pickedTrack.categoryLabel = selected.hasSimilarityEvidence
+        ? selected.label
+        : (targetLanguage ? `🌱 ${targetLanguage.toUpperCase()} Discovery` : '🌱 New Discovery');
+    pickedTrack.autoplayRelation = selected.relationSignals;
     pickedTrack.isRecommendation = true;
 
-    console.log(`[Reso] 🔄 Autoplay Selected: "${truncate(pickedTrack.info?.title, 40)}" | Score: ${selected.score} | Lang: ${targetLanguage} | Vibe: ${detectedVibe}`);
+    console.log(`[Reso] 🔄 Autoplay Selected: "${truncate(pickedTrack.info?.title, 40)}" | Score: ${selected.score} | Lang: ${targetLanguage || 'unknown'} | Vibe: ${detectedVibe || 'unknown'} | Relation: ${JSON.stringify(selected.relationSignals)}`);
     return pickedTrack;
 }
 
