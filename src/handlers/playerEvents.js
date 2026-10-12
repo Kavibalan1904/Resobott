@@ -34,6 +34,9 @@ function setupLavalinkEvents(client) {
     // ── Queue advancement guard ──
     const isAdvancingQueue = new Set();
 
+    // Prevent duplicate asynchronous autoplay searches per guild.
+    const autoplayLocks = new Set();
+
     async function advanceQueueSafely(player) {
         if (isAdvancingQueue.has(player.guildId)) {
             console.log(`[Reso] 🛡️ Queue advancement already in progress for guild ${player.guildId}, ignoring duplicate.`);
@@ -409,10 +412,45 @@ function setupLavalinkEvents(client) {
 
         // ── Autoplay: auto-queue similar songs when queue ends ──
         if (client.autoplayGuilds?.has(player.guildId)) {
+            const guildId = player.guildId;
+
+            if (autoplayLocks.has(guildId)) {
+                console.log(`[Reso] 🛡️ Autoplay already resolving for guild ${guildId}; ignoring duplicate queueEnd.`);
+                return;
+            }
+
+            // Never compete with a manual queue/playback change.
+            if (player.queue?.tracks?.length > 0 || player.playing) {
+                console.log(`[Reso] 🛡️ Autoplay skipped: player state changed before search.`);
+                return;
+            }
+
+            autoplayLocks.add(guildId);
+            const historyBefore = client.trackHistory?.get(guildId) || [];
+            const lastHistoryUri = historyBefore.at(-1)?.info?.uri || null;
+
             try {
-                console.log(`[Reso] 🔄 Autoplay: Finding next song using session history (${(client.trackHistory?.get(player.guildId) || []).length} tracks)`);
+                console.log(`[Reso] 🔄 Autoplay: Finding next song using session history (${historyBefore.length} tracks)`);
 
                 const nextTrack = await getAutoplayTrack(player, client.trackHistory);
+
+                // Search is asynchronous; discard stale results if the user changed state.
+                if (!client.autoplayGuilds?.has(guildId)) {
+                    console.log(`[Reso] 🛑 Autoplay aborted: autoplay was disabled during search.`);
+                    return;
+                }
+                if (player.queue?.tracks?.length > 0 || player.playing) {
+                    console.log(`[Reso] 🛑 Autoplay aborted: manual playback/queue activity occurred during search.`);
+                    return;
+                }
+
+                const historyAfter = client.trackHistory?.get(guildId) || [];
+                const currentHistoryUri = historyAfter.at(-1)?.info?.uri || null;
+                if (lastHistoryUri && currentHistoryUri && lastHistoryUri !== currentHistoryUri) {
+                    console.log(`[Reso] 🛑 Autoplay aborted: playback history changed during search.`);
+                    return;
+                }
+
                 if (nextTrack) {
                     nextTrack.requester = { username: 'Autoplay', id: 'autoplay' };
                     player.queue.add(nextTrack);
@@ -424,7 +462,7 @@ function setupLavalinkEvents(client) {
                         const embed = createEmbed('Autoplay')
                             .setAuthor({ name: '🔄 Autoplay' })
                             .setDescription(
-                                `Queued **[${truncate(nextTrack.info?.title || 'Unknown', 50)}](${nextTrack.info?.uri || ''})**\n` +
+                                `Queued **[${truncate(nextTrack.info?.title || 'Unknown', 50)}](${nextTrack.info?.uri || ''})**\\n` +
                                 `> ${categoryTag} • Based on your session • Use \`/autoplay\` to toggle`
                             )
                             .setThumbnail(nextTrack.info?.artworkUrl || null);
@@ -432,10 +470,12 @@ function setupLavalinkEvents(client) {
                     }
 
                     console.log(`[Reso] 🔄 Autoplay: Queued "${truncate(nextTrack.info?.title, 40)}" [${categoryTag}]`);
-                    return; // Don't show "queue ended" message
+                    return;
                 }
             } catch (e) {
                 console.error('[Reso] Autoplay error:', e.message);
+            } finally {
+                autoplayLocks.delete(guildId);
             }
         }
 
