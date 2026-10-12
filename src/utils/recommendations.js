@@ -1237,8 +1237,11 @@ async function getAutoplayTrack(player, trackHistoryMap) {
                 artistPlayCounts[authorLower] || 0,
                 artistPlayCounts[candComposer] || 0
             );
-            if (recentPlays > 0) score -= recentPlays * 28;
-            if (sameArtist && recentPlays > 0) score -= 35;
+            // One prior play is not enough to reject a highly relevant artist;
+            // repeated appearances in the recent window are what trigger cooldown.
+            if (recentPlays > 1) score -= recentPlays * 28;
+            if (sameArtist && recentPlays > 1) score -= 35;
+            else if (sameArtist && recentPlays === 1) score -= 8;
 
             if (selectedPeer && (authorLower.includes(selectedPeer.toLowerCase()) || candArtist.includes(selectedPeer.toLowerCase()))) {
                 score += 28;
