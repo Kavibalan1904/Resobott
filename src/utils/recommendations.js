@@ -1068,7 +1068,7 @@ async function getAutoplayTrack(player, trackHistoryMap) {
         query: vibeQuery,
         type: vibeData ? 'VIBE' : 'POPULARITY',
         label: vibeData
-            ? `${vibeData.label} • ${targetLanguage.toUpperCase()}`
+            ? `${vibeData.label}${targetLanguage ? ` • ${targetLanguage.toUpperCase()}` : ''}`
             : '🎧 Similar Music',
         weight: vibeData ? 26 : 18,
     });
