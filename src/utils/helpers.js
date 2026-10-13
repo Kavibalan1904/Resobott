@@ -57,6 +57,7 @@ function formatDuration(ms) {
  * Format uptime from milliseconds
  */
 function formatUptime(ms) {
+    if (!ms || isNaN(ms) || ms < 0) return '0s';
     const seconds = Math.floor(ms / 1000);
     const days = Math.floor(seconds / 86400);
     const hours = Math.floor((seconds % 86400) / 3600);
@@ -67,8 +68,11 @@ function formatUptime(ms) {
     if (days > 0) parts.push(`${days}d`);
     if (hours > 0) parts.push(`${hours}h`);
     if (minutes > 0) parts.push(`${minutes}m`);
-    parts.push(`${secs}s`);
-    return parts.join(' ');
+    // Only show seconds when uptime is under an hour, or when no larger units exist
+    if (parts.length === 0 || (days === 0 && hours === 0)) {
+        parts.push(`${secs}s`);
+    }
+    return parts.join(' ') || '0s';
 }
 
 /**
@@ -377,17 +381,19 @@ function getNodeHealthSummary(manager) {
             : null;
         const frames = node.stats?.frameStats;
         const cpu = node.stats?.cpu;
+        const mem = node.stats?.memory;
 
         return {
             id: node.id,
             host: `${node.options?.host || '?'}:${node.options?.port || '?'}`,
-            connected: node.connected,
+            connected: !!node.connected,
             isPrimary: node.id === PRIMARY_NODE_ID,
-            latencyMs: latency,
+            latencyMs: (latency != null && !isNaN(latency)) ? Math.round(latency) : null,
             score: score === Infinity ? null : Math.round(score),
             players: node.stats?.playingPlayers || 0,
             totalPlayers: node.stats?.players || 0,
             cpuLoad: cpu ? Math.round((cpu.systemLoad || 0) * 100) : null,
+            memUsedMb: mem && mem.used ? Math.round(mem.used / 1024 / 1024) : null,
             frameHealth: frames && frames.sent > 0
                 ? Math.round(((frames.sent - (frames.nulled || 0) - (frames.deficit || 0)) / frames.sent) * 100)
                 : null,

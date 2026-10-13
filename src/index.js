@@ -483,6 +483,9 @@ async function main() {
 
             // Create a mock interaction object to support existing slash command logic
             const interaction = {
+                id: message.id,
+                createdTimestamp: message.createdTimestamp,
+                createdAt: message.createdAt,
                 isChatInputCommand: () => true,
                 isButton: () => false,
                 isStringSelectMenu: () => false,
@@ -523,8 +526,9 @@ async function main() {
                 },
                 deferReply: async () => {
                     interaction.deferred = true;
-                    return true;
+                    return message;
                 },
+                fetchReply: async () => message,
                 editReply: async (data) => {
                     interaction.replied = true;
                     return await message.reply(data);

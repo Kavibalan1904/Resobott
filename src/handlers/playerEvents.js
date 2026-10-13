@@ -39,19 +39,48 @@ function setupLavalinkEvents(client) {
     const activeAutoplayResolutions = client.activeAutoplayResolutions || (client.activeAutoplayResolutions = new Set());
 
     async function advanceQueueSafely(player) {
+        if (!player || player.destroyed) return;
         if (isAdvancingQueue.has(player.guildId)) {
             console.log(`[Reso] 🛡️ Queue advancement already in progress for guild ${player.guildId}, ignoring duplicate.`);
             return;
         }
         isAdvancingQueue.add(player.guildId);
         try {
-            if (player.queue && player.queue.tracks && player.queue.tracks.length > 0) {
-                await player.skip();
+            // In lavalink-client with autoSkip: false, queueTrackEnd has already shifted
+            // the next song into player.queue.current. We must call player.play() to start audio!
+            if (player.queue.current) {
+                await player.play();
+            } else if (player.queue.tracks && player.queue.tracks.length > 0) {
+                const nextTrack = player.queue.tracks.shift();
+                player.queue.current = nextTrack;
+                await player.play();
             } else {
                 await player.stopPlaying(false, false);
             }
         } catch (err) {
             console.error(`[Reso] ✗ Failed to advance queue safely:`, err.message);
+        } finally {
+            setTimeout(() => isAdvancingQueue.delete(player.guildId), 1500);
+        }
+    }
+
+    async function skipBrokenTrackSafely(player) {
+        if (!player || player.destroyed) return;
+        if (isAdvancingQueue.has(player.guildId)) return;
+        isAdvancingQueue.add(player.guildId);
+        try {
+            // Discard the broken current track and play the next queued track
+            if (player.queue.tracks && player.queue.tracks.length > 0) {
+                const nextTrack = player.queue.tracks.shift();
+                player.queue.current = nextTrack;
+                await player.play();
+            } else {
+                player.queue.current = null;
+                await player.stopPlaying(false, false);
+                manager.emit('queueEnd', player);
+            }
+        } catch (err) {
+            console.error(`[Reso] ✗ Failed to skip broken track safely:`, err.message);
         } finally {
             setTimeout(() => isAdvancingQueue.delete(player.guildId), 1500);
         }
@@ -387,9 +416,9 @@ function setupLavalinkEvents(client) {
         }
 
         // ── Manual Queue Advancement ──
-        // Since autoSkip is false, we must manually advance the queue when a track finishes normally.
+        // Since autoSkip is false, we must manually advance the queue when a track finishes normally or is stopped (e.g. via skip).
         // (Errors and stuck tracks are handled by their respective event listeners)
-        if (endReason === 'finished') {
+        if (endReason === 'finished' || endReason === 'stopped') {
             await advanceQueueSafely(player);
         }
     });
@@ -598,8 +627,8 @@ function setupLavalinkEvents(client) {
             channel.send({ embeds: [embed] }).catch(() => { });
         }
 
-        // Advance the queue manually safely
-        await advanceQueueSafely(player);
+        // Advance the queue manually safely by skipping the broken track
+        await skipBrokenTrackSafely(player);
     });
 
     // ── Track stuck ────────────────────────────────────────────
@@ -623,8 +652,8 @@ function setupLavalinkEvents(client) {
             channel.send({ embeds: [embed] }).catch(() => { });
         }
 
-        // Advance the queue manually safely
-        await advanceQueueSafely(player);
+        // Advance the queue manually safely by skipping the stuck track
+        await skipBrokenTrackSafely(player);
     });
 
     // ── Player created ─────────────────────────────────────────
