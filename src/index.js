@@ -6,16 +6,20 @@ if (dns.setDefaultResultOrder) {
     dns.setDefaultResultOrder('ipv4first');
 }
 
-const { Client, GatewayIntentBits, Collection, MessageFlags, Options } = require('discord.js');
+const http = require('http');
+const https = require('https');
+const { Client, GatewayIntentBits, Collection, MessageFlags, Options, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const { LavalinkManager } = require('lavalink-client');
 const { loadCommands, registerSlashCommands } = require('./handlers/commandHandler');
 const { setupLavalinkEvents } = require('./handlers/playerEvents');
 const { handlePlayerButton } = require('./handlers/buttonHandler');
-const { getBestNode, ensurePlayerNode } = require('./utils/helpers');
+const { getBestNode, ensurePlayerNode, truncate } = require('./utils/helpers');
 const { setTrackMetadata } = require('./utils/trackMetadata');
+const { getDesignatedChannel } = require('./utils/settings');
+const { createEmbed, EMOJIS } = require('./utils/embeds');
+const { createAIProvider } = require('./ai/providers/factory');
 
 // ── HTTP Health Check Server (Optional) ─────────────────────────
-const http = require('http');
 const PORT = process.env.PORT;
 if (PORT) {
     http.createServer((req, res) => {
@@ -199,7 +203,6 @@ client.on('voiceStateUpdate', (oldState, newState) => {
                     const textChannel = client.channels.cache.get(currentPlayer.textChannelId);
                     currentPlayer.destroy();
                     if (textChannel) {
-                        const { createEmbed, EMOJIS } = require('./utils/embeds');
                         const embed = createEmbed('Info')
                             .setDescription(`${EMOJIS.music} Everyone left the voice channel, so I've disconnected. 👋`);
                         textChannel.send({ embeds: [embed] }).catch(() => { });
@@ -215,6 +218,30 @@ client.on('voiceStateUpdate', (oldState, newState) => {
             aloneTimers.delete(guildId);
         }
     }
+});
+
+// ── Guild Leave Cleanup (Prevents memory leaks when bot leaves a server) ──
+client.on('guildDelete', (guild) => {
+    if (!guild?.id) return;
+    const guildId = guild.id;
+    client.twentyFourSeven?.delete(guildId);
+    client.trackHistory?.delete(guildId);
+    client.recommendations?.delete(guildId);
+    client.autoplayGuilds?.delete(guildId);
+    client.voteSkips?.delete(guildId);
+    client.lastNowPlayingMessage?.delete(guildId);
+    if (aloneTimers.has(guildId)) {
+        clearTimeout(aloneTimers.get(guildId));
+        aloneTimers.delete(guildId);
+    }
+    try {
+        const player = client.lavalink?.getPlayer(guildId);
+        if (player) player.destroy();
+    } catch { /* ignore */ }
+    try {
+        const { autoplayStore } = require('./autoplay');
+        autoplayStore.clearGuildData(guildId);
+    } catch { /* ignore */ }
 });
 
 // ── Discord Client & REST Debugging / Error Handling ───────────
@@ -257,7 +284,6 @@ async function main() {
 
             // Log AI DJ status
             try {
-                const { createAIProvider } = require('./ai/providers/factory');
                 const aiProvider = createAIProvider();
                 if (aiProvider) {
                     const providerName = aiProvider.constructor.name === 'GeminiProvider' ? 'Google Gemini' : 'OpenAI-compatible';
@@ -273,7 +299,7 @@ async function main() {
             if (host.includes('onrender.com')) {
                 const keepAliveUrl = `${isSecure ? 'https' : 'http'}://${host}:${port}/version`;
                 const pingRender = () => {
-                    const httpModule = isSecure ? require('https') : require('http');
+                    const httpModule = isSecure ? https : http;
                     const req = httpModule.get(keepAliveUrl, { headers: { 'Authorization': password }, timeout: 15000 }, (res) => {
                         res.resume();
                     });
@@ -336,7 +362,6 @@ async function main() {
                         client.voteSkips.delete(guildId);
                         await interaction.update({ content: `🗳️ Vote skip passed! (**${current}/${needed}** votes) ⏭️`, components: [] }).catch(() => { });
                     } else {
-                        const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
                         const btn = new ActionRowBuilder().addComponents(
                             new ButtonBuilder().setCustomId(`voteskip_${guildId}`).setLabel(`🗳️ Vote Skip (${current}/${needed})`).setStyle(ButtonStyle.Primary)
                         );
@@ -410,7 +435,6 @@ async function main() {
                         await player.play();
                     }
 
-                    const { truncate } = require('./utils/helpers');
                     const title = truncate(recommendedTrack.info?.title || 'Track', 45);
 
                     return interaction.reply({
@@ -429,7 +453,6 @@ async function main() {
             if (!interaction.isChatInputCommand()) return;
 
             // Check designated command channel
-            const { getDesignatedChannel } = require('./utils/settings');
             const designatedChannel = getDesignatedChannel(interaction.guildId);
             if (designatedChannel && interaction.channelId !== designatedChannel) {
                 return interaction.reply({
@@ -472,7 +495,6 @@ async function main() {
             const commandName = args.shift().toLowerCase();
 
             // Check designated command channel
-            const { getDesignatedChannel } = require('./utils/settings');
             const designatedChannel = getDesignatedChannel(message.guild.id);
             if (designatedChannel && message.channel.id !== designatedChannel) {
                 return;

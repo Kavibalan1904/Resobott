@@ -18,12 +18,14 @@ class FeedbackStore {
         try {
             if (fs.existsSync(STORE_PATH)) {
                 const raw = fs.readFileSync(STORE_PATH, 'utf8');
-                const data = JSON.parse(raw);
-                for (const [key, val] of Object.entries(data)) {
-                    this.cache.set(key, {
-                        likes: new Set(val.likes || []),
-                        dislikes: new Set(val.dislikes || []),
-                    });
+                if (raw && raw.trim()) {
+                    const data = JSON.parse(raw);
+                    for (const [key, val] of Object.entries(data)) {
+                        this.cache.set(key, {
+                            likes: new Set(val.likes || []),
+                            dislikes: new Set(val.dislikes || []),
+                        });
+                    }
                 }
             }
         } catch (err) {

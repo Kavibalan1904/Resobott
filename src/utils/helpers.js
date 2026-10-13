@@ -1,3 +1,25 @@
+const { PermissionsBitField } = require('discord.js');
+
+// ── Static Regular Expressions (precompiled for performance) ──
+const PURE_SECONDS_REGEX = /^\d+$/;
+const TIME_COLON_REGEX = /^(\d+:)?\d+:\d+$/;
+const HOURS_REGEX = /(\d+)\s*h/i;
+const MINUTES_REGEX = /(\d+)\s*m/i;
+const SECONDS_REGEX = /(\d+)\s*s/i;
+
+const YT_VIDEO_ID_REGEX = /(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+?&v=|shorts\/))([\w-]{11})/i;
+const YT_URL_REGEX = /^(https?:\/\/)?(www\.|music\.)?youtube\.com\//i;
+const YOUTU_BE_REGEX = /^(https?:\/\/)?youtu\.be\//i;
+const SPOTIFY_URL_REGEX = /^(https?:\/\/)?(www\.)?(open\.spotify\.com|spotify\.link|spoti\.fi)\//i;
+const SPOTIFY_URI_REGEX = /^spotify:/i;
+const SOUNDCLOUD_URL_REGEX = /^(https?:\/\/)?(www\.)?soundcloud\.com\//i;
+const ANY_URL_REGEX = /^(https?:\/\/|spotify:|www\.|open\.spotify\.com|spotify\.link|spoti\.fi|music\.youtube\.com|youtube\.com|youtu\.be|soundcloud\.com)/i;
+const CLEAN_VIDEO_TITLE_TAGS_REGEX = /\s*[\|\-–—]\s*(Official\s+)?(Video|Audio|Music\s+Video|Lyric\s+Video|Full\s+Song|Full\s+Video|4K|HD|Remastered|Visualizer).*/i;
+const CLEAN_PARENS_TAGS_REGEX = /\s*[\(\[\{](?:official\s+)?(?:video(?:\s+song)?|music\s+video|lyric(?:al)?(?:\s+video)?|audio(?:\s+song)?|full\s+song|full\s+video|4k|hd|remastered|visualizer|redux)[\)\]\}]/gi;
+const CLEAN_VIDEO_WORDS_REGEX = /\b(video\s+song|lyric\s+video|official\s+video|full\s+video)\b/gi;
+const CLEAN_AT_MENTIONS_REGEX = /@[\w\.\s]+/g;
+const PIPE_SPLIT_REGEX = /\s*\|\s*/;
+
 /**
  * Parse a time string like "1:30", "90", "1h30m" into seconds
  */
@@ -6,10 +28,10 @@ function parseTime(input) {
     const str = String(input).trim();
 
     // Pure seconds: "90"
-    if (/^\d+$/.test(str)) return parseInt(str, 10);
+    if (PURE_SECONDS_REGEX.test(str)) return parseInt(str, 10);
 
     // MM:SS or HH:MM:SS
-    if (/^(\d+:)?\d+:\d+$/.test(str)) {
+    if (TIME_COLON_REGEX.test(str)) {
         const parts = str.split(':').map(Number);
         if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
         if (parts.length === 2) return parts[0] * 60 + parts[1];
@@ -17,12 +39,12 @@ function parseTime(input) {
 
     // 1h30m, 2m30s, etc.
     let totalSeconds = 0;
-    const hours = str.match(/(\d+)\s*h/i);
-    const minutes = str.match(/(\d+)\s*m/i);
-    const seconds = str.match(/(\d+)\s*s/i);
-    if (hours) totalSeconds += parseInt(hours[1]) * 3600;
-    if (minutes) totalSeconds += parseInt(minutes[1]) * 60;
-    if (seconds) totalSeconds += parseInt(seconds[1]);
+    const hours = str.match(HOURS_REGEX);
+    const minutes = str.match(MINUTES_REGEX);
+    const seconds = str.match(SECONDS_REGEX);
+    if (hours) totalSeconds += parseInt(hours[1], 10) * 3600;
+    if (minutes) totalSeconds += parseInt(minutes[1], 10) * 60;
+    if (seconds) totalSeconds += parseInt(seconds[1], 10);
     return totalSeconds || null;
 }
 
@@ -92,8 +114,6 @@ function checkVoicePermissions(voiceChannel, clientUser) {
     if (!voiceChannel || !clientUser) return { allowed: true };
     const permissions = voiceChannel.permissionsFor(clientUser);
     if (!permissions) return { allowed: true };
-
-    const { PermissionsBitField } = require('discord.js');
     if (!permissions.has(PermissionsBitField.Flags.ViewChannel)) {
         return { allowed: false, reason: 'I cannot view or access that voice channel! Please check channel permissions.' };
     }
@@ -591,7 +611,7 @@ function startNodeHealthMonitor(manager) {
  */
 function extractYouTubeVideoId(url) {
     if (!url || typeof url !== 'string') return null;
-    const match = url.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+?&v=|shorts\/))([\w-]{11})/i);
+    const match = url.match(YT_VIDEO_ID_REGEX);
     return match ? match[1] : null;
 }
 
@@ -600,8 +620,7 @@ function extractYouTubeVideoId(url) {
  */
 function isYouTubeUrl(query) {
     if (!query || typeof query !== 'string') return false;
-    return /^(https?:\/\/)?(www\.|music\.)?youtube\.com\//i.test(query)
-        || /^(https?:\/\/)?youtu\.be\//i.test(query);
+    return YT_URL_REGEX.test(query) || YOUTU_BE_REGEX.test(query);
 }
 
 /**
@@ -610,8 +629,7 @@ function isYouTubeUrl(query) {
 function isSpotifyUrl(query) {
     if (!query || typeof query !== 'string') return false;
     const str = query.trim();
-    return /^(https?:\/\/)?(www\.)?(open\.spotify\.com|spotify\.link|spoti\.fi)\//i.test(str)
-        || /^spotify:/i.test(str);
+    return SPOTIFY_URL_REGEX.test(str) || SPOTIFY_URI_REGEX.test(str);
 }
 
 /**
@@ -619,7 +637,7 @@ function isSpotifyUrl(query) {
  */
 function isSoundCloudUrl(query) {
     if (!query || typeof query !== 'string') return false;
-    return /^(https?:\/\/)?(www\.)?soundcloud\.com\//i.test(query.trim());
+    return SOUNDCLOUD_URL_REGEX.test(query.trim());
 }
 
 /**
@@ -627,8 +645,7 @@ function isSoundCloudUrl(query) {
  */
 function isUrl(query) {
     if (!query || typeof query !== 'string') return false;
-    const pattern = /^(https?:\/\/|spotify:|www\.|open\.spotify\.com|spotify\.link|spoti\.fi|music\.youtube\.com|youtube\.com|youtu\.be|soundcloud\.com)/i;
-    return pattern.test(query.trim());
+    return ANY_URL_REGEX.test(query.trim());
 }
 
 /**
@@ -637,14 +654,20 @@ function isUrl(query) {
 function cleanVideoTitle(rawTitle) {
     if (!rawTitle || typeof rawTitle !== 'string') return '';
     let title = rawTitle;
+    // Strip paren descriptors: (Video Song), [Official Video], (Redux), etc.
+    title = title.replace(CLEAN_PARENS_TAGS_REGEX, '');
     // Strip common YouTube tag suffixes: | Official Video, - Full Song, (4K Remaster), etc.
-    title = title.replace(/\s*[\|\-–—]\s*(Official\s+)?(Video|Audio|Music\s+Video|Lyric\s+Video|Full\s+Song|Full\s+Video|4K|HD|Remastered|Visualizer).*/i, '');
+    title = title.replace(CLEAN_VIDEO_TITLE_TAGS_REGEX, '');
+    // Strip explicit video descriptors embedded in text
+    title = title.replace(CLEAN_VIDEO_WORDS_REGEX, '');
+    // Strip social mentions (e.g. @A. R. Rahman)
+    title = title.replace(CLEAN_AT_MENTIONS_REGEX, '');
     // If multiple pipe delimiters (e.g. "Charlie| Puthumazhayai| Dulquer Salmaan..."), extract primary movie + song name
-    const segments = title.split(/\s*\|\s*/).map(s => s.trim()).filter(Boolean);
+    const segments = title.split(PIPE_SPLIT_REGEX).map(s => s.trim()).filter(Boolean);
     if (segments.length >= 2) {
-        return segments.slice(0, 2).join(' ');
+        title = segments.slice(0, 2).join(' ');
     }
-    return title.trim();
+    return title.replace(/\s+/g, ' ').trim();
 }
 
 module.exports = {

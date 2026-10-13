@@ -1,6 +1,7 @@
 const { SlashCommandBuilder } = require('discord.js');
 const { errorEmbed, createEmbed, EMOJIS, getSourceBadge } = require('../../utils/embeds');
 const { truncate, paginate, formatMs } = require('../../utils/helpers');
+const { autoplayStore } = require('../../autoplay');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -39,7 +40,6 @@ module.exports = {
         const totalDuration = formatMs(totalDurationMs);
 
         // Autoplay status
-        const { autoplayStore } = require('../../autoplay');
         const autoplayOn = interaction.client.autoplayGuilds?.has(interaction.guild.id) || autoplayStore.isEnabled(interaction.guild.id);
 
         const currentRequester = currentTrack.requester?.username || currentTrack.requester?.tag || currentTrack.requester || 'Unknown';

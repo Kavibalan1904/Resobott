@@ -16,12 +16,38 @@ function loadSettings() {
     }
 }
 
-function saveSettings() {
-    try {
-        fs.writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2), 'utf8');
-    } catch (err) {
-        console.error('[Reso] Error saving settings.json:', err);
+let saveTimer = null;
+let isWriting = false;
+
+function saveSettings(immediate = false) {
+    if (saveTimer) {
+        clearTimeout(saveTimer);
+        saveTimer = null;
     }
+
+    if (immediate) {
+        try {
+            fs.writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2), 'utf8');
+        } catch (err) {
+            console.error('[Reso] Error saving settings.json:', err);
+        }
+        return;
+    }
+
+    saveTimer = setTimeout(async () => {
+        if (isWriting) {
+            saveSettings();
+            return;
+        }
+        isWriting = true;
+        try {
+            await fs.promises.writeFile(SETTINGS_PATH, JSON.stringify(settings, null, 2), 'utf8');
+        } catch (err) {
+            console.error('[Reso] Error saving settings.json:', err);
+        } finally {
+            isWriting = false;
+        }
+    }, 250);
 }
 
 function getDesignatedChannel(guildId) {

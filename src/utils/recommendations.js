@@ -1,6 +1,8 @@
 const { truncate, cleanVideoTitle } = require('./helpers');
 const { setTrackMetadata } = require('./trackMetadata');
 
+let _cachedAutoplayEngine = null;
+
 // ══════════════════════════════════════════════════════════════════
 //  Reso — High-Fidelity Recommendation & Autoplay Engine
 //  Features:
@@ -325,6 +327,40 @@ const KNOWN_COMPOSERS = [
 const LABEL_PATTERNS = /\b(vevo|official|channel|studio|records|recordings|music|tv|media|productions?|entertainment|films?|pictures|movies?|pvt|ltd|limited|inc|digital|network|south|label)\b/gi;
 const TOPIC_SUFFIX = /\s*-\s*Topic$/i;
 
+// ── Precomputed Lookup Tables & Precompiled Regexes (High-Performance Engine) ──
+const PRECOMPUTED_SCRIPTS = Object.entries(SCRIPT_PATTERNS);
+const PRECOMPUTED_CHANNELS = Object.entries(CHANNEL_LANGUAGES);
+const PRECOMPUTED_ARTISTS = Object.entries(ARTIST_LANGUAGES);
+const PRECOMPUTED_KEYWORDS = Object.entries(KEYWORD_LANGUAGES);
+const PRECOMPUTED_VIBES = Object.entries(VIBE_CATEGORIES);
+
+const EXPLICIT_TAG_REGEXES = Object.keys(KEYWORD_LANGUAGES).map(lang => ({
+    lang,
+    regex: new RegExp(`(\\b|\\(|\\[)${lang}(\\b|\\)|\\]|\\s*song|\\s*video|\\s*hits)`, 'i')
+}));
+
+const FOREIGN_LANG_REGEX_MAP = new Map([
+    'tamil', 'telugu', 'hindi', 'malayalam', 'kannada', 'punjabi', 'korean', 'japanese'
+].map(l => [l, new RegExp(`(\\b|\\(|\\[)${l}(\\b|\\)|\\]|\\s*version|\\s*song)`, 'i')]));
+
+const INDIC_SCRIPT_REGEX = /[\u0900-\u0DFF]/;
+
+const FUZZY_BRACKETS_REGEX = /[\(\[\{].*?[\)\]\}]/g;
+const FUZZY_DESCRIPTORS_REGEX = /\b(official|music|video|audio|lyric|lyrics|full|song|songs|hd|4k|remastered|visualizer|mv)\b/g;
+const FUZZY_NON_ALPHANUM_REGEX = /[^a-z0-9\s]/g;
+const FUZZY_SPACES_REGEX = /\s+/g;
+
+function normalizeFuzzyTitle(value) {
+    if (!value) return '';
+    return String(value)
+        .toLowerCase()
+        .replace(FUZZY_BRACKETS_REGEX, ' ')
+        .replace(FUZZY_DESCRIPTORS_REGEX, ' ')
+        .replace(FUZZY_NON_ALPHANUM_REGEX, ' ')
+        .replace(FUZZY_SPACES_REGEX, ' ')
+        .trim();
+}
+
 // ── Session State Storage (Guild ID -> { language, vibe, userTracks, updatedAt }) ──
 const guildSessionState = new Map();
 
@@ -500,42 +536,46 @@ function detectLanguage(title = '', author = '', fallbackLang = null) {
     const combined = `${title} ${author}`.toLowerCase();
 
     // 1. Script detection (100% certainty)
-    for (const [lang, regex] of Object.entries(SCRIPT_PATTERNS)) {
+    for (let i = 0; i < PRECOMPUTED_SCRIPTS.length; i++) {
+        const [lang, regex] = PRECOMPUTED_SCRIPTS[i];
         if (regex.test(title) || regex.test(author)) {
             return lang;
         }
     }
 
     // 2. Explicit tag detection (e.g. "Tamil", "Kollywood")
-    for (const lang of Object.keys(KEYWORD_LANGUAGES)) {
-        const explicitRegex = new RegExp(`(\\b|\\(|\\[)${lang}(\\b|\\)|\\]|\\s*song|\\s*video|\\s*hits)`, 'i');
-        if (explicitRegex.test(combined)) {
-            return lang;
+    for (let i = 0; i < EXPLICIT_TAG_REGEXES.length; i++) {
+        const item = EXPLICIT_TAG_REGEXES[i];
+        if (item.regex.test(combined)) {
+            return item.lang;
         }
     }
 
     // 3. Channel / Label detection
-    for (const [lang, channels] of Object.entries(CHANNEL_LANGUAGES)) {
-        for (const ch of channels) {
-            if (combined.includes(ch)) {
+    for (let i = 0; i < PRECOMPUTED_CHANNELS.length; i++) {
+        const [lang, channels] = PRECOMPUTED_CHANNELS[i];
+        for (let j = 0; j < channels.length; j++) {
+            if (combined.includes(channels[j])) {
                 return lang;
             }
         }
     }
 
     // 4. Prominent Artist detection
-    for (const [lang, artists] of Object.entries(ARTIST_LANGUAGES)) {
-        for (const artist of artists) {
-            if (combined.includes(artist)) {
+    for (let i = 0; i < PRECOMPUTED_ARTISTS.length; i++) {
+        const [lang, artists] = PRECOMPUTED_ARTISTS[i];
+        for (let j = 0; j < artists.length; j++) {
+            if (combined.includes(artists[j])) {
                 return lang;
             }
         }
     }
 
     // 5. Keyword & Movie signatures
-    for (const [lang, keywords] of Object.entries(KEYWORD_LANGUAGES)) {
-        for (const kw of keywords) {
-            if (combined.includes(kw)) {
+    for (let i = 0; i < PRECOMPUTED_KEYWORDS.length; i++) {
+        const [lang, keywords] = PRECOMPUTED_KEYWORDS[i];
+        for (let j = 0; j < keywords.length; j++) {
+            if (combined.includes(keywords[j])) {
                 return lang;
             }
         }
@@ -556,9 +596,13 @@ function detectLanguage(title = '', author = '', fallbackLang = null) {
 function detectVibe(title = '', author = '') {
     const combined = `${title} ${author}`.toLowerCase();
 
-    for (const [vibeId, vibeData] of Object.entries(VIBE_CATEGORIES)) {
-        if (vibeData.keywords.some(kw => combined.includes(kw))) {
-            return vibeId;
+    for (let i = 0; i < PRECOMPUTED_VIBES.length; i++) {
+        const [vibeId, vibeData] = PRECOMPUTED_VIBES[i];
+        const keywords = vibeData.keywords;
+        for (let j = 0; j < keywords.length; j++) {
+            if (combined.includes(keywords[j])) {
+                return vibeId;
+            }
         }
     }
 
@@ -586,18 +630,15 @@ function isLanguageMatch(candidateTitle = '', candidateAuthor = '', targetLangua
     const combined = `${lowerTitle} ${lowerAuthor}`;
 
     // 1. Explicit foreign language indicators
-    const otherLanguages = ['tamil', 'telugu', 'hindi', 'malayalam', 'kannada', 'punjabi', 'korean', 'japanese']
-        .filter(l => l !== targetLanguage);
-
-    for (const otherLang of otherLanguages) {
-        const explicitOtherRegex = new RegExp(`(\\b|\\(|\\[)${otherLang}(\\b|\\)|\\]|\\s*version|\\s*song)`, 'i');
-        if (explicitOtherRegex.test(combined)) {
+    for (const [otherLang, regex] of FOREIGN_LANG_REGEX_MAP) {
+        if (otherLang !== targetLanguage && regex.test(combined)) {
             return false; // Explicitly marked as another language
         }
     }
 
     // 2. Foreign Unicode scripts check
-    for (const [lang, regex] of Object.entries(SCRIPT_PATTERNS)) {
+    for (let i = 0; i < PRECOMPUTED_SCRIPTS.length; i++) {
+        const [lang, regex] = PRECOMPUTED_SCRIPTS[i];
         if (lang !== targetLanguage && (regex.test(candidateTitle) || regex.test(candidateAuthor))) {
             return false; // Contains foreign script
         }
@@ -615,7 +656,7 @@ function isLanguageMatch(candidateTitle = '', candidateAuthor = '', targetLangua
         }
     } else if (targetLanguage === 'english') {
         const indianChannels = ['t-series', 'zee music', 'sony music south', 'sony music india', 'think music', 'aditya music', 'saregama'];
-        if (indianChannels.some(ch => lowerAuthor.includes(ch)) || /[\u0900-\u0DFF]/.test(candidateTitle)) {
+        if (indianChannels.some(ch => lowerAuthor.includes(ch)) || INDIC_SCRIPT_REGEX.test(candidateTitle)) {
             return false;
         }
     } else if (targetLanguage === 'hindi') {
@@ -716,20 +757,8 @@ function getSessionLanguage(guildId, history = []) {
  */
 function isFuzzyDuplicate(titleA, titleB) {
     if (!titleA || !titleB) return false;
-
-    // Be conservative: substring matching incorrectly merges distinct tracks
-    // such as "Love Story" and "Love Story 2026". Normalize common upload
-    // descriptors, then require the actual song titles to match.
-    const normalize = (value) => String(value)
-        .toLowerCase()
-        .replace(/[\(\[\{].*?[\)\]\}]/g, ' ')
-        .replace(/\b(official|music|video|audio|lyric|lyrics|full|song|songs|hd|4k|remastered|visualizer|mv)\b/g, ' ')
-        .replace(/[^a-z0-9\s]/g, ' ')
-        .replace(/\s+/g, ' ')
-        .trim();
-
-    const a = normalize(titleA);
-    const b = normalize(titleB);
+    const a = normalizeFuzzyTitle(titleA);
+    const b = normalizeFuzzyTitle(titleB);
     return Boolean(a && b && a === b);
 }
 
@@ -1012,8 +1041,10 @@ async function getAutoplayTrack(player, trackHistoryMap) {
     if (!player) return null;
 
     try {
-        const { autoplayEngine } = require('../autoplay');
-        const next = await autoplayEngine.getNextTrack(player, trackHistoryMap);
+        if (!_cachedAutoplayEngine) {
+            _cachedAutoplayEngine = require('../autoplay').autoplayEngine;
+        }
+        const next = await _cachedAutoplayEngine.getNextTrack(player, trackHistoryMap);
         if (next) return next;
     } catch (engineErr) {
         console.warn('[Reso] Autoplay engine error, using internal fallback:', engineErr.message);

@@ -143,9 +143,9 @@ function setupLavalinkEvents(client) {
             if (!searchQuery) return false;
             if (!player.node || !player.node.connected) return false;
 
-            // Simplify fallback behaviour: Do not hide YouTube errors with SoundCloud or Spotify.
-            // If a track fails, retry on YouTube, and pick the *second* search result if available.
-            const fallbackSources = ['ytsearch'];
+            // If a track fails, retry on YouTube Music first (official audio release, avoids video login wall/codecs),
+            // then fall back to standard YouTube video search picking an alternate track.
+            const fallbackSources = ['ytmsearch', 'ytsearch'];
 
             for (const fallbackSource of fallbackSources) {
                 const ts = new Date().toISOString();
@@ -166,7 +166,8 @@ function setupLavalinkEvents(client) {
                             return false;
                         }
 
-                        // Pick the second track to avoid playing the exact same broken video, unless there's only one.
+                        // For ytmsearch, pick the first track (exact official audio match).
+                        // For ytsearch, pick the second track to avoid playing the exact same broken video.
                         let trackIndex = 0;
                         if ((fallbackSource === 'ytsearch' || fallbackSource === 'youtube') && result.tracks.length > 1) {
                             trackIndex = 1;

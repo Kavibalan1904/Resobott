@@ -4,6 +4,23 @@ const http = require('http');
 let cachedToken = null;
 let tokenExpiresAt = 0;
 
+// ── Static Regular Expressions ──
+const SPOTIFY_SHORT_URL_REGEX = /^(https?:\/\/)?(www\.)?(spotify\.link|spoti\.fi)\//i;
+const SPOTIFY_USER_PLAYLIST_REGEX = /^spotify:user:[^:]+:playlist:([a-zA-Z0-9]+)/i;
+const SPOTIFY_URI_MATCH_REGEX = /^spotify:(track|playlist|album|artist):([a-zA-Z0-9]+)/i;
+const SPOTIFY_URL_MATCH_REGEX = /open\.spotify\.com\/(?:[a-zA-Z0-9-_]+\/)?(track|playlist|album|artist)\/([a-zA-Z0-9]+)/i;
+const NEXT_DATA_SCRIPT_REGEX = /<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/;
+const UNICODE_SPACES_REGEX = /[\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]/g;
+const MULTI_SPACES_REGEX = /\s+/g;
+
+function cleanText(str) {
+    if (!str) return '';
+    return str
+        .replace(UNICODE_SPACES_REGEX, ' ')
+        .replace(MULTI_SPACES_REGEX, ' ')
+        .trim();
+}
+
 /**
  * Perform HTTPS/HTTP request with IPv4 forced (avoids Windows Node v18+ IPv6 timeouts)
  */
@@ -54,7 +71,7 @@ async function expandSpotifyUrl(url, maxRedirects = 3) {
     let currentUrl = url.trim();
 
     for (let i = 0; i < maxRedirects; i++) {
-        if (!/^(https?:\/\/)?(www\.)?(spotify\.link|spoti\.fi)\//i.test(currentUrl)) {
+        if (!SPOTIFY_SHORT_URL_REGEX.test(currentUrl)) {
             break;
         }
         try {
@@ -80,18 +97,18 @@ function parseSpotifyUrl(url) {
     const cleanUrl = url.trim();
 
     // URI format: spotify:track:id, spotify:playlist:id, spotify:user:xxx:playlist:id
-    const userPlaylistMatch = cleanUrl.match(/^spotify:user:[^:]+:playlist:([a-zA-Z0-9]+)/i);
+    const userPlaylistMatch = cleanUrl.match(SPOTIFY_USER_PLAYLIST_REGEX);
     if (userPlaylistMatch) {
         return { type: 'playlist', id: userPlaylistMatch[1] };
     }
 
-    const uriMatch = cleanUrl.match(/^spotify:(track|playlist|album|artist):([a-zA-Z0-9]+)/i);
+    const uriMatch = cleanUrl.match(SPOTIFY_URI_MATCH_REGEX);
     if (uriMatch) {
         return { type: uriMatch[1].toLowerCase(), id: uriMatch[2] };
     }
 
     // URL format: open.spotify.com/(optional prefix/)(track|playlist|album|artist)/id
-    const urlMatch = cleanUrl.match(/open\.spotify\.com\/(?:[a-zA-Z0-9-_]+\/)?(track|playlist|album|artist)\/([a-zA-Z0-9]+)/i);
+    const urlMatch = cleanUrl.match(SPOTIFY_URL_MATCH_REGEX);
     if (urlMatch) {
         return { type: urlMatch[1].toLowerCase(), id: urlMatch[2] };
     }
@@ -236,16 +253,11 @@ async function resolveSpotifyViaEmbed(type, id) {
         const res = await requestUrl(embedUrl, {}, 8000);
 
         if (res.status === 200) {
-            const match = res.data.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/);
+            const match = res.data.match(NEXT_DATA_SCRIPT_REGEX);
             if (match) {
                 const json = JSON.parse(match[1]);
                 const entity = json.props?.pageProps?.state?.data?.entity;
                 if (entity) {
-                    const cleanText = (str) => (str || '')
-                        .replace(/[\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]/g, ' ')
-                        .replace(/\s+/g, ' ')
-                        .trim();
-
                     if (type === 'track') {
                         const artist = cleanText(entity.artists?.[0]?.name || entity.subtitle || '');
                         const title = cleanText(entity.title || entity.name || '');

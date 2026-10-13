@@ -1,6 +1,7 @@
 const { SlashCommandBuilder } = require('discord.js');
 const { errorEmbed, successEmbed } = require('../../utils/embeds');
 const { getVoiceChannel, isInSameVoiceChannel, truncate } = require('../../utils/helpers');
+const { guildContextManager } = require('../../autoplay');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -28,7 +29,6 @@ module.exports = {
         try {
             // Record skip event in autoplay listening context
             try {
-                const { guildContextManager } = require('../../autoplay');
                 const startTime = player.get('trackStartTime') || 0;
                 const elapsedMs = startTime ? Date.now() - startTime : null;
                 guildContextManager.getContext(interaction.guild.id)?.recordTrackSkip(currentTrack, elapsedMs);

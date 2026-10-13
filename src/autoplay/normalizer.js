@@ -24,6 +24,13 @@ const VERSION_PATTERNS = {
     radioEdit: /\b(radio\s+edit|radio\s+version)\b/i,
 };
 
+const PRECOMPUTED_VERSION_PATTERNS = Object.entries(VERSION_PATTERNS);
+const VERSION_TAG_CHECK_REGEX = /\[(remix|acoustic|live|cover|instrumental|slowedreverb)\]/i;
+const UNICODE_SCRIPT_CLEAN_REGEX = /[^\w\s\u00C0-\u024F\u0900-\u0D7F]/gi;
+const WHITESPACE_COLLAPSE_REGEX = /\s+/g;
+const YOUTUBE_TOPIC_REGEX = /\s*-\s*topic$/i;
+const ARTIST_NOISE_SUFFIX_REGEX = /\s*(vevo|official|records|channel|music|audio)$/i;
+
 /**
  * Normalize track title by removing noise while preserving key version tags
  * @param {string} rawTitle 
@@ -39,7 +46,8 @@ function normalizeTitle(rawTitle) {
 
     // Retain version identifiers if present
     const versionTags = [];
-    for (const [key, regex] of Object.entries(VERSION_PATTERNS)) {
+    for (let i = 0; i < PRECOMPUTED_VERSION_PATTERNS.length; i++) {
+        const [key, regex] = PRECOMPUTED_VERSION_PATTERNS[i];
         if (regex.test(rawTitle)) {
             versionTags.push(`[${key}]`);
         }
@@ -48,8 +56,8 @@ function normalizeTitle(rawTitle) {
     // Clean punctuation and whitespace
     title = title
         .toLowerCase()
-        .replace(/[^\w\s\u00C0-\u024F\u0900-\u0D7F]/gi, ' ') // Allow unicode scripts (Tamil, Telugu, Hindi, etc.)
-        .replace(/\s+/g, ' ')
+        .replace(UNICODE_SCRIPT_CLEAN_REGEX, ' ') // Allow unicode scripts (Tamil, Telugu, Hindi, etc.)
+        .replace(WHITESPACE_COLLAPSE_REGEX, ' ')
         .trim();
 
     if (versionTags.length > 0) {
@@ -189,8 +197,8 @@ function isTrackDuplicate(candidateInfo, referenceInfo) {
     if (!candNormTitle || !refNormTitle) return false;
 
     // If version tags differ (e.g. one has [remix] or [live] and the other does not), they are NOT duplicates!
-    const candHasVersion = /\[(remix|acoustic|live|cover|instrumental|slowedreverb)\]/i.test(candNormTitle);
-    const refHasVersion = /\[(remix|acoustic|live|cover|instrumental|slowedreverb)\]/i.test(refNormTitle);
+    const candHasVersion = VERSION_TAG_CHECK_REGEX.test(candNormTitle);
+    const refHasVersion = VERSION_TAG_CHECK_REGEX.test(refNormTitle);
     if (candHasVersion !== refHasVersion) {
         return false;
     }
@@ -201,10 +209,15 @@ function isTrackDuplicate(candidateInfo, referenceInfo) {
     // Exact normalized title match
     if (candNormTitle === refNormTitle) {
         // If authors match or either author is unknown/contained, it's a duplicate
-        if (!candNormArtist || !refNormArtist || candNormArtist === refNormArtist ||
-            candNormArtist.includes(refNormArtist) || refNormArtist.includes(candNormArtist)) {
-            return true;
-        }
+        return Boolean(!candNormArtist || !refNormArtist || candNormArtist === refNormArtist ||
+            candNormArtist.includes(refNormArtist) || refNormArtist.includes(candNormArtist));
+    }
+
+    // Fast length ratio check: if length delta > 12%, Levenshtein similarity cannot exceed 0.88
+    const minLen = Math.min(candNormTitle.length, refNormTitle.length);
+    const maxLen = Math.max(candNormTitle.length, refNormTitle.length);
+    if (maxLen === 0 || (minLen / maxLen) <= 0.88) {
+        return false;
     }
 
     // High fuzzy similarity check on titles (> 0.88)

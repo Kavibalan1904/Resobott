@@ -18,14 +18,16 @@ class AutoplayStore {
         try {
             if (fs.existsSync(STORE_FILE)) {
                 const raw = fs.readFileSync(STORE_FILE, 'utf8');
-                const parsed = JSON.parse(raw);
-                for (const [guildId, val] of Object.entries(parsed)) {
-                    this.guildSettings.set(guildId, {
-                        enabled: Boolean(val.enabled),
-                        mode: val.mode || 'Balanced',
-                        likes: new Set(val.likes || []),
-                        dislikes: new Set(val.dislikes || []),
-                    });
+                if (raw && raw.trim()) {
+                    const parsed = JSON.parse(raw);
+                    for (const [guildId, val] of Object.entries(parsed)) {
+                        this.guildSettings.set(guildId, {
+                            enabled: Boolean(val.enabled),
+                            mode: val.mode || 'Balanced',
+                            likes: new Set(val.likes || []),
+                            dislikes: new Set(val.dislikes || []),
+                        });
+                    }
                 }
             }
         } catch (err) {

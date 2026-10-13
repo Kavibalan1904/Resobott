@@ -87,6 +87,27 @@ class CandidateScorer {
             }
         }
 
+        // Precompute manual artists and early skip titles to avoid repeating work per candidate
+        const recentManualArtists = [];
+        if (context?.recentManualTracks?.length > 0) {
+            const manuals = context.recentManualTracks.slice(0, 3);
+            for (let i = 0; i < manuals.length; i++) {
+                const mArt = normalizeArtist(manuals[i]?.info?.author || '');
+                if (mArt) recentManualArtists.push(mArt);
+            }
+        }
+
+        const earlySkipNormalizedTitles = [];
+        if (context?.skipEvents?.length > 0) {
+            for (let i = 0; i < context.skipEvents.length; i++) {
+                const skip = context.skipEvents[i];
+                if (skip?.type === 'early' && skip.title) {
+                    const norm = normalizeTitle(skip.title);
+                    if (norm) earlySkipNormalizedTitles.push(norm);
+                }
+            }
+        }
+
         const scored = candidates.map((track) => {
             const info = track.info || {};
             const candTitle = info.title || '';
@@ -142,10 +163,10 @@ class CandidateScorer {
             }
 
             // Match with recent manual tracks
-            if (context?.recentManualTracks?.length > 0) {
-                for (const manual of context.recentManualTracks.slice(0, 3)) {
-                    const mArtist = normalizeArtist(manual.info?.author || '');
-                    if (mArtist && (mArtist === candNormArtist || candNormArtist.includes(mArtist))) {
+            if (recentManualArtists.length > 0) {
+                for (let i = 0; i < recentManualArtists.length; i++) {
+                    const mArtist = recentManualArtists[i];
+                    if (mArtist === candNormArtist || candNormArtist.includes(mArtist)) {
                         sessionRelevance += 15;
                         break;
                     }
@@ -173,9 +194,9 @@ class CandidateScorer {
             }
 
             // Check skip events
-            if (context?.skipEvents?.length > 0) {
-                for (const skip of context.skipEvents) {
-                    if (skip.type === 'early' && skip.title && candNormTitle.includes(normalizeTitle(skip.title))) {
+            if (earlySkipNormalizedTitles.length > 0) {
+                for (let i = 0; i < earlySkipNormalizedTitles.length; i++) {
+                    if (candNormTitle.includes(earlySkipNormalizedTitles[i])) {
                         feedbackMatch = Math.min(feedbackMatch, 25);
                         break;
                     }

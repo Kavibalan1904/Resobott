@@ -18,6 +18,7 @@ const {
 } = require('../../utils/helpers');
 const { resolveSpotify } = require('../../utils/spotifyResolver');
 const { setTrackMetadata } = require('../../utils/trackMetadata');
+const { guildContextManager } = require('../../autoplay');
 
 // Map user-friendly source names to Lavalink search platforms
 const SOURCE_MAP = {
@@ -38,6 +39,30 @@ const SOURCE_EMOJIS = {
     apple: '🍎',
     file: '📁',
 };
+
+/**
+ * Helper to resolve a Spotify track/item to a playable Lavalink track.
+ * Searches YouTube Music (ytmsearch) first for official audio streams
+ * (avoiding YouTube video login requirements and unsupported codecs),
+ * falling back to YouTube video search (ytsearch).
+ */
+async function searchSpotifyTrack(player, item, user) {
+    if (!item) return null;
+    const queries = [item.searchQuery, item.title].filter(Boolean);
+    for (const q of queries) {
+        try {
+            const res = await player.search({ query: q, source: 'ytmsearch' }, user);
+            if (res?.tracks?.length > 0) return res;
+        } catch {}
+    }
+    for (const q of queries) {
+        try {
+            const res = await player.search({ query: q, source: 'ytsearch' }, user);
+            if (res?.tracks?.length > 0) return res;
+        } catch {}
+    }
+    return null;
+}
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -263,11 +288,8 @@ module.exports = {
                         const spotifyData = await resolveSpotify(query);
                         if (spotifyData) {
                             if (spotifyData.type === 'track') {
-                                console.log(`[Reso] 🟢 Searching YouTube for Spotify track: "${spotifyData.searchQuery}"`);
-                                let trackSearch = await player.search({ query: spotifyData.searchQuery, source: 'ytsearch' }, interaction.user);
-                                if (!trackSearch?.tracks?.length && spotifyData.title) {
-                                    trackSearch = await player.search({ query: spotifyData.title, source: 'ytsearch' }, interaction.user);
-                                }
+                                console.log(`[Reso] 🟢 Searching YouTube Music/YouTube for Spotify track: "${spotifyData.searchQuery}"`);
+                                const trackSearch = await searchSpotifyTrack(player, spotifyData, interaction.user);
 
                                 if (trackSearch?.tracks?.length > 0) {
                                     const matchedTrack = trackSearch.tracks[0];
@@ -287,10 +309,7 @@ module.exports = {
                                 let firstIndex = 0;
                                 for (let i = 0; i < Math.min(5, spotifyData.tracks.length); i++) {
                                     const item = spotifyData.tracks[i];
-                                    let search = await player.search({ query: item.searchQuery, source: 'ytsearch' }, interaction.user);
-                                    if (!search?.tracks?.length && item.title) {
-                                        search = await player.search({ query: item.title, source: 'ytsearch' }, interaction.user);
-                                    }
+                                    const search = await searchSpotifyTrack(player, item, interaction.user);
                                     if (search?.tracks?.length > 0) {
                                         firstTrack = search.tracks[0];
                                         if (spotifyData.thumbnail) firstTrack.info.artworkUrl = spotifyData.thumbnail;
@@ -325,10 +344,7 @@ module.exports = {
                                                 const batch = remainingItems.slice(i, i + BATCH_SIZE);
                                                 const batchPromises = batch.map(async (item) => {
                                                     try {
-                                                        let res = await player.search({ query: item.searchQuery, source: 'ytsearch' }, interaction.user);
-                                                        if (!res?.tracks?.length && item.title) {
-                                                            res = await player.search({ query: item.title, source: 'ytsearch' }, interaction.user);
-                                                        }
+                                                        const res = await searchSpotifyTrack(player, item, interaction.user);
                                                         if (res?.tracks?.length > 0) {
                                                             const t = res.tracks[0];
                                                             if (item.uri) t.info.uri = item.uri;
@@ -467,7 +483,6 @@ module.exports = {
 
             // Update Resonance AI DJ session context with manual request seed
             try {
-                const { guildContextManager } = require('../../autoplay');
                 guildContextManager.getContext(interaction.guild.id)?.recordManualRequest(track);
             } catch { /* ignore */ }
 

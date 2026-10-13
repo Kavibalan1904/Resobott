@@ -1,6 +1,7 @@
 const { SlashCommandBuilder } = require('discord.js');
 const { errorEmbed, successEmbed } = require('../../utils/embeds');
 const { getVoiceChannel, isInSameVoiceChannel } = require('../../utils/helpers');
+const { guildContextManager } = require('../../autoplay');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -40,7 +41,6 @@ module.exports = {
             // Flag manual stop to prevent autoplay and redundant queue-ended messages
             player.setData('manualStop', true);
             try {
-                const { guildContextManager } = require('../../autoplay');
                 guildContextManager.getContext(interaction.guild.id)?.nextGeneration();
             } catch { /* ignore */ }
 

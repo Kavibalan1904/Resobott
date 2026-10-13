@@ -2,6 +2,7 @@ const { MessageFlags } = require('discord.js');
 const { nowPlayingEmbed, createPlayerControls, successEmbed, errorEmbed, warningEmbed, EMOJIS } = require('../utils/embeds');
 const { truncate } = require('../utils/helpers');
 const { setTrackMetadata } = require('../utils/trackMetadata');
+const { guildContextManager } = require('../autoplay');
 
 /**
  * Handle all player button interactions (⏮ ⏸ ⏭ 🔀 ⏹)
@@ -168,7 +169,6 @@ async function handlePlayerButton(interaction, client) {
 
                 player.setData('manualStop', true);
                 try {
-                    const { guildContextManager } = require('../autoplay');
                     guildContextManager.getContext(guildId)?.nextGeneration();
                 } catch { /* ignore */ }
 
