@@ -6,7 +6,11 @@
   "scripts": {
     "start": "node --trace-warnings --optimize_for_size --max-old-space-size=460 index.js",
     "dev": "node --trace-warnings --watch index.js",
-    "test": "node --test"
+    "test": "node --test",
+    "avatar:apply": "node animator/animate.js",
+    "avatar:flame": "node animator/animate.js ./animator/avatar_halloween_flame.gif",
+    "avatar:spooky": "node animator/animate.js ./animator/avatar_halloween_spooky.gif",
+    "avatar:rollback": "node animator/rollback.js"
   },
   "engines": {
     "node": ">=18.0.0"

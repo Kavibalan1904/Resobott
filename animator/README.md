@@ -1,45 +1,77 @@
-# Discord Bot Animator
+# Discord Bot Animator & Avatar Management
 
-This folder contains a standalone script to apply an animated GIF avatar (and optionally a banner) to your Discord bot.
+This directory contains tools to apply animated GIF avatars to your Discord bot, switch between seasonal themes (like Halloween), and easily rollback anytime.
 
-## How to Use
+---
 
-### 1. Add your GIF
-Place your animated `.gif` file in this folder and name it `avatar.gif`:
-```
-animator/
-├── animate.js
-├── avatar.gif     ← Your animated avatar (place it here)
-├── banner.gif     ← Optional: animated banner
-└── README.md
-```
+## 🎃 Available Avatars
 
-### 2. Run the script
-From the **Resobot root folder**, run:
+| File | Description | Theme |
+|------|-------------|-------|
+| [`avatar.gif`](file:///animator/avatar.gif) | Currently active avatar ready to upload (Default: Jack-o'-Lantern Flame) | Active |
+| [`avatar_halloween_flame.gif`](file:///animator/avatar_halloween_flame.gif) | **Jack-o'-Lantern Flame**: Glowing pumpkin orange & golden flame with witch hat, spiderweb, floating embers, and original pulsing equalizer | Halloween (Flame) |
+| [`avatar_halloween_spooky.gif`](file:///animator/avatar_halloween_spooky.gif) | **Spooky Phantom**: Royal witch violet & pumpkin amber gradient with witch hat, spiderweb, floating embers, and original pulsing equalizer | Halloween (Spooky) |
+| [`avatar_original.gif`](file:///animator/avatar_original.gif) | **Original Icon**: Original cyan/purple neon gradient with pulsing visualizer | Original (Default) |
+| [`backup/`](file:///animator/backup/) | Permanent archive of all original avatars, square crops, zoomed crops, and high-res source logos/banners | Backup Vault |
 
+---
+
+## 🚀 How to Apply Halloween Avatar
+
+From the **Resobot root directory**, run any of the following:
+
+### 1. Apply Default Halloween Avatar (Flame)
 ```bash
+npm run avatar:apply
+# or
 node animator/animate.js
 ```
 
-Or specify a custom path:
+### 2. Apply Spooky Witch Violet Theme
 ```bash
-node animator/animate.js ./path/to/my-cool-avatar.gif
+npm run avatar:spooky
+# or
+node animator/animate.js ./animator/avatar_halloween_spooky.gif
 ```
 
-For both avatar AND banner:
+### 3. Apply Custom GIF
 ```bash
-node animator/animate.js ./animator/avatar.gif ./animator/banner.gif
+node animator/animate.js ./path/to/custom-avatar.gif
 ```
 
-### 3. Done!
-The script uploads the GIF once. Discord will display it as an animated avatar. You don't need to keep the script running.
+---
 
-## ⚠️ Important Notes
-- The GIF **must** be a `.gif` file for animation to work
-- Discord has a **rate limit** on profile changes — don't run this too frequently
-- The bot token is automatically read from the `.env` file in the parent directory
-- **Banner** animation requires your bot to have Nitro-equivalent features (most bots support it)
+## 🔄 How to Rollback Anytime
 
-## Recommended GIF Specs
-- **Avatar**: 128×128 px or 256×256 px, under 8 MB
-- **Banner**: 960×540 px or 600×240 px, under 8 MB
+Whenever Halloween is over and you want to restore your original bot icon:
+
+### Option A: Automatic Rollback (Restores file & uploads to Discord)
+```bash
+npm run avatar:rollback
+# or
+node animator/rollback.js
+```
+
+### Option B: Local-only Restore (Restores file without uploading yet)
+```bash
+node animator/rollback.js --local
+```
+
+### Option C: Direct Upload of Original
+```bash
+node animator/animate.js ./animator/avatar_original.gif
+```
+
+---
+
+## 🛠️ Regenerating / Customizing Themes
+
+If you ever want to re-render the Halloween avatars or customize particles/colors:
+```bash
+python animator/build_halloween_avatars.py
+```
+
+## ⚠️ Discord Notes
+- Discord has a **rate limit** on avatar changes (typically 2 changes per 10 minutes).
+- Changes can take up to a few minutes to propagate across all Discord servers and client caches.
+- The bot token is read automatically from the `.env` file in the project root.
