@@ -20,7 +20,7 @@ const { setTrackMetadata } = require('../../utils/trackMetadata');
 
 // Map user-friendly source names to Lavalink search platforms
 const SOURCE_MAP = {
-    auto: 'ytsearch',
+    auto: 'ytmsearch', // YouTube Music first (avoids video stream cipher & format errors)
     youtube: 'ytsearch',
     youtubemusic: 'ytmsearch',
     spotify: 'spsearch',
@@ -203,10 +203,10 @@ module.exports = {
 
             // Quick fallbacks only if primary search found nothing
             if (!result || !result.tracks || result.tracks.length === 0) {
-                // 1. Text search fallback: if spsearch returned nothing, try YouTube search
-                if (!isUrlQuery && !isAttachment && searchSource === 'spsearch') {
+                // 1. Text search fallback: if ytmsearch or spsearch returned nothing, try YouTube search
+                if (!isUrlQuery && !isAttachment && (searchSource === 'ytmsearch' || searchSource === 'spsearch')) {
                     try {
-                        console.log(`[Reso] ↻ PlayNext spsearch yielded no results, falling back to ytsearch...`);
+                        console.log(`[Reso] ↻ PlayNext ${searchSource} yielded no results, falling back to ytsearch...`);
                         result = await player.search({ query, source: 'ytsearch' }, interaction.user);
                     } catch {}
                 }

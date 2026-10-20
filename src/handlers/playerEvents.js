@@ -182,9 +182,19 @@ function setupLavalinkEvents(client) {
 
                         const channel = client.channels.cache.get(player.textChannelId);
                         if (channel) {
-                            const embed = warningEmbed(
-                                `Track **${truncate(rawTitle, 50)}** ${reason}. Switched to **${resolvedSource}**.`
-                            );
+                            const isSamePlatform = (originalSource === 'youtube' || originalSource === 'youtubemusic')
+                                && (resolvedSource.toLowerCase() === 'youtube' || resolvedSource.toLowerCase() === 'youtubemusic');
+
+                            let messageText;
+                            if (isSamePlatform) {
+                                messageText = `Primary audio stream for **${truncate(rawTitle, 50)}** ${reason}. Reconnected with alternative audio stream.`;
+                            } else if (originalSource && originalSource !== 'unknown') {
+                                messageText = `Track **${truncate(rawTitle, 50)}** was unavailable on **${capitalize(originalSource)}**. Switched to **${resolvedSource}**.`;
+                            } else {
+                                messageText = `Track **${truncate(rawTitle, 50)}** ${reason}. Switched to **${resolvedSource}**.`;
+                            }
+
+                            const embed = warningEmbed(messageText);
                             channel.send({ embeds: [embed] }).catch(() => { });
                         }
                         return true;

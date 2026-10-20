@@ -125,7 +125,7 @@ client.lavalink = new LavalinkManager({
         username: 'Reso',
     },
     playerOptions: {
-        defaultSearchPlatform: 'ytsearch', // Fast direct YouTube search
+        defaultSearchPlatform: 'ytmsearch', // YouTube Music for clean official audio without video format errors
         clientBasedPositionUpdateInterval: 500, // Smooth 500ms local position tracking
         volumeDecrementer: 0.75, // 100% client volume → 75% Lavalink volume (headroom, prevents clipping)
         onDisconnect: {

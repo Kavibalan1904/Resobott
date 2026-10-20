@@ -4,7 +4,7 @@ const { getVoiceChannel, checkVoicePermissions, truncate, formatMs, ensurePlayer
 const { setTrackMetadata } = require('../../utils/trackMetadata');
 
 const SOURCE_MAP = {
-    auto: 'ytsearch',
+    auto: 'ytmsearch', // YouTube Music first (avoids video stream cipher & format errors)
     youtube: 'ytsearch',
     youtubemusic: 'ytmsearch',
     spotify: 'spsearch',
