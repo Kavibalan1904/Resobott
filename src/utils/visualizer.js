@@ -1,13 +1,13 @@
 /**
- * Reso Audio Visualizer — Premium Spectrum Image Generator
- * Generates stylized audio spectrum / waveform images for Now Playing embeds.
- * Uses sharp (SVG → PNG) pipeline for fast, dependency-free image generation.
+ * Reso Audio Visualizer — Animated Spectrum Generator
+ * Generates smooth, seamlessly looping animated GIF visualizers for Now Playing embeds.
+ * Uses sharp (SVG → Raw Buffer Stacking → Animated GIF) pipeline for fast, zero-dependency generation.
  * Each track gets a unique, deterministic visualization based on its title hash.
  */
 
 const sharp = require('sharp');
 
-// ── Reso Color Palette (matches embeds.js) ──────────────────────
+// ── Reso Color Palettes (matches embeds.js) ──────────────────────
 const PALETTES = {
     violet: {
         name: 'Violet Storm',
@@ -53,7 +53,7 @@ const PALETTE_KEYS = Object.keys(PALETTES);
 const guildVisualizers = new Map();
 
 /**
- * Simple deterministic hash from a string (for seeding unique visuals per track)
+ * Deterministic hash from a string (seeding unique visuals per track)
  */
 function hashString(str) {
     let hash = 5381;
@@ -75,26 +75,7 @@ function seededRandom(seed) {
 }
 
 /**
- * Generate spectrum bar heights from a track seed
- */
-function generateBarHeights(seed, barCount, maxHeight) {
-    const rng = seededRandom(seed);
-    const heights = [];
-
-    // Generate raw heights with musical frequency curve shape
-    for (let i = 0; i < barCount; i++) {
-        // Create a natural-looking frequency curve: higher in the bass/mid range, tapering at highs
-        const normalizedPos = i / barCount;
-        const curve = Math.sin(normalizedPos * Math.PI) * 0.7 + 0.3;
-        const randomFactor = 0.4 + rng() * 0.6;
-        heights.push(Math.floor(curve * randomFactor * maxHeight));
-    }
-
-    return heights;
-}
-
-/**
- * Pick a palette based on the track seed
+ * Pick a palette based on track seed
  */
 function pickPalette(seed) {
     const index = seed % PALETTE_KEYS.length;
@@ -120,249 +101,224 @@ function interpolateColor(color1, color2, factor) {
 }
 
 /**
- * Get the gradient color for a bar based on its height
+ * Get the gradient color from 4 stops based on normalized ratio [0..1]
  */
-function getBarColor(height, maxHeight, gradientColors) {
-    const t = height / maxHeight;
-    if (t < 0.33) {
-        return interpolateColor(gradientColors[0], gradientColors[1], t / 0.33);
-    } else if (t < 0.66) {
-        return interpolateColor(gradientColors[1], gradientColors[2], (t - 0.33) / 0.33);
+function getGradientColor(t, gradientColors) {
+    const clamped = Math.max(0, Math.min(1, t));
+    if (clamped < 0.33) {
+        return interpolateColor(gradientColors[0], gradientColors[1], clamped / 0.33);
+    } else if (clamped < 0.66) {
+        return interpolateColor(gradientColors[1], gradientColors[2], (clamped - 0.33) / 0.33);
     } else {
-        return interpolateColor(gradientColors[2], gradientColors[3], (t - 0.66) / 0.34);
+        return interpolateColor(gradientColors[2], gradientColors[3], (clamped - 0.66) / 0.34);
     }
 }
 
-// ── SVG Generators ──────────────────────────────────────────────
+// ── FRAME GENERATORS (Seamless loop across totalFrames) ─────────
 
 /**
- * Generate a spectrum bars visualization (classic EQ look)
+ * Spectrum Bars Frame: Dancing EQ bars with illuminated peak caps & reflections
  */
-function generateBarsSVG(seed, width, height, palette) {
-    const barCount = 48;
-    const barGap = 3;
-    const barWidth = (width - (barCount - 1) * barGap - 40) / barCount; // 20px padding each side
-    const maxBarHeight = height - 40; // 20px padding top/bottom
-    const paddingX = 20;
-    const paddingBottom = 20;
+function generateBarsFrame(frame, totalFrames, seed, width, height, palette) {
+    const barCount = 38;
+    const barGap = 4;
+    const paddingX = 18;
+    const barWidth = (width - 2 * paddingX - (barCount - 1) * barGap) / barCount;
+    const maxBarHeight = height - 36;
+    const paddingBottom = 16;
+    const rng = seededRandom(seed);
 
-    const heights = generateBarHeights(seed, barCount, maxBarHeight);
+    // Continuous circular angle for seamless looping
+    const t = (frame / totalFrames) * Math.PI * 2;
+    let barsSvg = '';
 
-    // Build gradient defs for glow effects
-    let defs = `
-    <defs>
-        <filter id="glow">
-            <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
-            <feMerge>
-                <feMergeNode in="coloredBlur"/>
-                <feMergeNode in="SourceGraphic"/>
-            </feMerge>
-        </filter>
-        <linearGradient id="barGrad" x1="0" y1="1" x2="0" y2="0">
-            <stop offset="0%" stop-color="${palette.gradient[0]}" stop-opacity="1"/>
-            <stop offset="40%" stop-color="${palette.gradient[1]}" stop-opacity="0.95"/>
-            <stop offset="70%" stop-color="${palette.gradient[2]}" stop-opacity="0.85"/>
-            <stop offset="100%" stop-color="${palette.gradient[3]}" stop-opacity="0.7"/>
-        </linearGradient>
-        <linearGradient id="reflectGrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stop-color="${palette.gradient[0]}" stop-opacity="0.3"/>
-            <stop offset="100%" stop-color="${palette.gradient[0]}" stop-opacity="0"/>
-        </linearGradient>
-    </defs>`;
-
-    let bars = '';
     for (let i = 0; i < barCount; i++) {
+        const normX = i / barCount;
+        // Natural frequency curve: boosted lows/mids, rolling highs
+        const eqCurve = Math.sin(normX * Math.PI * 0.9 + 0.15) * 0.7 + 0.3;
+
+        // Multi-frequency harmonic oscillation (integers ensure seamless loop)
+        const speed1 = (i % 3) + 1;
+        const speed2 = ((i * 2) % 2) + 1;
+        const phase1 = rng() * Math.PI * 2;
+        const phase2 = rng() * Math.PI * 2;
+
+        const osc1 = Math.sin(t * speed1 + phase1);
+        const osc2 = Math.cos(t * speed2 + phase2) * 0.5;
+        const bounce = Math.abs(osc1 + osc2) / 1.5;
+
+        const barHeight = Math.max(6, Math.floor(eqCurve * (0.22 + bounce * 0.78) * maxBarHeight));
         const x = paddingX + i * (barWidth + barGap);
-        const barHeight = Math.max(4, heights[i]);
         const y = height - paddingBottom - barHeight;
 
-        // Main bar with rounded top
-        const barColor = getBarColor(barHeight, maxBarHeight, palette.gradient);
-        const radius = Math.min(barWidth / 2, 4);
-        bars += `<rect x="${x}" y="${y}" width="${barWidth}" height="${barHeight}" rx="${radius}" ry="${radius}" fill="${barColor}" filter="url(#glow)" opacity="0.9"/>`;
+        const color = getGradientColor(barHeight / maxBarHeight, palette.gradient);
+        const rx = Math.min(barWidth / 2, 3);
 
-        // Reflection bar (short, mirrored below baseline)
-        const reflectionHeight = Math.min(barHeight * 0.2, 15);
-        bars += `<rect x="${x}" y="${height - paddingBottom}" width="${barWidth}" height="${reflectionHeight}" rx="${radius}" ry="${radius}" fill="url(#reflectGrad)"/>`;
+        // Main bar body
+        barsSvg += `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barWidth.toFixed(1)}" height="${barHeight}" rx="${rx}" fill="${color}" opacity="0.95"/>`;
+        // Top peak highlight
+        barsSvg += `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barWidth.toFixed(1)}" height="3" rx="1.5" fill="#FFFFFF" opacity="0.8"/>`;
+        // Reflection bar below
+        const reflH = Math.min(barHeight * 0.22, 12);
+        barsSvg += `<rect x="${x.toFixed(1)}" y="${(height - paddingBottom + 2).toFixed(1)}" width="${barWidth.toFixed(1)}" height="${reflH.toFixed(1)}" rx="${rx}" fill="${palette.gradient[0]}" opacity="0.25"/>`;
     }
 
-    // Baseline glow line
-    const baseLine = `<line x1="${paddingX}" y1="${height - paddingBottom}" x2="${width - paddingX}" y2="${height - paddingBottom}" stroke="${palette.glow}" stroke-width="1" stroke-opacity="0.4"/>`;
+    const baseline = `<line x1="${paddingX}" y1="${height - paddingBottom}" x2="${width - paddingX}" y2="${height - paddingBottom}" stroke="${palette.glow}" stroke-width="1" stroke-opacity="0.3"/>`;
 
-    return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
-        ${defs}
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
         <rect width="${width}" height="${height}" fill="${palette.bg}"/>
-        ${baseLine}
-        ${bars}
+        ${baseline}
+        ${barsSvg}
     </svg>`;
 }
 
 /**
- * Generate a smooth waveform visualization
+ * Waveform Frame: Continuous fluid audio waves with illuminated crests & ambient fill
  */
-function generateWaveSVG(seed, width, height, palette) {
-    const pointCount = 80;
-    const rng = seededRandom(seed);
+function generateWaveFrame(frame, totalFrames, seed, width, height, palette) {
+    const pointCount = 60;
     const midY = height / 2;
-    const amplitude = height * 0.35;
-    const paddingX = 15;
+    const maxAmp = height * 0.34;
+    const paddingX = 12;
+    const t = (frame / totalFrames) * Math.PI * 2;
+    const rng = seededRandom(seed);
+    const phaseOffset = rng() * Math.PI * 2;
 
     const points = [];
     for (let i = 0; i < pointCount; i++) {
-        const x = paddingX + (i / (pointCount - 1)) * (width - 2 * paddingX);
-        // Layered sine curves + randomness for organic feel
-        const normalizedPos = i / pointCount;
-        const wave1 = Math.sin(normalizedPos * Math.PI * 3 + seed * 0.01) * 0.5;
-        const wave2 = Math.sin(normalizedPos * Math.PI * 7 + seed * 0.02) * 0.3;
-        const noise = (rng() - 0.5) * 0.4;
-        const combined = (wave1 + wave2 + noise) * amplitude;
-        points.push({ x, y: midY + combined });
+        const norm = i / (pointCount - 1);
+        const x = paddingX + norm * (width - 2 * paddingX);
+
+        // Harmonic traveling waveforms
+        const w1 = Math.sin(norm * Math.PI * 4 + t + phaseOffset) * 0.55;
+        const w2 = Math.sin(norm * Math.PI * 8 - t * 2 + phaseOffset * 0.5) * 0.3;
+        const w3 = Math.cos(norm * Math.PI * 2 + t) * 0.15;
+
+        // Edge dampening envelope
+        const envelope = Math.sin(norm * Math.PI);
+        const y = midY + (w1 + w2 + w3) * maxAmp * envelope;
+        points.push({ x, y });
     }
 
-    // Build smooth curve path using catmull-rom → cubic bezier conversion
-    let pathTop = `M ${points[0].x} ${points[0].y}`;
-    for (let i = 1; i < points.length - 1; i++) {
-        const prev = points[i - 1];
-        const curr = points[i];
-        const next = points[i + 1];
-        const cpx1 = curr.x - (next.x - prev.x) / 6;
-        const cpy1 = curr.y - (next.y - prev.y) / 6;
-        const cpx2 = curr.x + (next.x - prev.x) / 6;
-        const cpy2 = curr.y + (next.y - prev.y) / 6;
-        pathTop += ` C ${cpx1} ${cpy1}, ${prev.x + (curr.x - prev.x) * 0.66} ${prev.y + (curr.y - prev.y) * 0.66}, ${curr.x} ${curr.y}`;
-    }
-    const last = points[points.length - 1];
-    pathTop += ` L ${last.x} ${last.y}`;
-
-    // Create filled area (wave to bottom)
-    const filledPath = `${pathTop} L ${last.x} ${height} L ${points[0].x} ${height} Z`;
-
-    // Mirror wave (reflection)
-    const mirrorPoints = points.map(p => ({ x: p.x, y: midY + (midY - p.y) }));
-    let mirrorPath = `M ${mirrorPoints[0].x} ${mirrorPoints[0].y}`;
-    for (let i = 1; i < mirrorPoints.length; i++) {
-        mirrorPath += ` L ${mirrorPoints[i].x} ${mirrorPoints[i].y}`;
+    let pathD = `M ${points[0].x.toFixed(1)} ${points[0].y.toFixed(1)}`;
+    for (let i = 1; i < points.length; i++) {
+        pathD += ` L ${points[i].x.toFixed(1)} ${points[i].y.toFixed(1)}`;
     }
 
-    return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+    const fillD = `${pathD} L ${points[points.length - 1].x.toFixed(1)} ${height} L ${points[0].x.toFixed(1)} ${height} Z`;
+
+    // Reflection wave path
+    let mirrorD = `M ${points[0].x.toFixed(1)} ${(midY + (midY - points[0].y) * 0.5).toFixed(1)}`;
+    for (let i = 1; i < points.length; i++) {
+        const my = midY + (midY - points[i].y) * 0.5;
+        mirrorD += ` L ${points[i].x.toFixed(1)} ${my.toFixed(1)}`;
+    }
+
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
         <defs>
-            <filter id="glow">
-                <feGaussianBlur stdDeviation="4" result="coloredBlur"/>
-                <feMerge>
-                    <feMergeNode in="coloredBlur"/>
-                    <feMergeNode in="SourceGraphic"/>
-                </feMerge>
-            </filter>
             <linearGradient id="waveGrad" x1="0" y1="0" x2="1" y2="0">
                 <stop offset="0%" stop-color="${palette.gradient[0]}"/>
                 <stop offset="50%" stop-color="${palette.gradient[1]}"/>
                 <stop offset="100%" stop-color="${palette.gradient[2]}"/>
             </linearGradient>
             <linearGradient id="waveFill" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stop-color="${palette.gradient[0]}" stop-opacity="0.3"/>
+                <stop offset="0%" stop-color="${palette.gradient[0]}" stop-opacity="0.35"/>
                 <stop offset="100%" stop-color="${palette.bg}" stop-opacity="0"/>
             </linearGradient>
         </defs>
         <rect width="${width}" height="${height}" fill="${palette.bg}"/>
-        <path d="${filledPath}" fill="url(#waveFill)"/>
-        <path d="${pathTop}" fill="none" stroke="url(#waveGrad)" stroke-width="2.5" filter="url(#glow)"/>
-        <path d="${mirrorPath}" fill="none" stroke="${palette.gradient[0]}" stroke-width="1" stroke-opacity="0.2"/>
-        <line x1="${paddingX}" y1="${midY}" x2="${width - paddingX}" y2="${midY}" stroke="${palette.glow}" stroke-width="0.5" stroke-opacity="0.15"/>
+        <path d="${fillD}" fill="url(#waveFill)"/>
+        <path d="${mirrorD}" fill="none" stroke="${palette.gradient[0]}" stroke-width="1.2" stroke-opacity="0.3"/>
+        <path d="${pathD}" fill="none" stroke="url(#waveGrad)" stroke-width="2.5"/>
+        <line x1="${paddingX}" y1="${midY}" x2="${width - paddingX}" y2="${midY}" stroke="${palette.glow}" stroke-width="0.8" stroke-opacity="0.2"/>
     </svg>`;
 }
 
 /**
- * Generate a circular pulse / radial visualization
+ * Radial Pulse Frame: Expanding sonic rings pulsing from a glowing bass center
  */
-function generatePulseSVG(seed, width, height, palette) {
+function generatePulseFrame(frame, totalFrames, seed, width, height, palette) {
     const cx = width / 2;
     const cy = height / 2;
     const ringCount = 5;
-    const maxRadius = Math.min(width, height) / 2 - 15;
-    const rng = seededRandom(seed);
-    const segmentCount = 64;
+    const maxRadius = Math.min(width, height) / 2 - 10;
+    const tNorm = (frame / totalFrames);
+    const t = tNorm * Math.PI * 2;
 
-    let rings = '';
+    let ringsSvg = '';
 
     for (let r = 0; r < ringCount; r++) {
-        const baseRadius = (r + 1) * (maxRadius / ringCount);
-        const opacity = 1 - r * 0.15;
-        const strokeWidth = 3 - r * 0.4;
-
-        // Generate irregular ring using polar coordinates
-        const ringPoints = [];
-        for (let s = 0; s < segmentCount; s++) {
-            const angle = (s / segmentCount) * Math.PI * 2;
-            const variation = rng() * maxRadius * 0.12;
-            const radius = baseRadius + variation;
-            ringPoints.push({
-                x: cx + Math.cos(angle) * radius,
-                y: cy + Math.sin(angle) * radius,
-            });
-        }
-
-        // Close the ring with a smooth path
-        let path = `M ${ringPoints[0].x} ${ringPoints[0].y}`;
-        for (let i = 1; i <= ringPoints.length; i++) {
-            const curr = ringPoints[i % ringPoints.length];
-            const prev = ringPoints[(i - 1) % ringPoints.length];
-            const next = ringPoints[(i + 1) % ringPoints.length];
-            path += ` L ${curr.x} ${curr.y}`;
-        }
-        path += ' Z';
-
+        // Continuous outward ripple loop
+        const progress = (tNorm + r / ringCount) % 1;
+        const radius = 10 + progress * (maxRadius - 10);
+        const opacity = Math.sin(progress * Math.PI) * 0.85;
+        const strokeW = Math.max(1.5, 3.5 * (1 - progress * 0.6));
         const colorIdx = r % palette.gradient.length;
-        rings += `<path d="${path}" fill="none" stroke="${palette.gradient[colorIdx]}" stroke-width="${strokeWidth}" opacity="${opacity}" filter="url(#glow)"/>`;
+        const color = palette.gradient[colorIdx];
+
+        // Organic audio ring displacement
+        const segments = 32;
+        let d = '';
+        for (let s = 0; s <= segments; s++) {
+            const angle = (s / segments) * Math.PI * 2;
+            const wobble = Math.sin(angle * 4 + t * 2) * 2;
+            const curR = radius + wobble;
+            const px = cx + Math.cos(angle) * curR;
+            const py = cy + Math.sin(angle) * curR;
+            d += (s === 0 ? `M ${px.toFixed(1)} ${py.toFixed(1)}` : ` L ${px.toFixed(1)} ${py.toFixed(1)}`);
+        }
+        d += ' Z';
+
+        ringsSvg += `<path d="${d}" fill="none" stroke="${color}" stroke-width="${strokeW.toFixed(1)}" opacity="${opacity.toFixed(2)}"/>`;
     }
 
-    // Center dot
-    rings += `<circle cx="${cx}" cy="${cy}" r="6" fill="${palette.accent}" filter="url(#glow)" opacity="0.9"/>`;
-    rings += `<circle cx="${cx}" cy="${cy}" r="3" fill="#FFFFFF" opacity="0.7"/>`;
+    // Center pulsing bass core
+    const corePulse = 6 + Math.abs(Math.sin(t * 2)) * 4;
+    ringsSvg += `<circle cx="${cx}" cy="${cy}" r="${(corePulse + 4).toFixed(1)}" fill="${palette.glow}" opacity="0.3"/>`;
+    ringsSvg += `<circle cx="${cx}" cy="${cy}" r="${corePulse.toFixed(1)}" fill="${palette.accent}" opacity="0.9"/>`;
+    ringsSvg += `<circle cx="${cx}" cy="${cy}" r="3" fill="#FFFFFF" opacity="0.9"/>`;
 
-    return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
         <defs>
-            <filter id="glow">
-                <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
-                <feMerge>
-                    <feMergeNode in="coloredBlur"/>
-                    <feMergeNode in="SourceGraphic"/>
-                </feMerge>
-            </filter>
-            <radialGradient id="bgGrad" cx="50%" cy="50%" r="50%">
-                <stop offset="0%" stop-color="${palette.glow}" stop-opacity="0.08"/>
+            <radialGradient id="pulseBg" cx="50%" cy="50%" r="50%">
+                <stop offset="0%" stop-color="${palette.glow}" stop-opacity="0.12"/>
                 <stop offset="100%" stop-color="${palette.bg}" stop-opacity="1"/>
             </radialGradient>
         </defs>
         <rect width="${width}" height="${height}" fill="${palette.bg}"/>
-        <rect width="${width}" height="${height}" fill="url(#bgGrad)"/>
-        ${rings}
+        <rect width="${width}" height="${height}" fill="url(#pulseBg)"/>
+        ${ringsSvg}
     </svg>`;
 }
 
 // ── Style Registry ──────────────────────────────────────────────
 const STYLES = {
-    bars: { label: 'Spectrum Bars', emoji: '📊', generator: generateBarsSVG },
-    wave: { label: 'Waveform', emoji: '🌊', generator: generateWaveSVG },
-    pulse: { label: 'Radial Pulse', emoji: '💫', generator: generatePulseSVG },
+    bars: { label: 'Spectrum Bars', emoji: '📊', frameGenerator: generateBarsFrame },
+    wave: { label: 'Waveform', emoji: '🌊', frameGenerator: generateWaveFrame },
+    pulse: { label: 'Radial Pulse', emoji: '💫', frameGenerator: generatePulseFrame },
 };
 
 const STYLE_KEYS = Object.keys(STYLES);
 
 /**
- * Generate a visualizer image for a track
+ * Generate an animated GIF visualizer for a track
  * @param {string} trackTitle - The track title (used as seed for deterministic generation)
  * @param {object} [options] - Configuration options
  * @param {string} [options.style='bars'] - Visual style: 'bars', 'wave', or 'pulse'
- * @param {number} [options.width=600] - Image width
- * @param {number} [options.height=150] - Image height
+ * @param {number} [options.width=500] - Image width
+ * @param {number} [options.height=130] - Image height
+ * @param {number} [options.frames=16] - Total animation frames (seamless loop)
+ * @param {number} [options.delay=80] - Frame delay in ms (80ms = 12.5 FPS)
  * @param {string} [options.palette] - Force a specific palette key
- * @returns {Promise<Buffer>} PNG image buffer
+ * @returns {Promise<Buffer>} Animated GIF image buffer
  */
 async function generateVisualizer(trackTitle, options = {}) {
     const {
         style = 'bars',
-        width = 600,
-        height = 150,
+        width = 500,
+        height = 130,
+        frames = 16,
+        delay = 80,
         palette: forcePalette,
     } = options;
 
@@ -370,10 +326,34 @@ async function generateVisualizer(trackTitle, options = {}) {
     const palette = forcePalette ? (PALETTES[forcePalette] || pickPalette(seed)) : pickPalette(seed);
     const styleConfig = STYLES[style] || STYLES.bars;
 
-    const svg = styleConfig.generator(seed, width, height, palette);
-    const buffer = await sharp(Buffer.from(svg)).png().toBuffer();
+    // Render all frames in parallel as raw RGBA buffers
+    const rawFrames = await Promise.all(
+        Array.from({ length: frames }, async (_, f) => {
+            const svg = styleConfig.frameGenerator(f, frames, seed, width, height, palette);
+            return sharp(Buffer.from(svg))
+                .raw()
+                .ensureAlpha()
+                .toBuffer();
+        })
+    );
 
-    return buffer;
+    // Stack frames vertically and encode to animated GIF
+    const stacked = Buffer.concat(rawFrames);
+    const gifBuffer = await sharp(stacked, {
+        raw: {
+            width,
+            height: height * frames,
+            channels: 4,
+            pageHeight: height,
+        },
+    })
+    .gif({
+        delay: rawFrames.map(() => delay),
+        loop: 0, // Infinite loop
+    })
+    .toBuffer();
+
+    return gifBuffer;
 }
 
 // ── Guild visualizer toggle management ──────────────────────────

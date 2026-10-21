@@ -373,8 +373,8 @@ function setupLavalinkEvents(client) {
                     vizEnabled
                         ? generateVisualizer(track?.info?.title || 'Unknown', {
                             style: getVisualizerStyle(player.guildId),
-                            width: 600,
-                            height: 150,
+                            width: 500,
+                            height: 130,
                         }).catch(err => {
                             console.log('[Reso] Visualizer generation failed:', err.message);
                             return null;
@@ -399,10 +399,10 @@ function setupLavalinkEvents(client) {
 
                     const editPayload = { embeds: [updatedEmbed], components: updatedComponents };
 
-                    // Attach visualizer image if generated
+                    // Attach visualizer animated image if generated
                     if (vizBuffer) {
-                        const vizAttachment = new AttachmentBuilder(vizBuffer, { name: 'reso-visualizer.png' });
-                        updatedEmbed.setImage('attachment://reso-visualizer.png');
+                        const vizAttachment = new AttachmentBuilder(vizBuffer, { name: 'reso-visualizer.gif' });
+                        updatedEmbed.setImage('attachment://reso-visualizer.gif');
                         editPayload.files = [vizAttachment];
                     }
 

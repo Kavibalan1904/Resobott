@@ -120,7 +120,7 @@ module.exports = {
                 palette: palettePick || undefined,
             });
 
-            const attachment = new AttachmentBuilder(imageBuffer, { name: 'reso-visualizer.png' });
+            const attachment = new AttachmentBuilder(imageBuffer, { name: 'reso-visualizer.gif' });
             const currentStyle = STYLES[style];
             const paletteName = palettePick ? PALETTES[palettePick].name : 'Auto';
 
@@ -131,7 +131,7 @@ module.exports = {
                     `> **${info.author || 'Unknown Artist'}**\n\n` +
                     `${currentStyle.emoji} **Style:** ${currentStyle.label} • 🎨 **Palette:** ${paletteName}`
                 )
-                .setImage('attachment://reso-visualizer.png');
+                .setImage('attachment://reso-visualizer.gif');
 
             await interaction.editReply({
                 embeds: [embed],
