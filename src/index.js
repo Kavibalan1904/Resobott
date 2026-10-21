@@ -61,6 +61,7 @@ const client = new Client({
 });
 
 client.commands = new Collection();
+client.aliases = new Collection();
 
 // ── 24/7 mode storage (guild ID → boolean) ─────────────────────
 client.twentyFourSeven = new Set();
@@ -500,7 +501,7 @@ async function main() {
                 return;
             }
 
-            const command = client.commands.get(commandName);
+            const command = client.commands.get(commandName) || client.aliases?.get(commandName);
             if (!command) return;
 
             // Create a mock interaction object to support existing slash command logic
@@ -515,6 +516,7 @@ async function main() {
                 user: message.author,
                 member: message.member,
                 guild: message.guild,
+                guildId: message.guild.id,
                 channel: message.channel,
                 client: client,
                 deferred: false,

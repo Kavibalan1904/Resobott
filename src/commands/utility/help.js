@@ -16,7 +16,7 @@ module.exports = {
 
         // ── Specific command help ───────────────────────────────
         if (commandName) {
-            const command = client.commands.get(commandName.toLowerCase());
+            const command = client.commands.get(commandName.toLowerCase()) || client.aliases?.get(commandName.toLowerCase());
             if (!command) {
                 const embed = createEmbed('Error')
                     .setDescription(`${EMOJIS.error} Command \`${commandName}\` not found.`);
@@ -30,6 +30,14 @@ module.exports = {
                 .addFields(
                     { name: 'Category', value: `\`${command.category || 'Unknown'}\``, inline: true },
                 );
+
+            if (command.aliases && command.aliases.length > 0) {
+                embed.addFields({
+                    name: 'Aliases',
+                    value: command.aliases.map(a => `\`${process.env.PREFIX || '>'}${a}\``).join(', '),
+                    inline: true,
+                });
+            }
 
             // Show options if any
             const options = command.data.options;

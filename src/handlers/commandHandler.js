@@ -20,6 +20,11 @@ async function loadCommands(client) {
             if (command.data && command.execute) {
                 command.category = category;
                 client.commands.set(command.data.name, command);
+                if (client.aliases && Array.isArray(command.aliases)) {
+                    for (const alias of command.aliases) {
+                        client.aliases.set(alias.toLowerCase(), command);
+                    }
+                }
             } else {
                 console.warn(`[Reso] ⚠ Skipping ${file} — missing 'data' or 'execute'`);
             }
