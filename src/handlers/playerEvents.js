@@ -2,6 +2,8 @@ const { nowPlayingEmbed, createRecommendationComponents, createPlayerControls, c
 const { truncate, markNodeError, getHealthyNodes, getBestNode, computeNodeScore, cleanVideoTitle, PRIMARY_NODE_ID } = require('../utils/helpers');
 const { getRecommendations, getAutoplayTrack, updateSessionState } = require('../utils/recommendations');
 const { guildContextManager, autoplayStore, setTrackMetadata, getTrackMetadata } = require('../autoplay');
+const { generateVisualizer, isVisualizerEnabled, getVisualizerStyle } = require('../utils/visualizer');
+const { AttachmentBuilder } = require('discord.js');
 
 /**
  * Setup all Lavalink event listeners on the LavalinkManager
@@ -344,6 +346,7 @@ function setupLavalinkEvents(client) {
         // ── INSTANT: Send Now Playing embed immediately (don't wait for recommendations) ──
         const embed = nowPlayingEmbed(track, player, client, []);
         const controls = createPlayerControls(false);
+        const vizEnabled = isVisualizerEnabled(player.guildId);
 
         let sentMsg;
         try {
@@ -353,7 +356,7 @@ function setupLavalinkEvents(client) {
             lastNowPlayingMessage.delete(player.guildId);
         }
 
-        // ── BACKGROUND: Fetch recommendations after audio buffer fills ──
+        // ── BACKGROUND: Fetch recommendations & generate visualizer after audio buffer fills ──
         // Wait 4 seconds before fetching so the audio stream begins smoothly with zero CPU contention
         (async () => {
             try {
@@ -363,19 +366,47 @@ function setupLavalinkEvents(client) {
                 // Hide or collapse manual recommendations while autoplay is actively selecting or starting
                 if (activeAutoplayResolutions.has(player.guildId)) return;
 
+                // Fetch recommendations and generate visualizer in parallel
                 const sessionHistory = client.trackHistory?.get(player.guildId) || [];
-                const recommendations = await getRecommendations(player, track, 5, sessionHistory);
+                const [recommendations, vizBuffer] = await Promise.all([
+                    getRecommendations(player, track, 5, sessionHistory),
+                    vizEnabled
+                        ? generateVisualizer(track?.info?.title || 'Unknown', {
+                            style: getVisualizerStyle(player.guildId),
+                            width: 600,
+                            height: 150,
+                        }).catch(err => {
+                            console.log('[Reso] Visualizer generation failed:', err.message);
+                            return null;
+                        })
+                        : Promise.resolve(null),
+                ]);
+
                 if (client.recommendations) {
                     client.recommendations.set(player.guildId, recommendations);
                 }
 
-                // Only edit if we got recommendations AND the message still exists AND not actively resolving autoplay
-                if (recommendations.length > 0 && sentMsg && player.playing && !activeAutoplayResolutions.has(player.guildId)) {
+                // Only edit if we have updates AND the message still exists AND not actively resolving autoplay
+                const hasUpdates = recommendations.length > 0 || vizBuffer;
+                if (hasUpdates && sentMsg && player.playing && !activeAutoplayResolutions.has(player.guildId)) {
                     const updatedEmbed = nowPlayingEmbed(track, player, client, recommendations);
-                    const recRow = createRecommendationComponents(recommendations, player.guildId);
                     const updatedComponents = [controls];
-                    if (recRow) updatedComponents.push(recRow);
-                    await sentMsg.edit({ embeds: [updatedEmbed], components: updatedComponents }).catch(() => {});
+
+                    if (recommendations.length > 0) {
+                        const recRow = createRecommendationComponents(recommendations, player.guildId);
+                        if (recRow) updatedComponents.push(recRow);
+                    }
+
+                    const editPayload = { embeds: [updatedEmbed], components: updatedComponents };
+
+                    // Attach visualizer image if generated
+                    if (vizBuffer) {
+                        const vizAttachment = new AttachmentBuilder(vizBuffer, { name: 'reso-visualizer.png' });
+                        updatedEmbed.setImage('attachment://reso-visualizer.png');
+                        editPayload.files = [vizAttachment];
+                    }
+
+                    await sentMsg.edit(editPayload).catch(() => {});
                 }
             } catch (e) {
                 console.log('[Reso] Failed to fetch recommendations for nowPlaying:', e.message);
