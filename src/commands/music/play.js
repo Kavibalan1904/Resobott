@@ -22,7 +22,7 @@ const { guildContextManager } = require('../../autoplay');
 
 // Map user-friendly source names to Lavalink search platforms
 const SOURCE_MAP = {
-    auto: 'ytmsearch', // YouTube Music first (avoids video stream cipher & format errors)
+    auto: 'spsearch', // Spotify first — LavaSrc resolves to YouTube audio via ISRC for best match
     youtube: 'ytsearch',
     youtubemusic: 'ytmsearch',
     spotify: 'spsearch',
@@ -30,8 +30,9 @@ const SOURCE_MAP = {
     apple: 'amsearch',
 };
 
+
 const SOURCE_EMOJIS = {
-    auto: '🔴',
+    auto: '🟢',
     youtube: '🔴',
     youtubemusic: '🎵',
     spotify: '🟢',
@@ -86,11 +87,13 @@ module.exports = {
         })
         .addStringOption(option =>
             option.setName('source')
-                .setDescription('Where to search (default: YouTube)')
+                .setDescription('Where to search (default: Spotify)')
                 .setRequired(false)
                 .addChoices(
-                    { name: '🔴 YouTube (Default - Fast & High Quality)', value: 'auto' },
-                    { name: '🎵 YouTube Music (Clean Audio)', value: 'youtubemusic' }
+                    { name: '🟢 Spotify (Default - Best Match)', value: 'auto' },
+                    { name: '🔴 YouTube', value: 'youtube' },
+                    { name: '🎵 YouTube Music (Clean Audio)', value: 'youtubemusic' },
+                    { name: '🟠 SoundCloud', value: 'soundcloud' }
                 )
         ),
 
@@ -193,7 +196,8 @@ module.exports = {
         } else {
             // Text query — default to Spotify (spsearch) or user's chosen source
             searchSource = SOURCE_MAP[source] || 'spsearch';
-            console.log(`[Reso] 🔍 Text search on ${source} (${searchSource}): ${truncate(query, 80)}`);
+            detectedPlatform = source === 'auto' ? 'spotify' : source;
+            console.log(`[Reso] 🔍 Text search on ${detectedPlatform} (${searchSource}): ${truncate(query, 80)}`);
         }
 
         try {

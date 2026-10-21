@@ -4,7 +4,7 @@ const { getVoiceChannel, checkVoicePermissions, truncate, formatMs, ensurePlayer
 const { setTrackMetadata } = require('../../utils/trackMetadata');
 
 const SOURCE_MAP = {
-    auto: 'ytmsearch', // YouTube Music first (avoids video stream cipher & format errors)
+    auto: 'spsearch', // Spotify first — LavaSrc resolves to YouTube audio via ISRC for best match
     youtube: 'ytsearch',
     youtubemusic: 'ytmsearch',
     spotify: 'spsearch',
@@ -23,11 +23,13 @@ module.exports = {
         )
         .addStringOption(option =>
             option.setName('source')
-                .setDescription('Where to search (default: YouTube)')
+                .setDescription('Where to search (default: Spotify)')
                 .setRequired(false)
                 .addChoices(
-                    { name: '🔴 YouTube (Default - Fast & High Quality)', value: 'auto' },
-                    { name: '🎵 YouTube Music (Clean Studio Audio)', value: 'youtubemusic' }
+                    { name: '🟢 Spotify (Default - Best Match)', value: 'auto' },
+                    { name: '🔴 YouTube', value: 'youtube' },
+                    { name: '🎵 YouTube Music (Clean Audio)', value: 'youtubemusic' },
+                    { name: '🟠 SoundCloud', value: 'soundcloud' }
                 )
         ),
 
