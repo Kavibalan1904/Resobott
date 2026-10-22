@@ -351,50 +351,16 @@ function setupLavalinkEvents(client) {
             lastNowPlayingMessage.delete(player.guildId);
         }
 
-        // ── INSTANT: Send Now Playing embed immediately (don't wait for recommendations) ──
+        // ── INSTANT: Send Now Playing embed immediately ──
         const embed = nowPlayingEmbed(track, player, client, []);
         const controls = createPlayerControls(false);
 
-        let sentMsg;
         try {
-            sentMsg = await channel.send({ embeds: [embed], components: [controls] });
+            const sentMsg = await channel.send({ embeds: [embed], components: [controls] });
             lastNowPlayingMessage.set(player.guildId, sentMsg);
         } catch {
             lastNowPlayingMessage.delete(player.guildId);
         }
-
-        // ── BACKGROUND: Fetch recommendations after audio buffer fills ──
-        // Wait 4 seconds before fetching so the audio stream begins smoothly with zero CPU contention
-        (async () => {
-            try {
-                await new Promise(resolve => setTimeout(resolve, 4000));
-                if (!player.playing || !sentMsg) return;
-
-                // Hide or collapse manual recommendations while autoplay is actively selecting or starting
-                if (activeAutoplayResolutions.has(player.guildId)) return;
-
-                // Fetch recommendations
-                const sessionHistory = client.trackHistory?.get(player.guildId) || [];
-                const recommendations = await getRecommendations(player, track, 5, sessionHistory);
-
-                if (client.recommendations) {
-                    client.recommendations.set(player.guildId, recommendations);
-                }
-
-                // Only edit if we have updates AND the message still exists AND not actively resolving autoplay
-                if (recommendations.length > 0 && sentMsg && player.playing && !activeAutoplayResolutions.has(player.guildId)) {
-                    const updatedEmbed = nowPlayingEmbed(track, player, client, recommendations);
-                    const updatedComponents = [controls];
-
-                    const recRow = createRecommendationComponents(recommendations, player.guildId);
-                    if (recRow) updatedComponents.push(recRow);
-
-                    await sentMsg.edit({ embeds: [updatedEmbed], components: updatedComponents }).catch(() => {});
-                }
-            } catch (e) {
-                console.log('[Reso] Failed to fetch recommendations for nowPlaying:', e.message);
-            }
-        })();
     });
 
     // ── Track ends ─────────────────────────────────────────────
