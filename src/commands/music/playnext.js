@@ -171,17 +171,21 @@ module.exports = {
 
             // Create or get the player (assigning primary-main node)
             const targetNode = getBestNode(manager) || connectedNodes[0];
+            const { getDesignatedChannel } = require('../../utils/settings');
+            const targetTextChannelId = getDesignatedChannel(interaction.guild.id) || interaction.channel.id;
 
             let player = manager.getPlayer(interaction.guild.id);
             if (!player) {
                 player = manager.createPlayer({
                     guildId: interaction.guild.id,
                     voiceChannelId: voiceChannel.id,
-                    textChannelId: interaction.channel.id,
+                    textChannelId: targetTextChannelId,
                     selfDeaf: true,
                     volume: parseInt(process.env.DEFAULT_VOLUME) || 50,
                     node: targetNode.id,
                 });
+            } else if (getDesignatedChannel(interaction.guild.id)) {
+                player.textChannelId = getDesignatedChannel(interaction.guild.id);
             }
 
             if (!player.connected) {

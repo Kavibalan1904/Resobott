@@ -47,10 +47,14 @@ module.exports = {
             if (confirmation.customId === 'setchannel_yes') {
                 if (action === 'set') {
                     setDesignatedChannel(interaction.guildId, channel.id);
-                    await confirmation.update({ content: `✅ Successfully set designated channel to <#${channel.id}>.`, embeds: [], components: [] });
+                    const player = client?.lavalink?.getPlayer(interaction.guildId);
+                    if (player) {
+                        player.textChannelId = channel.id;
+                    }
+                    await confirmation.update({ content: `✅ Successfully set designated channel to <#${channel.id}>. All music alerts and commands are now restricted to this channel.`, embeds: [], components: [] });
                 } else {
                     removeDesignatedChannel(interaction.guildId);
-                    await confirmation.update({ content: `✅ Successfully removed channel restriction.`, embeds: [], components: [] });
+                    await confirmation.update({ content: `✅ Successfully removed channel restriction. The bot will respond in all channels.`, embeds: [], components: [] });
                 }
             } else {
                 await confirmation.update({ content: `❌ Operation cancelled.`, embeds: [], components: [] });

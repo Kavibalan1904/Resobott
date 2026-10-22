@@ -50,6 +50,12 @@ function saveSettings(immediate = false) {
     }, 250);
 }
 
+function isDesignatedChannel(guildId, channelId) {
+    const designated = getDesignatedChannel(guildId);
+    if (!designated) return true;
+    return designated === channelId;
+}
+
 function getDesignatedChannel(guildId) {
     if (!settings[guildId]) return null;
     return settings[guildId].designatedChannel || null;
@@ -58,13 +64,13 @@ function getDesignatedChannel(guildId) {
 function setDesignatedChannel(guildId, channelId) {
     if (!settings[guildId]) settings[guildId] = {};
     settings[guildId].designatedChannel = channelId;
-    saveSettings();
+    saveSettings(true);
 }
 
 function removeDesignatedChannel(guildId) {
     if (settings[guildId] && settings[guildId].designatedChannel) {
         delete settings[guildId].designatedChannel;
-        saveSettings();
+        saveSettings(true);
     }
 }
 
@@ -74,5 +80,6 @@ loadSettings();
 module.exports = {
     getDesignatedChannel,
     setDesignatedChannel,
-    removeDesignatedChannel
+    removeDesignatedChannel,
+    isDesignatedChannel
 };

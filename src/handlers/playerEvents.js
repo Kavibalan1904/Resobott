@@ -3,6 +3,7 @@ const { truncate, markNodeError, getHealthyNodes, getBestNode, computeNodeScore,
 const { getRecommendations, getAutoplayTrack, updateSessionState } = require('../utils/recommendations');
 const { guildContextManager, autoplayStore, setTrackMetadata, getTrackMetadata } = require('../autoplay');
 const { generateVisualizer, isVisualizerEnabled, getVisualizerStyle } = require('../utils/visualizer');
+const { getDesignatedChannel } = require('../utils/settings');
 const { AttachmentBuilder } = require('discord.js');
 
 /**
@@ -10,6 +11,15 @@ const { AttachmentBuilder } = require('discord.js');
  */
 function setupLavalinkEvents(client) {
     const manager = client.lavalink;
+
+    function getPlayerTextChannel(player) {
+        if (!player) return null;
+        const targetChannelId = getDesignatedChannel(player.guildId) || player.textChannelId;
+        if (targetChannelId && player.textChannelId !== targetChannelId) {
+            player.textChannelId = targetChannelId;
+        }
+        return client.channels.cache.get(targetChannelId) || client.channels.cache.get(player.textChannelId) || null;
+    }
 
     // ── Track which nodes have had problems (for smart logging) ──
     const nodeReconnectCounts = new Map();
@@ -182,7 +192,7 @@ function setupLavalinkEvents(client) {
                         successfulRetries.add(guildId); // Mark as successfully retried BEFORE playing to suppress queueEnd race condition
                         await player.play({ clientTrack: resolvedTrack });
 
-                        const channel = client.channels.cache.get(player.textChannelId);
+                        const channel = getPlayerTextChannel(player);
                         if (channel) {
                             const isSamePlatform = (originalSource === 'youtube' || originalSource === 'youtubemusic')
                                 && (resolvedSource.toLowerCase() === 'youtube' || resolvedSource.toLowerCase() === 'youtubemusic');
@@ -331,7 +341,7 @@ function setupLavalinkEvents(client) {
             status: 'online',
         });
 
-        const channel = client.channels.cache.get(player.textChannelId);
+        const channel = getPlayerTextChannel(player);
         if (!channel) return;
 
         // ── Delete previous Now Playing message so only one active message exists ──
@@ -612,7 +622,7 @@ function setupLavalinkEvents(client) {
                         await player.play();
                     }
 
-                    const channel = client.channels.cache.get(player.textChannelId);
+                    const channel = getPlayerTextChannel(player);
                     if (channel) {
                         const embed = createEmbed('Autoplay')
                             .setAuthor({ name: '🔄 Reso Autoplay' })
@@ -636,7 +646,7 @@ function setupLavalinkEvents(client) {
             }
         }
 
-        const channel = client.channels.cache.get(player.textChannelId);
+        const channel = getPlayerTextChannel(player);
         if (!channel) return;
 
         const embed = createEmbed('Info')
@@ -661,7 +671,7 @@ function setupLavalinkEvents(client) {
         if (retried) return; // Retry initiated, don't skip
 
         // Retry failed or already retried — skip with error message
-        const channel = client.channels.cache.get(player.textChannelId);
+        const channel = getPlayerTextChannel(player);
         if (channel) {
             const embed = errorEmbed(
                 `Failed to play **${truncate(track?.info?.title, 50)}**\n\`\`\`${truncate(payload?.exception?.message || 'Unknown error', 200)}\`\`\``
@@ -688,7 +698,7 @@ function setupLavalinkEvents(client) {
         if (retried) return; // Retry initiated successfully
 
         // Retry failed or already retried — notify user and skip
-        const channel = client.channels.cache.get(player.textChannelId);
+        const channel = getPlayerTextChannel(player);
         if (channel) {
             const embed = errorEmbed(`Track **${truncate(track?.info?.title, 50)}** got stuck. Skipping...`);
             channel.send({ embeds: [embed] }).catch(() => { });

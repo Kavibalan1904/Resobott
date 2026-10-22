@@ -201,7 +201,8 @@ client.on('voiceStateUpdate', (oldState, newState) => {
                 const stillAlone = !vc || vc.members.filter(m => !m.user.bot).size === 0;
 
                 if (stillAlone) {
-                    const textChannel = client.channels.cache.get(currentPlayer.textChannelId);
+                    const targetChannelId = getDesignatedChannel(currentPlayer.guildId) || currentPlayer.textChannelId;
+                    const textChannel = client.channels.cache.get(targetChannelId) || client.channels.cache.get(currentPlayer.textChannelId);
                     currentPlayer.destroy();
                     if (textChannel) {
                         const embed = createEmbed('Info')
@@ -405,14 +406,17 @@ async function main() {
                     const targetNode = getBestNode(client.lavalink);
                     let player = client.lavalink.getPlayer(guildId);
                     if (!player) {
+                        const targetChannelId = getDesignatedChannel(guildId) || interaction.channel.id;
                         player = client.lavalink.createPlayer({
                             guildId: guildId,
                             voiceChannelId: memberVC.id,
-                            textChannelId: interaction.channel.id,
+                            textChannelId: targetChannelId,
                             selfDeaf: true,
                             volume: parseInt(process.env.DEFAULT_VOLUME) || 50,
                             node: targetNode?.id,
                         });
+                    } else if (getDesignatedChannel(guildId)) {
+                        player.textChannelId = getDesignatedChannel(guildId);
                     }
 
                     if (!player.connected) {
@@ -455,7 +459,8 @@ async function main() {
 
             // Check designated command channel
             const designatedChannel = getDesignatedChannel(interaction.guildId);
-            if (designatedChannel && interaction.channelId !== designatedChannel) {
+            const exemptSlashCommands = ['setchannel', 'clearbot'];
+            if (designatedChannel && interaction.channelId !== designatedChannel && !exemptSlashCommands.includes(interaction.commandName)) {
                 return interaction.reply({
                     content: `❌ I only respond to commands in <#${designatedChannel}>.`,
                     flags: MessageFlags.Ephemeral
@@ -497,7 +502,12 @@ async function main() {
 
             // Check designated command channel
             const designatedChannel = getDesignatedChannel(message.guild.id);
-            if (designatedChannel && message.channel.id !== designatedChannel) {
+            const exemptPrefixCommands = ['setchannel', 'clearbot', 'cleanup', 'purgebot', 'cleanbot', 'clearb'];
+            if (designatedChannel && message.channel.id !== designatedChannel && !exemptPrefixCommands.includes(commandName)) {
+                const warningMsg = await message.reply(`❌ I only respond to commands in <#${designatedChannel}>.`).catch(() => null);
+                if (warningMsg) {
+                    setTimeout(() => warningMsg.delete().catch(() => {}), 6000);
+                }
                 return;
             }
 
