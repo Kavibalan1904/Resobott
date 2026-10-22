@@ -384,7 +384,7 @@ async function main() {
 
             // Check designated command channel
             const designatedChannel = getDesignatedChannel(interaction.guildId);
-            const exemptSlashCommands = ['setchannel', 'clearbot'];
+            const exemptSlashCommands = ['setchannel', 'clearbot', 'birthday'];
             if (designatedChannel && interaction.channelId !== designatedChannel && !exemptSlashCommands.includes(interaction.commandName)) {
                 return interaction.reply({
                     content: `❌ I only respond to commands in <#${designatedChannel}>.`,
@@ -427,7 +427,7 @@ async function main() {
 
             // Check designated command channel
             const designatedChannel = getDesignatedChannel(message.guild.id);
-            const exemptPrefixCommands = ['setchannel', 'clearbot', 'cleanup', 'purgebot', 'cleanbot', 'clearb'];
+            const exemptPrefixCommands = ['setchannel', 'clearbot', 'cleanup', 'purgebot', 'cleanbot', 'clearb', 'birthday', 'bday', 'hbd'];
             if (designatedChannel && message.channel.id !== designatedChannel && !exemptPrefixCommands.includes(commandName)) {
                 const warningMsg = await message.reply(`❌ I only respond to commands in <#${designatedChannel}>.`).catch(() => null);
                 if (warningMsg) {
@@ -487,8 +487,15 @@ async function main() {
                     },
                     getAttachment: (name) => {
                         return message.attachments.first() || null;
+                    },
+                    getUser: (name) => {
+                        return message.mentions.users.first() || null;
+                    },
+                    getMember: (name) => {
+                        return message.mentions.members?.first() || null;
                     }
                 },
+                rawMessage: message,
                 deferReply: async () => {
                     interaction.deferred = true;
                     return message;
