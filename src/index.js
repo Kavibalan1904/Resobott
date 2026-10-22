@@ -102,6 +102,8 @@ defaultNodes.push({
     secure: isSecure,
     retryAmount: Infinity, // Dedicated node — always keep reconnecting
     retryDelay: 5000,      // Fast 5s reconnect attempts
+    heartBeatInterval: 15000, // 15s WebSocket ping prevents reverse proxy idle closure (code 1006)
+    enablePingOnStatsCheck: true,
 });
 
 // ── Fallback Backup Node (Ensures 100% uptime when primary is restarting/sleeping) ──
@@ -113,6 +115,8 @@ defaultNodes.push({
     secure: true,
     retryAmount: Infinity,
     retryDelay: 10000,
+    heartBeatInterval: 15000,
+    enablePingOnStatsCheck: true,
 });
 
 client.lavalink = new LavalinkManager({

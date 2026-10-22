@@ -224,6 +224,22 @@ function setupLavalinkEvents(client) {
         }
     }
 
+    // ── Lavalink Session Resumption ─────────────────────────────
+    // When Lavalink sends the 'ready' payload, activate session resumption with a 300s timeout.
+    // This tells Lavalink NOT to shut down active players if the WebSocket drops (code 1006 / network blips).
+    manager.nodeManager.on('raw', async (node, payload) => {
+        if (payload?.op === 'ready' && payload.sessionId) {
+            node.sessionId = payload.sessionId;
+            node.options.sessionId = payload.sessionId; // Retained so reconnect() sends Session-Id in handshake
+            try {
+                await node.updateSession(true, 300);
+                console.log(`[Reso] 🔒 Session resumption active on "${node.id}" (Session ID: ${payload.sessionId.slice(0, 8)}..., Timeout: 300s)`);
+            } catch (err) {
+                console.warn(`[Reso] Could not update session resumption on "${node.id}":`, err.message);
+            }
+        }
+    });
+
     // ── Node connected ─────────────────────────────────────────
     const initialConnectedNodes = new Set();
     manager.nodeManager.on('connect', async (node) => {
@@ -235,6 +251,12 @@ function setupLavalinkEvents(client) {
             console.log(`[Reso] ✓ Lavalink node "${node.id}" reconnected after ${prevAttempts} attempt(s)`);
         }
         nodeReconnectCounts.set(node.id, 0);
+
+        // Ensure session resumption is registered if sessionId is already known
+        if (node.sessionId) {
+            node.options.sessionId = node.sessionId;
+            node.updateSession(true, 300).catch(() => {});
+        }
     });
 
     // ── Node disconnected ──────────────────────────────────────
@@ -288,6 +310,17 @@ function setupLavalinkEvents(client) {
     // ── Node resumed ───────────────────────────────────────────
     manager.nodeManager.on('resumed', (node, payload, players) => {
         console.log(`[Reso] ✓ Node "${node.id}" session resumed — ${players?.length || 0} player(s) restored`);
+        if (Array.isArray(players)) {
+            for (const pData of players) {
+                const player = manager.players.get(pData.guildId);
+                if (player) {
+                    player.connected = true;
+                    player.playing = !pData.state?.paused;
+                    player.paused = !!pData.state?.paused;
+                    if (pData.state?.position) player.lastPosition = pData.state.position;
+                }
+            }
+        }
     });
 
     // ── Track starts playing ───────────────────────────────────
