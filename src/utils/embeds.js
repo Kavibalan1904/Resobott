@@ -269,43 +269,6 @@ function createDisabledControls() {
     return row;
 }
 
-/**
- * Create interactive action row with recommendation dropdown menu
- */
-function createRecommendationComponents(recommendations = [], guildId = '') {
-    if (!recommendations || recommendations.length === 0) return null;
-
-    const sliced = recommendations.slice(0, 5);
-    const options = sliced.map((rec, idx) => {
-        const rInfo = rec.info || {};
-        const rTitle = truncate(rInfo.title || `Song ${idx + 1}`, 70);
-        const badge = rec.categoryLabel || '🎵 Recommended';
-        const dur = rInfo.isStream ? 'Live' : formatMs(rInfo.duration || 0);
-
-        let emoji = '🎵';
-        if (badge.startsWith('🎬')) emoji = '🎬';       // Tier 2: Same Movie/Album
-        else if (badge.startsWith('🎤')) emoji = '🎤';   // Tier 3: Same Singer/Artist
-        else if (badge.startsWith('🎧')) emoji = '🎧';   // Tier 1: Composer Collab
-        else if (badge.startsWith('🔥')) emoji = '🔥';   // Tier 4: Genre Match
-        else if (badge.startsWith('✨')) emoji = '✨';    // Tier 5: Discovery/Trending
-        else if (badge.startsWith('🎭')) emoji = '🎭';
-        else if (badge.startsWith('🎲')) emoji = '🎲';
-
-        return {
-            label: `${idx + 1}. ${rTitle}`,
-            description: `${badge} • ${dur}`,
-            value: String(idx),
-            emoji: emoji,
-        };
-    });
-
-    const selectMenu = new StringSelectMenuBuilder()
-        .setCustomId(`rec_select_${guildId}`)
-        .setPlaceholder('Optional recommendations — add a song to the queue')
-        .addOptions(options);
-
-    return new ActionRowBuilder().addComponents(selectMenu);
-}
 
 /**
  * Create a premium track-added embed
@@ -374,7 +337,6 @@ module.exports = {
     premiumProgressBar,
     createPlayerControls,
     createDisabledControls,
-    createRecommendationComponents,
     trackAddedEmbed,
     errorEmbed,
     successEmbed,

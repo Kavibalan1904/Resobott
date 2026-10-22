@@ -14,7 +14,7 @@ describe('Existing Bot Architecture Regression Check', () => {
         assert.ok(files.length >= 30, `Expected at least 30 music commands, found ${files.length}`);
         assert.ok(files.includes('vibe.js'), 'Expected vibe.js to be present in music commands');
         assert.ok(files.includes('play.js'), 'Expected play.js to be present');
-        assert.ok(files.includes('recommend.js'), 'Expected recommend.js to be present');
+        assert.ok(files.includes('playlist.js'), 'Expected playlist.js to be present');
 
         for (const file of files) {
             const cmd = require(path.join(musicDir, file));

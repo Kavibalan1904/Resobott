@@ -1,6 +1,6 @@
-const { nowPlayingEmbed, createRecommendationComponents, createPlayerControls, createDisabledControls, createEmbed, errorEmbed, warningEmbed, EMOJIS, capitalize } = require('../utils/embeds');
+const { nowPlayingEmbed, createPlayerControls, createDisabledControls, createEmbed, errorEmbed, warningEmbed, EMOJIS, capitalize } = require('../utils/embeds');
 const { truncate, markNodeError, getHealthyNodes, getBestNode, computeNodeScore, cleanVideoTitle, PRIMARY_NODE_ID } = require('../utils/helpers');
-const { getRecommendations, getAutoplayTrack, updateSessionState } = require('../utils/recommendations');
+const { getAutoplayTrack, updateSessionState } = require('../utils/recommendations');
 const { guildContextManager, autoplayStore, setTrackMetadata, getTrackMetadata } = require('../autoplay');
 const { getDesignatedChannel } = require('../utils/settings');
 

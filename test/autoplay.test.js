@@ -33,7 +33,7 @@ const {
     trackMetadataStore,
 } = require('../src/autoplay');
 
-const { nowPlayingEmbed, createRecommendationComponents } = require('../src/utils/embeds');
+const { nowPlayingEmbed } = require('../src/utils/embeds');
 const { YouTubeMixProvider } = require('../src/autoplay/providers/youtubeMixProvider');
 const { YtMusicSearchProvider } = require('../src/autoplay/providers/ytMusicSearchProvider');
 const { ArtistDiscoveryProvider } = require('../src/autoplay/providers/artistDiscoveryProvider');
@@ -533,21 +533,13 @@ describe('Reso Smart Autoplay — 8. Autoplay & Recommendations Strict Separatio
         assert.ok(!description.includes('Picked from your listening session'), 'Autoplay message must not use old template');
     });
 
-    it('4. Manual recommendations remain selectable and can be added to the queue', () => {
+    it('4. User-selected tracks maintain explicit requester and metadata', () => {
         const mockRecs = [
             { info: { title: 'Recommend Song 1', author: 'Artist 1', duration: 180000, uri: 'https://youtube.com/1' }, categoryLabel: '🎬 From Album' },
             { info: { title: 'Recommend Song 2', author: 'Artist 2', duration: 200000, uri: 'https://youtube.com/2' }, categoryLabel: '🎤 By Artist' },
         ];
 
-        const row = createRecommendationComponents(mockRecs, guildId);
-        assert.ok(row, 'Component row must be generated');
-
-        const selectMenu = row.components[0];
-        assert.ok(selectMenu, 'Select menu must exist');
-        assert.strictEqual(selectMenu.data.placeholder, 'Optional recommendations — add a song to the queue');
-        assert.strictEqual(selectMenu.options.length, 2);
-
-        // Simulate user selecting option 0
+        // Simulate user adding track
         const pickedRec = mockRecs[0];
         pickedRec.requester = { username: 'TestUser', id: 'user_123' };
         pickedRec.isAutoplay = false;

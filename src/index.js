@@ -375,85 +375,6 @@ async function main() {
                 return;
             }
 
-            // Handle recommendation dropdown select menu & button clicks
-            const isRecSelect = interaction.isStringSelectMenu() && interaction.customId?.startsWith('rec_select_');
-            const isRecButton = interaction.isButton() && interaction.customId?.startsWith('rec_add_');
-
-            if (isRecSelect || isRecButton) {
-                try {
-                    const parts = interaction.customId.split('_');
-                    const guildId = parts[2];
-                    const recIndex = isRecSelect ? parseInt(interaction.values[0], 10) : parseInt(parts[3], 10);
-
-                    const memberVC = interaction.member?.voice?.channel;
-                    if (!memberVC) {
-                        return interaction.reply({
-                            content: '❌ You need to be in a voice channel to add recommendations!',
-                            flags: MessageFlags.Ephemeral,
-                        });
-                    }
-
-                    const recs = client.recommendations.get(guildId) || [];
-                    const recommendedTrack = recs[recIndex];
-
-                    if (!recommendedTrack) {
-                        return interaction.reply({
-                            content: '❌ Recommendation no longer available.',
-                            flags: MessageFlags.Ephemeral,
-                        });
-                    }
-
-                    const targetNode = getBestNode(client.lavalink);
-                    let player = client.lavalink.getPlayer(guildId);
-                    if (!player) {
-                        const targetChannelId = getDesignatedChannel(guildId) || interaction.channel.id;
-                        player = client.lavalink.createPlayer({
-                            guildId: guildId,
-                            voiceChannelId: memberVC.id,
-                            textChannelId: targetChannelId,
-                            selfDeaf: true,
-                            volume: parseInt(process.env.DEFAULT_VOLUME) || 50,
-                            node: targetNode?.id,
-                        });
-                    } else if (getDesignatedChannel(guildId)) {
-                        player.textChannelId = getDesignatedChannel(guildId);
-                    }
-
-                    if (!player.connected) {
-                        await player.connect();
-                    }
-
-                    await ensurePlayerNode(player, client);
-
-                    recommendedTrack.requester = interaction.user;
-                    recommendedTrack.isAutoplay = false;
-                    recommendedTrack.isRecommendation = true;
-                    setTrackMetadata(guildId, recommendedTrack, {
-                        isAutoplay: false,
-                        isRecommendation: true,
-                        requester: interaction.user,
-                        categoryLabel: recommendedTrack.categoryLabel || null,
-                    });
-                    player.queue.add(recommendedTrack);
-
-                    if (!player.playing) {
-                        await player.play();
-                    }
-
-                    const title = truncate(recommendedTrack.info?.title || 'Track', 45);
-
-                    return interaction.reply({
-                        content: `✅ Added recommended song **${title}** to the queue! 🎵`,
-                        flags: MessageFlags.Ephemeral,
-                    });
-                } catch (recErr) {
-                    console.error('[Reso] Recommendation interaction error:', recErr);
-                    return interaction.reply({
-                        content: '❌ Failed to queue recommendation.',
-                        flags: MessageFlags.Ephemeral,
-                    }).catch(() => { });
-                }
-            }
 
             if (!interaction.isChatInputCommand()) return;
 
@@ -532,7 +453,13 @@ async function main() {
                 deferred: false,
                 replied: false,
                 options: {
+                    getSubcommand: () => {
+                        return args[0] ? args[0].toLowerCase() : null;
+                    },
                     getString: (name) => {
+                        if (name === 'name' && args.length > 1) {
+                            return args.slice(1).join(' ');
+                        }
                         if ((name === 'query' || name === 'request') && args.length > 0) return args.join(' ');
                         if (name === 'source') {
                             const validSources = ['auto', 'youtube', 'youtubemusic', 'spotify', 'soundcloud', 'apple'];
