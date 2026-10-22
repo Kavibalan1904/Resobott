@@ -6,7 +6,7 @@ const birthdayCommand = require('../src/commands/utility/birthday');
 const { Colors } = require('../src/utils/embeds');
 
 describe('Birthday Command & Celebration Verification', () => {
-    it('should export valid command structure, data, options, and aliases', () => {
+    it('should export valid command structure, data, options, aliases, and randomized wish pools', () => {
         assert.ok(birthdayCommand.data, 'Missing command data');
         assert.strictEqual(birthdayCommand.data.name, 'birthday');
         assert.ok(birthdayCommand.data.description, 'Missing command description');
@@ -20,6 +20,12 @@ describe('Birthday Command & Celebration Verification', () => {
         const userOption = birthdayCommand.data.options.find(opt => opt.name === 'user');
         assert.ok(userOption, 'User option must be defined');
         assert.strictEqual(userOption.required, true, 'User option must be required');
+
+        // Verify randomized pools
+        assert.ok(Array.isArray(birthdayCommand.wishes), 'Wishes pool must be an array');
+        assert.ok(birthdayCommand.wishes.length >= 4, 'Should have at least 4 distinct wishes for variety');
+        assert.ok(Array.isArray(birthdayCommand.announcements), 'Announcements pool must be an array');
+        assert.ok(birthdayCommand.announcements.length >= 3, 'Should have at least 3 distinct announcements');
     });
 
     it('should reject execution if not in a guild or channel', async () => {
@@ -121,7 +127,7 @@ describe('Birthday Command & Celebration Verification', () => {
         assert.ok(replyData.embeds[0].data.description.includes('is a bot'));
     });
 
-    it('should send a grand birthday embed and mention target with restricted allowedMentions', async () => {
+    it('should send a grand birthday embed, tag target, include party vibes and restrict allowedMentions', async () => {
         let replyData = null;
         const targetUserId = '987654321098765432';
         const targetUser = {
@@ -162,8 +168,8 @@ describe('Birthday Command & Celebration Verification', () => {
 
         assert.ok(replyData, 'Should have replied with celebration payload');
 
-        // Verify notification content
-        assert.ok(replyData.content.includes(`<@${targetUserId}>`), 'Must mention target user ID');
+        // Verify notification content tags the user
+        assert.ok(replyData.content.includes(`<@${targetUserId}>`), 'Must mention target user ID in message');
 
         // Verify strictly restricted allowedMentions (no accidental mass mentions)
         assert.deepStrictEqual(replyData.allowedMentions.users, [targetUserId], 'allowedMentions must only include target user');
@@ -173,13 +179,19 @@ describe('Birthday Command & Celebration Verification', () => {
 
         // Verify embed
         const embed = replyData.embeds[0].data;
-        assert.strictEqual(embed.title, '🎉 ✨ A DAY THAT DESERVES TO SHINE ✨ 🎉');
-        assert.ok(embed.description.includes('Happy Birthday, Dharshu!'), 'Description must include Dharshu');
-        assert.ok(embed.description.includes("Everyone, let's make some noise for Dharshu!"), 'Must include closing cheer');
+        assert.ok(birthdayCommand.wishes.some(w => w.title === embed.title), 'Title should match one of the randomized party titles');
+        assert.ok(embed.description.includes(`<@${targetUserId}>`), 'Description must explicitly tag the user with <@userId>');
+        assert.ok(embed.description.includes('Dharshu'), 'Description must include Dharshu');
+        assert.ok(embed.description.includes("Everyone"), 'Must include celebratory cheer');
         assert.strictEqual(embed.footer.text, 'Reso ♪ • Resonance in every beat');
         assert.strictEqual(embed.color, Colors.Primary);
         assert.ok(embed.thumbnail.url.includes(targetUserId), 'Thumbnail must be recipient avatar');
         assert.ok(embed.timestamp, 'Timestamp must be present');
+
+        // Verify Party Vibes fields
+        assert.ok(embed.fields && embed.fields.length >= 2, 'Embed must include party vibe fields');
+        assert.ok(embed.fields.some(f => f.name.includes('Party Energy')), 'Must include Party Energy field');
+        assert.ok(embed.fields.some(f => f.name.includes('Celebration Mode')), 'Must include Celebration Mode field');
     });
 
     it('should resolve user from mention string in prefix invocation (e.g. >birthday @Dharshu)', async () => {
@@ -227,6 +239,7 @@ describe('Birthday Command & Celebration Verification', () => {
 
         assert.ok(replyData, 'Should have resolved user from mention string');
         assert.ok(replyData.content.includes(`<@${targetUserId}>`));
+        assert.ok(replyData.embeds[0].data.description.includes(`<@${targetUserId}>`));
         assert.ok(replyData.embeds[0].data.description.includes('Dharshu'));
     });
 
