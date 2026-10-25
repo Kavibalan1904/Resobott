@@ -8,7 +8,7 @@ const BaseAIProvider = require('./baseProvider');
 class GeminiProvider extends BaseAIProvider {
     constructor(config = {}) {
         super(config);
-        this.model = config.model || 'gemini-3.8-flash';
+        this.model = config.model || 'gemini-2.0-flash';
         this.baseUrl = config.baseUrl || 'https://generativelanguage.googleapis.com';
     }
 
@@ -38,22 +38,14 @@ class GeminiProvider extends BaseAIProvider {
             });
             if (usable.length === 0) return null;
 
-            // Filter out deprecated versions: 1.5, 2.0, 2.5
-            const notDeprecated = usable.filter(m =>
-                !m.name?.includes('1.5') &&
-                !m.name?.includes('2.0') &&
-                !m.name?.includes('2.5')
-            );
-            const pool = notDeprecated.length > 0 ? notDeprecated : usable;
-
-            // Priority: 3.8-flash first, then 3.5-flash-lite, then 3.x, then flash
-            const candidate = pool.find(m => m.name?.includes('3.8-flash'))
-                || pool.find(m => m.name?.includes('3.5-flash-lite'))
-                || pool.find(m => m.name?.includes('3.8'))
-                || pool.find(m => m.name?.includes('3.6-flash'))
-                || pool.find(m => m.name?.includes('flash'))
-                || pool.find(m => m.name?.includes('pro'))
-                || pool[0];
+            // Prioritize standard stable flash models: 2.0-flash, 2.0-flash-lite, 1.5-flash, 1.5-pro
+            const candidate = usable.find(m => m.name?.includes('2.0-flash'))
+                || usable.find(m => m.name?.includes('2.0-flash-lite'))
+                || usable.find(m => m.name?.includes('1.5-flash'))
+                || usable.find(m => m.name?.includes('1.5-pro'))
+                || usable.find(m => m.name?.includes('flash'))
+                || usable.find(m => m.name?.includes('pro'))
+                || usable[0];
 
             if (candidate?.name) {
                 return candidate.name.replace(/^models\//, '');
@@ -73,16 +65,17 @@ class GeminiProvider extends BaseAIProvider {
         }
 
         const fallbackCandidates = [
-            'gemini-3.8-flash',
-            'gemini-3.5-flash-lite',
-            'gemini-3.6-flash',
-            'gemini-2.5-flash',
             'gemini-2.0-flash',
+            'gemini-2.0-flash-lite',
+            'gemini-1.5-flash',
+            'gemini-1.5-pro',
         ];
 
         const cleanModel = this.model.replace(/^models\//, '');
         triedModels.add(cleanModel);
         const endpoint = `${this.baseUrl.replace(/\/+$/, '')}/v1beta/models/${encodeURIComponent(cleanModel)}:generateContent?key=${encodeURIComponent(this.apiKey)}`;
+
+        const wantsJson = schema !== false && schema !== null;
 
         const bodyPayload = {
             contents: [
@@ -97,8 +90,14 @@ class GeminiProvider extends BaseAIProvider {
             generationConfig: {
                 temperature: 0.3,
                 maxOutputTokens: 2048,
-                responseMimeType: 'application/json',
+                ...(wantsJson ? { responseMimeType: 'application/json' } : {}),
             },
+            safetySettings: [
+                { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
+                { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
+                { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
+                { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
+            ],
         };
 
         const maxAttempts = 2;
@@ -170,13 +169,21 @@ class GeminiProvider extends BaseAIProvider {
                     throw new Error('Gemini returned empty candidate response');
                 }
 
+                if (candidate.finishReason === 'SAFETY') {
+                    throw new Error('Gemini generation was blocked by safety filters');
+                }
+
                 const rawText = candidate.content?.parts?.[0]?.text;
                 if (!rawText) {
-                    throw new Error('Gemini candidate returned no text');
+                    throw new Error(`Gemini candidate returned no text (finishReason: ${candidate.finishReason || 'unknown'})`);
+                }
+
+                const trimmed = rawText.trim();
+                if (!wantsJson) {
+                    return trimmed;
                 }
 
                 // Parse structured JSON with robust cleanup
-                const trimmed = rawText.trim();
                 try {
                     return JSON.parse(trimmed);
                 } catch (parseErr) {

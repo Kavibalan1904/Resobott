@@ -25,12 +25,13 @@ class OpenAIProvider extends BaseAIProvider {
         }
         messages.push({ role: 'user', content: prompt });
 
+        const wantsJson = schema !== false && schema !== null;
         const bodyPayload = {
             model: this.model,
             messages,
             temperature: 0.3,
             max_tokens: 2048,
-            response_format: { type: 'json_object' },
+            ...(wantsJson ? { response_format: { type: 'json_object' } } : {}),
         };
 
         const maxAttempts = 2;
@@ -79,6 +80,9 @@ class OpenAIProvider extends BaseAIProvider {
                 }
 
                 const trimmed = rawText.trim();
+                if (!wantsJson) {
+                    return trimmed;
+                }
                 try {
                     return JSON.parse(trimmed);
                 } catch (parseErr) {

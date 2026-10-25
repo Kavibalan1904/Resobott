@@ -3,6 +3,7 @@ const { truncate, markNodeError, getHealthyNodes, getBestNode, computeNodeScore,
 const { getAutoplayTrack, updateSessionState } = require('../utils/recommendations');
 const { guildContextManager, autoplayStore, setTrackMetadata, getTrackMetadata } = require('../autoplay');
 const { getDesignatedChannel } = require('../utils/settings');
+const { voiceDjService } = require('../ai/voiceDjService');
 
 /**
  * Setup all Lavalink event listeners on the LavalinkManager
@@ -384,8 +385,30 @@ function setupLavalinkEvents(client) {
             lastNowPlayingMessage.delete(player.guildId);
         }
 
+        // ── Voice DJ Announcement (Spotify AI DJ style) ──
+        let djAnnouncement = null;
+        try {
+            if (voiceDjService.isEnabled(player.guildId) && voiceDjService.shouldSpeakThisTurn(player.guildId, !isAutoplayTrack)) {
+                djAnnouncement = await voiceDjService.getOrGenerateAnnouncement(player.guildId, track, autoContext);
+                player.voiceDjAnnouncement = djAnnouncement;
+                track._voiceDjAnnouncement = djAnnouncement;
+            } else {
+                player.voiceDjAnnouncement = null;
+            }
+        } catch {
+            djAnnouncement = null;
+        }
+
+        // ── Background Pre-caching for upcoming track in queue ──
+        try {
+            if (player.queue?.tracks?.length > 0 && voiceDjService.isEnabled(player.guildId)) {
+                const nextTrack = player.queue.tracks[0];
+                voiceDjService.prepareUpcomingAnnouncement(player.guildId, nextTrack, autoContext).catch(() => {});
+            }
+        } catch {}
+
         // ── INSTANT: Send Now Playing embed immediately ──
-        const embed = nowPlayingEmbed(track, player, client, []);
+        const embed = nowPlayingEmbed(track, player, client, [], djAnnouncement);
         const controls = createPlayerControls(false);
 
         try {

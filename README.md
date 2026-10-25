@@ -87,6 +87,7 @@ npm start
 | Command | Description |
 |---|---|
 | `>vibe <request> [count]` | 🎧 **AI DJ**: Generate smart playlists matching any vibe, mood, or era |
+| `>voicedj [action]` | 🎙️ **Voice DJ**: Spotify AI DJ-style track intros with background caching & zero delay |
 | `>queue [page]` | View current queue with total duration and source tags |
 | `>autoplay` | Toggle automatic recommendations queueing |
 | `>recommend` | Get song recommendations based on current track |
@@ -153,7 +154,7 @@ Configure in `.env`:
 # AI Provider: "gemini" (default) or "openai"
 AI_PROVIDER=gemini
 AI_API_KEY=your_api_key_here
-AI_MODEL=gemini-1.5-flash
+AI_MODEL=gemini-2.0-flash
 # AI_BASE_URL=https://api.openai.com/v1 # Optional custom endpoint
 ```
 

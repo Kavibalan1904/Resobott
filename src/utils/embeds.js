@@ -127,7 +127,7 @@ function getLoopLabel(repeatMode) {
 /**
  * Create a premium "Now Playing" embed with rich visual design
  */
-function nowPlayingEmbed(track, player, client, recommendations = []) {
+function nowPlayingEmbed(track, player, client, recommendations = [], djAnnouncement = null) {
     const info = track.info || track;
     const duration = info.duration || 0;
     const position = player.position || 0;
@@ -175,8 +175,13 @@ function nowPlayingEmbed(track, player, client, recommendations = []) {
         autoplayText = ' • 🔄 Autoplay On';
     }
 
+    // Spotify-style Voice DJ Announcement
+    const djSpeech = djAnnouncement?.text || djAnnouncement || track?._voiceDjAnnouncement?.text || track?._voiceDjAnnouncement || player?.voiceDjAnnouncement?.text || player?.voiceDjAnnouncement;
+    const djLine = djSpeech ? `🎙️ **Reso DJ:** *"${djSpeech}"*\n` : '';
+
     // Build the rich description
     const description = [
+        ...(djLine ? [djLine] : []),
         `### ${source.color} [${truncate(info.title || 'Unknown Track', 55)}](${info.uri || ''})`,
         `> **${info.author || 'Unknown Artist'}** • ${source.label}`,
         '',
