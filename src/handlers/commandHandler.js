@@ -39,14 +39,34 @@ async function registerSlashCommands(client) {
     const commands = client.commands.map(cmd => cmd.data.toJSON());
     const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
 
-    const clientId = (process.env.CLIENT_ID && /^\d+$/.test(process.env.CLIENT_ID)) ? process.env.CLIENT_ID : client.user.id;
+    const clientId = (process.env.CLIENT_ID && /^\d+$/.test(process.env.CLIENT_ID)) ? process.env.CLIENT_ID : client.user?.id;
+    if (!clientId) {
+        console.warn('[Reso] ⚠ Skipping slash command registration — no CLIENT_ID or user ID found');
+        return;
+    }
+
     try {
+        // 1. Register globally
         await rest.put(
             Routes.applicationCommands(clientId),
             { body: commands },
         );
+        console.log('[Reso] ✓ Global slash commands registered');
+
+        // 2. Also register to active guilds for INSTANT (0-second) appearance in Discord
+        if (client.guilds?.cache?.size > 0) {
+            for (const guild of client.guilds.cache.values()) {
+                try {
+                    await rest.put(
+                        Routes.applicationGuildCommands(clientId, guild.id),
+                        { body: commands },
+                    );
+                } catch { /* ignore individual guild permission issues */ }
+            }
+            console.log(`[Reso] ✓ Guild slash commands registered across ${client.guilds.cache.size} server(s)`);
+        }
     } catch (error) {
-        console.error('[Reso] Failed to register slash commands:', error);
+        console.error('[Reso] Failed to register slash commands:', error.message || error);
     }
 }
 
