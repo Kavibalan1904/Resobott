@@ -103,15 +103,187 @@ class VoiceDJService {
     }
 
     /**
+     * Get active voice engine diagnostics
+     */
+    getActiveTtsEngine() {
+        if (process.env.ELEVENLABS_API_KEY) {
+            return {
+                engine: 'elevenlabs',
+                name: 'ElevenLabs Studio Voice',
+                isHuman: true,
+            };
+        }
+        const openAiKey = process.env.OPENAI_API_KEY || (process.env.AI_PROVIDER === 'openai' ? process.env.AI_API_KEY : null);
+        if (openAiKey) {
+            return {
+                engine: 'openai',
+                name: 'OpenAI Studio TTS (Onyx Radio Host)',
+                isHuman: true,
+            };
+        }
+        return {
+            engine: 'fallback',
+            name: 'Standard Synthesizer (Fallback)',
+            isHuman: false,
+        };
+    }
+
+    /**
+     * Generate high-fidelity studio voice audio via ElevenLabs
+     */
+    async generateElevenLabsTts(text, voiceSetting = 'brian') {
+        const apiKey = process.env.ELEVENLABS_API_KEY;
+        if (!apiKey) return null;
+
+        // Common ElevenLabs voice IDs:
+        // Brian (Deep radio announcer): nPczCjzI2devNBz1zQrb
+        // Adam (Classic FM radio host): pNInz6obpgDQGcFmaJgB
+        // Rachel (Smooth female host): 21m00Tcm4TlvDq8ikWAM
+        const voiceMap = {
+            brian: 'nPczCjzI2devNBz1zQrb',
+            radio: 'nPczCjzI2devNBz1zQrb',
+            adam: 'pNInz6obpgDQGcFmaJgB',
+            onyx: 'nPczCjzI2devNBz1zQrb',
+            rachel: '21m00Tcm4TlvDq8ikWAM',
+            female: '21m00Tcm4TlvDq8ikWAM',
+            nova: '21m00Tcm4TlvDq8ikWAM',
+            echo: 'nPczCjzI2devNBz1zQrb',
+            chill: 'nPczCjzI2devNBz1zQrb',
+            british: 'nPczCjzI2devNBz1zQrb',
+        };
+
+        const targetVoice = process.env.ELEVENLABS_VOICE_ID || voiceMap[voiceSetting] || voiceMap.brian;
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 2500);
+
+        try {
+            const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${targetVoice}`, {
+                method: 'POST',
+                headers: {
+                    'xi-api-key': apiKey,
+                    'Content-Type': 'application/json',
+                    'Accept': 'audio/mpeg',
+                },
+                body: JSON.stringify({
+                    text: String(text || '').slice(0, 180),
+                    model_id: 'eleven_turbo_v2_5',
+                    voice_settings: {
+                        stability: 0.5,
+                        similarity_boost: 0.75,
+                        style: 0.35,
+                    },
+                }),
+                signal: controller.signal,
+            });
+
+            if (!res.ok) {
+                const errText = await res.text().catch(() => '');
+                console.warn(`[Reso DJ] ElevenLabs returned ${res.status}: ${errText.slice(0, 80)}`);
+                return null;
+            }
+
+            const arrayBuf = await res.arrayBuffer();
+            return Buffer.from(arrayBuf);
+        } catch (e) {
+            console.warn(`[Reso DJ] ElevenLabs synthesis failed (${e.message}), falling back.`);
+            return null;
+        } finally {
+            clearTimeout(timeoutId);
+        }
+    }
+
+    /**
+     * Generate high-fidelity studio voice audio via OpenAI Audio Speech
+     */
+    async generateOpenAiTts(text, voiceSetting = 'onyx') {
+        const apiKey = process.env.OPENAI_API_KEY || (process.env.AI_PROVIDER === 'openai' ? process.env.AI_API_KEY : null);
+        if (!apiKey) return null;
+
+        const validVoices = {
+            onyx: 'onyx',     // Deep radio host (Spotify DJ Xavier style)
+            radio: 'onyx',
+            echo: 'echo',     // Smooth male host
+            chill: 'echo',
+            nova: 'nova',     // High-energy female radio DJ
+            female: 'nova',
+            brian: 'onyx',
+            british: 'echo',
+            alloy: 'alloy',
+        };
+
+        const chosenVoice = validVoices[voiceSetting] || 'onyx';
+        const baseUrl = (process.env.AI_BASE_URL || 'https://api.openai.com/v1').replace(/\/+$/, '');
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 2500);
+
+        try {
+            const res = await fetch(`${baseUrl}/audio/speech`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${apiKey}`,
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    model: 'tts-1',
+                    input: String(text || '').slice(0, 180),
+                    voice: chosenVoice,
+                    response_format: 'mp3',
+                    speed: 1.04, // Snappy radio host cadence
+                }),
+                signal: controller.signal,
+            });
+
+            if (!res.ok) {
+                const errText = await res.text().catch(() => '');
+                console.warn(`[Reso DJ] OpenAI TTS returned ${res.status}: ${errText.slice(0, 80)}`);
+                return null;
+            }
+
+            const arrayBuf = await res.arrayBuffer();
+            return Buffer.from(arrayBuf);
+        } catch (e) {
+            console.warn(`[Reso DJ] OpenAI TTS synthesis failed (${e.message}), falling back.`);
+            return null;
+        } finally {
+            clearTimeout(timeoutId);
+        }
+    }
+
+    /**
+     * Generate speech audio buffer using best available studio provider
+     */
+    async generateSpeechAudio(text, voiceSetting = 'radio') {
+        if (!text) return null;
+
+        if (process.env.ELEVENLABS_API_KEY) {
+            const buffer = await this.generateElevenLabsTts(text, voiceSetting);
+            if (buffer) return { buffer, provider: 'elevenlabs' };
+        }
+
+        const openAiKey = process.env.OPENAI_API_KEY || (process.env.AI_PROVIDER === 'openai' ? process.env.AI_API_KEY : null);
+        if (openAiKey) {
+            const buffer = await this.generateOpenAiTts(text, voiceSetting);
+            if (buffer) return { buffer, provider: 'openai' };
+        }
+
+        return null;
+    }
+
+    /**
      * Construct a Google Translate TTS URL
      * High reliability, MP3 format, zero external dependencies.
      */
     getTtsUrl(text, voiceSetting = 'radio') {
         const langMap = {
             radio: 'en-us',
+            onyx: 'en-us',
+            brian: 'en-gb',
             british: 'en-gb',
             chill: 'en-au',
+            echo: 'en-au',
             female: 'en-uk',
+            nova: 'en-us',
+            alloy: 'en-us',
         };
         const lang = langMap[voiceSetting] || 'en-us';
         const cleanText = encodeURIComponent(String(text || '').slice(0, 180));
@@ -229,10 +401,13 @@ class VoiceDJService {
         const genPromise = (async () => {
             try {
                 const text = await this.generateAiIntro(nextTrack, context);
+                const speechRes = await this.generateSpeechAudio(text, voiceSetting).catch(() => null);
                 const audioUrl = this.getTtsUrl(text, voiceSetting);
                 const entry = {
                     text,
                     audioUrl,
+                    audioBuffer: speechRes?.buffer || null,
+                    provider: speechRes?.provider || 'fallback',
                     preparedAt: Date.now(),
                 };
                 this.cache.set(trackKey, entry);
@@ -249,6 +424,7 @@ class VoiceDJService {
         })();
 
         this.inFlightGenerations.set(trackKey, genPromise);
+        return genPromise;
     }
 
     /**
@@ -287,11 +463,14 @@ class VoiceDJService {
         const settings = this.getSettings(guildId);
         const voiceSetting = settings.voice || 'radio';
         const text = this.generateDeterministicIntro(track, context);
+        const speechRes = await this.generateSpeechAudio(text, voiceSetting).catch(() => null);
         const audioUrl = this.getTtsUrl(text, voiceSetting);
 
         return {
             text,
             audioUrl,
+            audioBuffer: speechRes?.buffer || null,
+            provider: speechRes?.provider || 'fallback',
             preparedAt: Date.now(),
         };
     }

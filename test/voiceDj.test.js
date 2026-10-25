@@ -228,6 +228,66 @@ describe('Spotify-Style Voice DJ Service', () => {
         assert.ok(embed.data.description.includes('🎙️ **Reso DJ:**'));
         assert.ok(embed.data.description.includes('Up next for Kavi, here is Starboy!'));
     });
+
+    it('should report active TTS engine correctly based on environment', () => {
+        const prevOpenAi = process.env.OPENAI_API_KEY;
+        const prevEleven = process.env.ELEVENLABS_API_KEY;
+        delete process.env.OPENAI_API_KEY;
+        delete process.env.ELEVENLABS_API_KEY;
+
+        try {
+            // 1. Fallback when no keys
+            const engineFallback = service.getActiveTtsEngine();
+            assert.strictEqual(engineFallback.engine, 'fallback');
+            assert.strictEqual(engineFallback.isHuman, false);
+
+            // 2. OpenAI when key set
+            process.env.OPENAI_API_KEY = 'mock-openai-key';
+            const engineOpenAi = service.getActiveTtsEngine();
+            assert.strictEqual(engineOpenAi.engine, 'openai');
+            assert.strictEqual(engineOpenAi.isHuman, true);
+
+            // 3. ElevenLabs prioritizes when key set
+            process.env.ELEVENLABS_API_KEY = 'mock-eleven-key';
+            const engineEleven = service.getActiveTtsEngine();
+            assert.strictEqual(engineEleven.engine, 'elevenlabs');
+            assert.strictEqual(engineEleven.isHuman, true);
+        } finally {
+            if (prevOpenAi) process.env.OPENAI_API_KEY = prevOpenAi;
+            else delete process.env.OPENAI_API_KEY;
+            if (prevEleven) process.env.ELEVENLABS_API_KEY = prevEleven;
+            else delete process.env.ELEVENLABS_API_KEY;
+        }
+    });
+
+    it('should generate speech audio buffer when studio provider succeeds', async () => {
+        const prevOpenAi = process.env.OPENAI_API_KEY;
+        process.env.OPENAI_API_KEY = 'mock-openai-key';
+
+        const originalFetch = globalThis.fetch;
+        globalThis.fetch = async (url, opts) => {
+            assert.ok(url.includes('/audio/speech'));
+            const reqBody = JSON.parse(opts.body);
+            assert.strictEqual(reqBody.model, 'tts-1');
+            assert.strictEqual(reqBody.voice, 'onyx');
+            return {
+                ok: true,
+                arrayBuffer: async () => new Uint8Array([0xFF, 0xFB, 0x90, 0x64]).buffer,
+            };
+        };
+
+        try {
+            const speech = await service.generateSpeechAudio('Up next, check out this track!', 'onyx');
+            assert.ok(speech);
+            assert.strictEqual(speech.provider, 'openai');
+            assert.ok(Buffer.isBuffer(speech.buffer));
+            assert.strictEqual(speech.buffer.length, 4);
+        } finally {
+            globalThis.fetch = originalFetch;
+            if (prevOpenAi) process.env.OPENAI_API_KEY = prevOpenAi;
+            else delete process.env.OPENAI_API_KEY;
+        }
+    });
 });
 
 describe('Voice DJ Slash Command', () => {
@@ -236,5 +296,13 @@ describe('Voice DJ Slash Command', () => {
         assert.ok(Array.isArray(voicedjCommand.aliases));
         assert.ok(voicedjCommand.aliases.includes('vdj'));
         assert.strictEqual(typeof voicedjCommand.execute, 'function');
+
+        // Check options include mode, voice, frequency, action
+        const optionNames = voicedjCommand.data.options.map(o => o.name);
+        assert.ok(optionNames.includes('action'));
+        assert.ok(optionNames.includes('frequency'));
+        assert.ok(optionNames.includes('mode'));
+        assert.ok(optionNames.includes('voice'));
     });
 });
+

@@ -16,7 +16,8 @@ module.exports = {
                     { name: '📊 Status & Settings', value: 'status' },
                     { name: '⚡ Preview Sample DJ Line', value: 'preview' },
                     { name: '⏱️ Change Frequency', value: 'frequency' },
-                    { name: '🗣️ Change Voice Style', value: 'voice' },
+                    { name: '🎛️ Change Mode (Voice/Text/Both)', value: 'mode' },
+                    { name: '🗣️ Change Voice Personality', value: 'voice' },
                 )
         )
         .addStringOption(option =>
@@ -31,14 +32,28 @@ module.exports = {
                 )
         )
         .addStringOption(option =>
-            option.setName('voice')
-                .setDescription('Radio voice style')
+            option.setName('mode')
+                .setDescription('Announcement output style')
                 .setRequired(false)
                 .addChoices(
-                    { name: '📻 Radio Host (US)', value: 'radio' },
-                    { name: '🎩 Classic BBC (UK)', value: 'british' },
-                    { name: '🌊 Chill Vibes (AU)', value: 'chill' },
-                    { name: '🌸 Smooth Radio (Female)', value: 'female' },
+                    { name: '🎙️ Voice + Chat Embed (Default)', value: 'both' },
+                    { name: '🔊 Voice Channel Only', value: 'voice' },
+                    { name: '💬 Chat Embed Only (No VC Voice)', value: 'text' },
+                )
+        )
+        .addStringOption(option =>
+            option.setName('voice')
+                .setDescription('DJ Voice Personality')
+                .setRequired(false)
+                .addChoices(
+                    { name: '🎙️ DJ Xavier (Spotify AI DJ - Deep Host [OpenAI])', value: 'onyx' },
+                    { name: '🎙️ DJ Brian (Charismatic Radio Announcer [ElevenLabs])', value: 'brian' },
+                    { name: '🌸 DJ Nova (Upbeat & Energetic Female Host)', value: 'nova' },
+                    { name: '📻 DJ Echo (Smooth & Casual Male Host)', value: 'echo' },
+                    { name: '📻 DJ Carter (Classic US Web Radio)', value: 'radio' },
+                    { name: '🎩 DJ Arthur (Classic UK Web Radio)', value: 'british' },
+                    { name: '🌊 DJ Leo (Chill Australian Vibes)', value: 'chill' },
+                    { name: '🌸 DJ Sarah (Smooth Female Web)', value: 'female' },
                 )
         ),
 
@@ -49,9 +64,11 @@ module.exports = {
         const guildId = interaction.guild.id;
         const action = interaction.options.getString('action') || 'toggle';
         const selectedFreq = interaction.options.getString('frequency');
+        const selectedMode = interaction.options.getString('mode');
         const selectedVoice = interaction.options.getString('voice');
 
         const currentSettings = voiceDjService.getSettings(guildId);
+        const activeEngine = voiceDjService.getActiveTtsEngine();
 
         // ── Action: Toggle ─────────────────────────────────────────────
         if (action === 'toggle') {
@@ -64,9 +81,10 @@ module.exports = {
                     `### Voice DJ is now **${newState ? '✅ ENABLED' : '❌ DISABLED'}**\n` +
                     `> Reso will ${newState ? 'bring charismatic radio DJ introductions before tracks!' : 'no longer introduce tracks in this server.'}\n\n` +
                     `**⚙️ Current Configuration:**\n` +
+                    `• **Voice Engine:** \`${activeEngine.name}\` ${activeEngine.isHuman ? '🌟' : '🤖'}\n` +
+                    `• **Mode:** \`${currentSettings.mode || 'both'}\` *(voice, text, both)*\n` +
                     `• **Frequency:** \`${currentSettings.frequency || 'every_2'}\`\n` +
-                    `• **Voice Style:** \`${currentSettings.voice || 'radio'}\`\n` +
-                    `• **Smart Fallback:** \`Active (Zero Delay)\`\n\n` +
+                    `• **Voice Style:** \`${currentSettings.voice || 'onyx'}\`\n\n` +
                     `*💡 Tip: Use \`/voicedj action:preview\` to test a live radio line right now!*`
                 );
 
@@ -81,15 +99,20 @@ module.exports = {
                 .setDescription(
                     `### State: ${isEnabled ? '✅ Enabled' : '❌ Disabled'}\n` +
                     `> **Experience:** Spotify AI DJ-style contextual track introductions\n` +
-                    `> **Engine:** Google Gemini 2.0 Flash + Zero-Delay Deterministic Fallback\n\n` +
+                    `> **Voice Engine:** \`${activeEngine.name}\` ${activeEngine.isHuman ? '🌟 (Human Studio Quality)' : '🤖 (Synthesizer Fallback)'}\n\n` +
                     `**🎛️ Settings:**\n` +
+                    `• **Mode:** \`${currentSettings.mode || 'both'}\` *(Voice & Chat Embed)*\n` +
                     `• **Frequency:** \`${currentSettings.frequency || 'every_2'}\` *(How often DJ speaks)*\n` +
-                    `• **Voice Accent:** \`${currentSettings.voice || 'radio'}\`\n` +
-                    `• **Background Caching:** \`✅ Active (Pre-computes next track in queue)\`\n\n` +
+                    `• **Voice Personality:** \`${currentSettings.voice || 'onyx'}\`\n` +
+                    `• **Background Caching:** \`✅ Active (Zero-delay pre-caching)\`\n\n` +
+                    (!activeEngine.isHuman
+                        ? `> 💡 **Tip:** Add \`OPENAI_API_KEY\` (Onyx) or \`ELEVENLABS_API_KEY\` to your \`.env\` file for deep, velvety Spotify DJ Xavier speech! Or use \`/voicedj action:mode mode:text\` for silent chat speech bubbles.\n\n`
+                        : '') +
                     `**Command Shortcuts:**\n` +
                     `• \`/voicedj action:toggle\` — Switch on/off\n` +
-                    `• \`/voicedj action:preview\` — Preview an announcement\n` +
-                    `• \`/voicedj action:frequency frequency:every\` — Announce every track`
+                    `• \`/voicedj action:mode mode:text\` — Text-only speech bubbles\n` +
+                    `• \`/voicedj action:voice voice:onyx\` — Select radio voice\n` +
+                    `• \`/voicedj action:preview\` — Preview an announcement aloud`
                 );
 
             return interaction.reply({ embeds: [embed] }).catch(() => {});
@@ -109,17 +132,34 @@ module.exports = {
             return interaction.reply({ embeds: [embed] }).catch(() => {});
         }
 
+        // ── Action: Mode ───────────────────────────────────────────────
+        if (action === 'mode') {
+            if (!selectedMode) {
+                return interaction.reply({
+                    embeds: [errorEmbed('Please select an announcement mode (`Voice + Chat Embed`, `Voice Channel Only`, or `Chat Embed Only`).')],
+                    ephemeral: true,
+                }).catch(() => {});
+            }
+
+            voiceDjService.updateSettings(guildId, { mode: selectedMode });
+            const modeDesc = selectedMode === 'text'
+                ? '💬 **Chat Embed Only** (Speech bubble in Now Playing, no voice in VC)'
+                : (selectedMode === 'voice' ? '🔊 **Voice Channel Only** (Voice in VC only)' : '🎙️ **Voice + Chat Embed** (Full Spotify DJ experience)');
+            const embed = successEmbed(`🎛️ Voice DJ mode updated to: ${modeDesc}!`);
+            return interaction.reply({ embeds: [embed] }).catch(() => {});
+        }
+
         // ── Action: Voice Style ────────────────────────────────────────
         if (action === 'voice') {
             if (!selectedVoice) {
                 return interaction.reply({
-                    embeds: [errorEmbed('Please choose a voice style (e.g. `Radio Host`, `Classic BBC`, etc.).')],
+                    embeds: [errorEmbed('Please choose a voice personality (e.g. `DJ Xavier`, `DJ Brian`, `DJ Nova`, etc.).')],
                     ephemeral: true,
                 }).catch(() => {});
             }
 
             voiceDjService.updateSettings(guildId, { voice: selectedVoice });
-            const embed = successEmbed(`🗣️ Voice DJ style updated to: **\`${selectedVoice}\`**!`);
+            const embed = successEmbed(`🗣️ Voice DJ personality updated to: **\`${selectedVoice}\`**!`);
             return interaction.reply({ embeds: [embed] }).catch(() => {});
         }
 
@@ -163,14 +203,34 @@ module.exports = {
                         }
                         await ensurePlayerNode(player, interaction.client);
 
-                        if (intro?.audioUrl && player.node && player.node.connected) {
-                            const searchPromise = player.search({ query: intro.audioUrl }, interaction.user);
+                        let playableUrl = intro?.audioUrl;
+                        let djMessage = null;
+
+                        // If high-fidelity studio voice buffer is available, upload to Discord for Lavalink
+                        if (intro?.audioBuffer && interaction.channel) {
+                            try {
+                                const { AttachmentBuilder } = require('discord.js');
+                                const attachment = new AttachmentBuilder(intro.audioBuffer, { name: 'voicedj.mp3' });
+                                djMessage = await interaction.channel.send({
+                                    content: `🎙️ **Reso DJ Preview:** *"${intro.text}"*`,
+                                    files: [attachment],
+                                });
+                                const cdnUrl = djMessage?.attachments?.first()?.url;
+                                if (cdnUrl) playableUrl = cdnUrl;
+                            } catch (e) {
+                                console.warn('[Reso DJ Preview] Upload note:', e.message);
+                            }
+                        }
+
+                        if (playableUrl && player.node && player.node.connected) {
+                            const searchPromise = player.search({ query: playableUrl }, interaction.user);
                             const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('TTS timeout')), 2500));
                             const ttsRes = await Promise.race([searchPromise, timeoutPromise]);
 
                             if (ttsRes?.tracks?.length > 0) {
                                 const djTrack = ttsRes.tracks[0];
                                 djTrack._isVoiceDj = true;
+                                djTrack._djMessage = djMessage;
                                 djTrack.info.title = `🎙️ DJ: "${truncate(intro.text, 35)}"`;
                                 djTrack.info.author = 'Reso Voice DJ';
 
@@ -201,9 +261,10 @@ module.exports = {
                     `### 📻 Incoming Broadcast:\n` +
                     `> 🎙️ **DJ Reso:** *"${intro?.text || 'Up next, enjoy the beat!'}"*\n\n` +
                     `${voiceStatus}\n\n` +
+                    `**Voice Engine:** \`${activeEngine.name}\` ${activeEngine.isHuman ? '🌟' : '🤖'}\n` +
                     `**Target Track:** **${truncate(sampleTrack.info?.title || 'Track', 40)}** by ${sampleTrack.info?.author || 'Artist'}\n` +
                     `**Requester:** <@${interaction.user.id}>\n` +
-                    `**Engine:** Fast AI / Zero-Delay Fallback (${intro?.preparedAt ? 'Cached' : 'Generated'})`
+                    `**State:** Fast AI / Zero-Delay Fallback (${intro?.preparedAt ? 'Cached' : 'Generated'})`
                 );
 
             return interaction.editReply({ embeds: [embed] }).catch(() => {});

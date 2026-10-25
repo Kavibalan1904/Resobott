@@ -87,15 +87,40 @@ function setupLavalinkEvents(client) {
                     nextTrack._voiceDjAnnouncement = announcement;
                     nextTrack._hasSpokenIntro = true;
 
-                    if (announcement?.audioUrl && player.node && player.node.connected) {
-                        const searchPromise = player.search({ query: announcement.audioUrl }, { username: 'Reso DJ', id: 'voicedj' });
-                        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('TTS timeout')), 1200));
+                    let playableUrl = announcement?.audioUrl;
+                    let djMessage = null;
+
+                    // If studio AI voice buffer exists, bridge it to Lavalink via Discord CDN attachment
+                    if (announcement?.audioBuffer) {
+                        const targetChan = getPlayerTextChannel(player);
+                        if (targetChan && typeof targetChan.send === 'function') {
+                            try {
+                                const { AttachmentBuilder } = require('discord.js');
+                                const attachment = new AttachmentBuilder(announcement.audioBuffer, { name: 'voicedj.mp3' });
+                                djMessage = await targetChan.send({
+                                    content: `🎙️ **Reso DJ:** *"${announcement.text}"*`,
+                                    files: [attachment],
+                                });
+                                const cdnUrl = djMessage?.attachments?.first()?.url;
+                                if (cdnUrl) {
+                                    playableUrl = cdnUrl;
+                                }
+                            } catch (uploadErr) {
+                                console.warn('[Reso DJ] Studio audio upload note:', uploadErr.message);
+                            }
+                        }
+                    }
+
+                    if (playableUrl && player.node && player.node.connected) {
+                        const searchPromise = player.search({ query: playableUrl }, { username: 'Reso DJ', id: 'voicedj' });
+                        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('TTS timeout')), 2500));
                         const ttsRes = await Promise.race([searchPromise, timeoutPromise]);
 
                         if (ttsRes?.tracks?.length > 0) {
                             const djTrack = ttsRes.tracks[0];
                             djTrack._isVoiceDj = true;
                             djTrack._nextSong = nextTrack;
+                            djTrack._djMessage = djMessage;
                             djTrack.info.title = `🎙️ DJ: "${truncate(announcement.text, 35)}"`;
                             djTrack.info.author = 'Reso Voice DJ';
 
@@ -476,6 +501,9 @@ function setupLavalinkEvents(client) {
     manager.on('trackEnd', async (player, track, payload) => {
         if (track?._isVoiceDj) {
             console.log(`[Reso DJ] ✓ Voice announcement finished, transitioning to music.`);
+            if (track._djMessage && typeof track._djMessage.delete === 'function') {
+                track._djMessage.delete().catch(() => {});
+            }
             await advanceQueueSafely(player);
             return;
         }

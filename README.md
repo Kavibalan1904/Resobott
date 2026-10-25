@@ -178,6 +178,36 @@ npm test
 
 ---
 
+## 🎙️ Spotify-Style AI Voice DJ
+
+Reso introduces an authentic **Spotify-Style AI Voice DJ** that introduces upcoming tracks in your voice channel with charismatic radio personality, requester shoutouts, and contextual track commentary.
+
+### Key Features
+* **Background Pre-Caching**: Synthesizes announcements asynchronously while the current song is playing, guaranteeing zero interruption or transition lag.
+* **Studio Human Radio Voices**: Native integration with **OpenAI Audio TTS** (voice: `onyx` - deep, velvety radio host just like Spotify DJ Xavier) and **ElevenLabs** (voice: `brian` / `adam`).
+* **Flexible Modes**:
+  * `both`: Plays studio voice in VC and renders a speech bubble inside the Now Playing embed.
+  * `voice`: Broadcasts radio commentary directly into your voice channel.
+  * `text`: Silent chat mode (renders Spotify DJ speech bubble in Now Playing without voice audio).
+* **Zero-Delay Fallback**: If an external TTS provider fails or is not configured, Reso instantly falls back to its deterministic radio lines and web speech synthesizer.
+
+### Configuration
+```env
+# Optional: Studio Voice Engines for deep, human radio DJ speech
+OPENAI_API_KEY=your_openai_key_here     # Model tts-1 (voice: onyx)
+ELEVENLABS_API_KEY=your_elevenlabs_key  # Model eleven_turbo_v2_5 (voice: Brian)
+```
+
+### Slash Commands
+* `/voicedj action:toggle` — Turn Voice DJ on or off for the server
+* `/voicedj action:status` — Check active voice engine, mode, frequency, and settings
+* `/voicedj action:mode mode:both` — Switch between `both`, `voice`, or `text`
+* `/voicedj action:voice voice:onyx` — Select your DJ personality (DJ Xavier, Brian, Nova, Echo, etc.)
+* `/voicedj action:frequency frequency:every_2` — Control how often the DJ speaks
+* `/voicedj action:preview` — Test a live radio broadcast in your voice channel immediately
+
+---
+
 ## 🛠️ Tech Stack
 
 - **[discord.js](https://discord.js.org/)** v14 — Discord API interaction
