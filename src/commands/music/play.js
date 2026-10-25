@@ -495,6 +495,39 @@ module.exports = {
             } catch { /* ignore */ }
 
             if (!player.playing) {
+                const { voiceDjService } = require('../../ai/voiceDjService');
+                const djSettings = voiceDjService.getSettings(interaction.guild.id);
+                if (
+                    djSettings &&
+                    djSettings.enabled &&
+                    (djSettings.mode === 'both' || djSettings.mode === 'voice') &&
+                    voiceDjService.shouldSpeakThisTurn(interaction.guild.id, true)
+                ) {
+                    try {
+                        const announcement = await voiceDjService.getOrGenerateAnnouncement(interaction.guild.id, track);
+                        track._voiceDjAnnouncement = announcement;
+                        track._hasSpokenIntro = true;
+
+                        if (announcement?.audioUrl && player.node && player.node.connected) {
+                            const searchPromise = player.search({ query: announcement.audioUrl }, { username: 'Reso DJ', id: 'voicedj' });
+                            const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('TTS timeout')), 1500));
+                            const ttsRes = await Promise.race([searchPromise, timeoutPromise]);
+
+                            if (ttsRes?.tracks?.length > 0) {
+                                const djTrack = ttsRes.tracks[0];
+                                djTrack._isVoiceDj = true;
+                                djTrack._nextSong = track;
+                                djTrack.info.title = `🎙️ DJ: "${truncate(announcement.text, 35)}"`;
+                                djTrack.info.author = 'Reso Voice DJ';
+
+                                // Add DJ intro track right before real track
+                                player.queue.tracks.unshift(djTrack);
+                            }
+                        }
+                    } catch (djErr) {
+                        console.log(`[Reso DJ] Initial voice intro skipped (${djErr.message}), playing track directly.`);
+                    }
+                }
                 await player.play();
             }
 

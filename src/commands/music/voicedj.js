@@ -1,6 +1,6 @@
 const { SlashCommandBuilder } = require('discord.js');
 const { createEmbed, successEmbed, errorEmbed, EMOJIS, Colors } = require('../../utils/embeds');
-const { getVoiceChannel, truncate } = require('../../utils/helpers');
+const { getVoiceChannel, truncate, getBestNode, ensurePlayerNode } = require('../../utils/helpers');
 const { voiceDjService } = require('../../ai/voiceDjService');
 
 module.exports = {
@@ -127,7 +127,10 @@ module.exports = {
         if (action === 'preview') {
             await interaction.deferReply().catch(() => {});
 
-            const player = interaction.client.lavalink?.getPlayer(guildId);
+            const voiceChannel = getVoiceChannel(interaction);
+            const manager = interaction.client.lavalink;
+            let player = manager?.getPlayer ? manager.getPlayer(guildId) : null;
+
             const sampleTrack = player?.queue?.current || {
                 info: {
                     title: 'Blinding Lights',
@@ -137,12 +140,67 @@ module.exports = {
             };
 
             const intro = await voiceDjService.getOrGenerateAnnouncement(guildId, sampleTrack);
+            let spokeInVoice = false;
+
+            // If user is in a voice channel, speak aloud into the voice channel!
+            if (voiceChannel && manager) {
+                try {
+                    const connectedNodes = Array.from(manager.nodeManager.nodes.values()).filter(n => n.connected);
+                    if (connectedNodes.length > 0) {
+                        const targetNode = getBestNode(manager) || connectedNodes[0];
+                        if (!player) {
+                            player = manager.createPlayer({
+                                guildId,
+                                voiceChannelId: voiceChannel.id,
+                                textChannelId: interaction.channelId,
+                                selfDeaf: true,
+                                volume: parseInt(process.env.DEFAULT_VOLUME) || 50,
+                                node: targetNode.id,
+                            });
+                        }
+                        if (!player.connected) {
+                            await player.connect();
+                        }
+                        await ensurePlayerNode(player, interaction.client);
+
+                        if (intro?.audioUrl && player.node && player.node.connected) {
+                            const searchPromise = player.search({ query: intro.audioUrl }, interaction.user);
+                            const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('TTS timeout')), 2500));
+                            const ttsRes = await Promise.race([searchPromise, timeoutPromise]);
+
+                            if (ttsRes?.tracks?.length > 0) {
+                                const djTrack = ttsRes.tracks[0];
+                                djTrack._isVoiceDj = true;
+                                djTrack.info.title = `🎙️ DJ: "${truncate(intro.text, 35)}"`;
+                                djTrack.info.author = 'Reso Voice DJ';
+
+                                // If music was already playing, queue current song back so it resumes after intro
+                                if (player.playing && player.queue.current) {
+                                    player.queue.tracks.unshift(player.queue.current);
+                                }
+                                player.queue.current = djTrack;
+                                await player.play();
+                                spokeInVoice = true;
+                            }
+                        }
+                    }
+                } catch (playErr) {
+                    console.warn('[Reso DJ] Live preview playback note:', playErr.message);
+                }
+            }
+
+            const voiceStatus = spokeInVoice
+                ? `🔊 **Broadcasting live into <#${voiceChannel.id}>!**`
+                : (voiceChannel
+                    ? `*(Audio played as text — music node reconnecting)*`
+                    : `*(Join a voice channel to hear the DJ speak aloud!)*`);
 
             const embed = createEmbed('Music')
                 .setAuthor({ name: '🎙️ Reso DJ — Live Preview' })
                 .setDescription(
                     `### 📻 Incoming Broadcast:\n` +
                     `> 🎙️ **DJ Reso:** *"${intro?.text || 'Up next, enjoy the beat!'}"*\n\n` +
+                    `${voiceStatus}\n\n` +
                     `**Target Track:** **${truncate(sampleTrack.info?.title || 'Track', 40)}** by ${sampleTrack.info?.author || 'Artist'}\n` +
                     `**Requester:** <@${interaction.user.id}>\n` +
                     `**Engine:** Fast AI / Zero-Delay Fallback (${intro?.preparedAt ? 'Cached' : 'Generated'})`

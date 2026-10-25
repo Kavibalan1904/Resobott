@@ -57,13 +57,61 @@ function setupLavalinkEvents(client) {
         }
         isAdvancingQueue.add(player.guildId);
         try {
-            // In lavalink-client with autoSkip: false, queueTrackEnd has already shifted
-            // the next song into player.queue.current. We must call player.play() to start audio!
-            if (player.queue.current) {
-                await player.play();
-            } else if (player.queue.tracks && player.queue.tracks.length > 0) {
-                const nextTrack = player.queue.tracks.shift();
+            // In lavalink-client with autoSkip: false, determine the next track to play
+            let nextTrack = player.queue.current;
+            if (!nextTrack && player.queue.tracks && player.queue.tracks.length > 0) {
+                nextTrack = player.queue.tracks.shift();
                 player.queue.current = nextTrack;
+            }
+
+            if (!nextTrack) {
+                await player.stopPlaying(false, false);
+                return;
+            }
+
+            // Check if Voice DJ should speak on this upcoming track
+            const autoContext = guildContextManager?.getContext ? guildContextManager.getContext(player.guildId) : null;
+            const isAutoplayTrack = nextTrack?.isAutoplay || (nextTrack?.requester?.id === 'autoplay');
+            const djSettings = voiceDjService.getSettings(player.guildId);
+
+            if (
+                !nextTrack._isVoiceDj &&
+                !nextTrack._hasSpokenIntro &&
+                djSettings &&
+                djSettings.enabled &&
+                (djSettings.mode === 'both' || djSettings.mode === 'voice') &&
+                voiceDjService.shouldSpeakThisTurn(player.guildId, !isAutoplayTrack)
+            ) {
+                try {
+                    const announcement = await voiceDjService.getOrGenerateAnnouncement(player.guildId, nextTrack, autoContext);
+                    nextTrack._voiceDjAnnouncement = announcement;
+                    nextTrack._hasSpokenIntro = true;
+
+                    if (announcement?.audioUrl && player.node && player.node.connected) {
+                        const searchPromise = player.search({ query: announcement.audioUrl }, { username: 'Reso DJ', id: 'voicedj' });
+                        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('TTS timeout')), 1200));
+                        const ttsRes = await Promise.race([searchPromise, timeoutPromise]);
+
+                        if (ttsRes?.tracks?.length > 0) {
+                            const djTrack = ttsRes.tracks[0];
+                            djTrack._isVoiceDj = true;
+                            djTrack._nextSong = nextTrack;
+                            djTrack.info.title = `🎙️ DJ: "${truncate(announcement.text, 35)}"`;
+                            djTrack.info.author = 'Reso Voice DJ';
+
+                            // Place real track at front of queue tracks and play DJ intro
+                            player.queue.tracks.unshift(nextTrack);
+                            player.queue.current = djTrack;
+                            await player.play();
+                            return;
+                        }
+                    }
+                } catch (djErr) {
+                    console.log(`[Reso DJ] Voice audio skipped (${djErr.message}), playing track directly.`);
+                }
+            }
+
+            if (player.queue.current) {
                 await player.play();
             } else {
                 await player.stopPlaying(false, false);
@@ -326,6 +374,11 @@ function setupLavalinkEvents(client) {
 
     // ── Track starts playing ───────────────────────────────────
     manager.on('trackStart', async (player, track) => {
+        if (track?._isVoiceDj) {
+            console.log(`[Reso DJ] 🎙️ Speaking radio intro in voice channel...`);
+            return;
+        }
+
         player.set('trackStartTime', Date.now()); // For diagnostics
         
         const mem = Math.round(process.memoryUsage().rss / 1024 / 1024);
@@ -421,6 +474,12 @@ function setupLavalinkEvents(client) {
 
     // ── Track ends ─────────────────────────────────────────────
     manager.on('trackEnd', async (player, track, payload) => {
+        if (track?._isVoiceDj) {
+            console.log(`[Reso DJ] ✓ Voice announcement finished, transitioning to music.`);
+            await advanceQueueSafely(player);
+            return;
+        }
+
         const endReason = payload?.reason || 'unknown';
         trackGaps.set(player.guildId, Date.now()); // Start measuring transition gap
 
