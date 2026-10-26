@@ -53,17 +53,17 @@ async function registerSlashCommands(client) {
         );
         console.log('[Reso] ✓ Global slash commands registered');
 
-        // 2. Also register to active guilds for INSTANT (0-second) appearance in Discord
+        // 2. Clear any redundant guild-specific slash commands to eliminate duplicate command listings in Discord
         if (client.guilds?.cache?.size > 0) {
             for (const guild of client.guilds.cache.values()) {
                 try {
                     await rest.put(
                         Routes.applicationGuildCommands(clientId, guild.id),
-                        { body: commands },
+                        { body: [] },
                     );
                 } catch { /* ignore individual guild permission issues */ }
             }
-            console.log(`[Reso] ✓ Guild slash commands registered across ${client.guilds.cache.size} server(s)`);
+            console.log(`[Reso] ✓ Cleared redundant guild commands across ${client.guilds.cache.size} server(s) to eliminate duplicates`);
         }
     } catch (error) {
         console.error('[Reso] Failed to register slash commands:', error.message || error);
