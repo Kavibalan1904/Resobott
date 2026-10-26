@@ -19,6 +19,7 @@ const {
     isExcluded,
 } = require('./normalizer');
 
+const { PeerDiscoveryProvider } = require('./providers/peerDiscoveryProvider');
 const { trackMetadataStore, TrackMetadataStore, setTrackMetadata, getTrackMetadata, clearGuildMetadata, clearTrackMetadata } = require('../utils/trackMetadata');
 
 module.exports = {
@@ -47,4 +48,5 @@ module.exports = {
     getTrackMetadata,
     clearGuildMetadata,
     clearTrackMetadata,
+    PeerDiscoveryProvider,
 };

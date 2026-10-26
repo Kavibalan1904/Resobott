@@ -8,8 +8,6 @@
     "dev": "node --trace-warnings --watch index.js",
     "test": "node --test",
     "avatar:apply": "node animator/animate.js",
-    "avatar:flame": "node animator/animate.js ./animator/avatar_halloween_flame.gif",
-    "avatar:spooky": "node animator/animate.js ./animator/avatar_halloween_spooky.gif",
     "avatar:rollback": "node animator/rollback.js"
   },
   "engines": {

@@ -5,6 +5,7 @@
 
 const { BaseCandidateProvider } = require('./baseProvider');
 const { cleanVideoTitle } = require('../../utils/helpers');
+const { getCanonicalIdentifier } = require('../normalizer');
 
 class YtMusicSearchProvider extends BaseCandidateProvider {
     constructor(timeoutMs = 6000) {
@@ -18,18 +19,24 @@ class YtMusicSearchProvider extends BaseCandidateProvider {
         const author = seedTrack.info.author || '';
         if (!title) return [];
 
-        const query = `${title} ${author}`.trim();
+        // Appending "radio" on YouTube Music returns related radio tracks rather than duplicates of the seed itself
+        const query = `${title} ${author} radio`.trim();
         const requester = { username: 'Autoplay', id: 'autoplay' };
 
         try {
-            return await this.withTimeout(this._search(player, query, requester));
+            const tracks = await this.withTimeout(this._search(player, query, requester, seedTrack));
+            if (tracks.length > 0) return tracks;
+
+            // Fallback: search without "radio" suffix
+            const plainQuery = `${title} ${author}`.trim();
+            return await this.withTimeout(this._search(player, plainQuery, requester, seedTrack));
         } catch (err) {
             console.log(`[Autoplay] YtMusic search for "${query}" failed or timed out: ${err.message}`);
             return [];
         }
     }
 
-    async _search(player, query, requester) {
+    async _search(player, query, requester, seedTrack) {
         let res = null;
         const searchFn = typeof player.search === 'function'
             ? player.search.bind(player)
@@ -47,9 +54,13 @@ class YtMusicSearchProvider extends BaseCandidateProvider {
 
         if (!res || !Array.isArray(res.tracks)) return [];
 
+        const seedId = seedTrack?.info ? getCanonicalIdentifier(seedTrack.info) : '';
         const candidates = [];
-        for (const t of res.tracks.slice(0, 10)) {
+        for (const t of res.tracks.slice(0, 12)) {
             if (!t?.info) continue;
+            // Discard immediate duplicate of seed
+            if (seedId && getCanonicalIdentifier(t.info) === seedId) continue;
+
             t.recommendationSource = 'ytmusic_search';
             candidates.push(t);
         }

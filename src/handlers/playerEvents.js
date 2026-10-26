@@ -3,7 +3,6 @@ const { truncate, markNodeError, getHealthyNodes, getBestNode, computeNodeScore,
 const { getAutoplayTrack, updateSessionState } = require('../utils/recommendations');
 const { guildContextManager, autoplayStore, setTrackMetadata, getTrackMetadata } = require('../autoplay');
 const { getDesignatedChannel } = require('../utils/settings');
-const { voiceDjService } = require('../ai/voiceDjService');
 
 /**
  * Setup all Lavalink event listeners on the LavalinkManager
@@ -67,73 +66,6 @@ function setupLavalinkEvents(client) {
             if (!nextTrack) {
                 await player.stopPlaying(false, false);
                 return;
-            }
-
-            // Check if Voice DJ should speak on this upcoming track
-            const autoContext = guildContextManager?.getContext ? guildContextManager.getContext(player.guildId) : null;
-            const isAutoplayTrack = nextTrack?.isAutoplay || (nextTrack?.requester?.id === 'autoplay');
-            const djSettings = voiceDjService.getSettings(player.guildId);
-
-            if (
-                !nextTrack._isVoiceDj &&
-                !nextTrack._hasSpokenIntro &&
-                djSettings &&
-                djSettings.enabled &&
-                (djSettings.mode === 'both' || djSettings.mode === 'voice') &&
-                voiceDjService.shouldSpeakThisTurn(player.guildId, !isAutoplayTrack)
-            ) {
-                try {
-                    const announcement = await voiceDjService.getOrGenerateAnnouncement(player.guildId, nextTrack, autoContext);
-                    nextTrack._voiceDjAnnouncement = announcement;
-                    nextTrack._hasSpokenIntro = true;
-
-                    let playableUrl = announcement?.audioUrl;
-                    let djMessage = null;
-
-                    // If studio AI voice buffer exists, bridge it to Lavalink via Discord CDN attachment
-                    if (announcement?.audioBuffer) {
-                        const targetChan = getPlayerTextChannel(player);
-                        if (targetChan && typeof targetChan.send === 'function') {
-                            try {
-                                const { AttachmentBuilder } = require('discord.js');
-                                const attachment = new AttachmentBuilder(announcement.audioBuffer, { name: 'voicedj.mp3' });
-                                djMessage = await targetChan.send({
-                                    content: `🎙️ **Reso DJ:** *"${announcement.text}"*`,
-                                    files: [attachment],
-                                });
-                                const cdnUrl = djMessage?.attachments?.first()?.url;
-                                if (cdnUrl) {
-                                    playableUrl = cdnUrl;
-                                }
-                            } catch (uploadErr) {
-                                console.warn('[Reso DJ] Studio audio upload note:', uploadErr.message);
-                            }
-                        }
-                    }
-
-                    if (playableUrl && player.node && player.node.connected) {
-                        const searchPromise = player.search({ query: playableUrl }, { username: 'Reso DJ', id: 'voicedj' });
-                        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('TTS timeout')), 2500));
-                        const ttsRes = await Promise.race([searchPromise, timeoutPromise]);
-
-                        if (ttsRes?.tracks?.length > 0) {
-                            const djTrack = ttsRes.tracks[0];
-                            djTrack._isVoiceDj = true;
-                            djTrack._nextSong = nextTrack;
-                            djTrack._djMessage = djMessage;
-                            djTrack.info.title = `🎙️ DJ: "${truncate(announcement.text, 35)}"`;
-                            djTrack.info.author = 'Reso Voice DJ';
-
-                            // Place real track at front of queue tracks and play DJ intro
-                            player.queue.tracks.unshift(nextTrack);
-                            player.queue.current = djTrack;
-                            await player.play();
-                            return;
-                        }
-                    }
-                } catch (djErr) {
-                    console.log(`[Reso DJ] Voice audio skipped (${djErr.message}), playing track directly.`);
-                }
             }
 
             if (player.queue.current) {
@@ -399,11 +331,6 @@ function setupLavalinkEvents(client) {
 
     // ── Track starts playing ───────────────────────────────────
     manager.on('trackStart', async (player, track) => {
-        if (track?._isVoiceDj) {
-            console.log(`[Reso DJ] 🎙️ Speaking radio intro in voice channel...`);
-            return;
-        }
-
         player.set('trackStartTime', Date.now()); // For diagnostics
         
         const mem = Math.round(process.memoryUsage().rss / 1024 / 1024);
@@ -463,30 +390,8 @@ function setupLavalinkEvents(client) {
             lastNowPlayingMessage.delete(player.guildId);
         }
 
-        // ── Voice DJ Announcement (Spotify AI DJ style) ──
-        let djAnnouncement = null;
-        try {
-            if (voiceDjService.isEnabled(player.guildId) && voiceDjService.shouldSpeakThisTurn(player.guildId, !isAutoplayTrack)) {
-                djAnnouncement = await voiceDjService.getOrGenerateAnnouncement(player.guildId, track, autoContext);
-                player.voiceDjAnnouncement = djAnnouncement;
-                track._voiceDjAnnouncement = djAnnouncement;
-            } else {
-                player.voiceDjAnnouncement = null;
-            }
-        } catch {
-            djAnnouncement = null;
-        }
-
-        // ── Background Pre-caching for upcoming track in queue ──
-        try {
-            if (player.queue?.tracks?.length > 0 && voiceDjService.isEnabled(player.guildId)) {
-                const nextTrack = player.queue.tracks[0];
-                voiceDjService.prepareUpcomingAnnouncement(player.guildId, nextTrack, autoContext).catch(() => {});
-            }
-        } catch {}
-
         // ── INSTANT: Send Now Playing embed immediately ──
-        const embed = nowPlayingEmbed(track, player, client, [], djAnnouncement);
+        const embed = nowPlayingEmbed(track, player, client, []);
         const controls = createPlayerControls(false);
 
         try {
@@ -499,15 +404,6 @@ function setupLavalinkEvents(client) {
 
     // ── Track ends ─────────────────────────────────────────────
     manager.on('trackEnd', async (player, track, payload) => {
-        if (track?._isVoiceDj) {
-            console.log(`[Reso DJ] ✓ Voice announcement finished, transitioning to music.`);
-            if (track._djMessage && typeof track._djMessage.delete === 'function') {
-                track._djMessage.delete().catch(() => {});
-            }
-            await advanceQueueSafely(player);
-            return;
-        }
-
         const endReason = payload?.reason || 'unknown';
         trackGaps.set(player.guildId, Date.now()); // Start measuring transition gap
 

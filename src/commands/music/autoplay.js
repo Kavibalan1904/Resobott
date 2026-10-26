@@ -47,12 +47,16 @@ module.exports = {
             const seed = context.getRecommendationSeed();
             const lastPicked = context.lastSelectedTrack;
 
+            const sessionLang = context.sessionLanguage ? context.sessionLanguage.toUpperCase() : 'Auto-Detect';
+            const sessionVibe = context.sessionVibe ? context.sessionVibe.charAt(0).toUpperCase() + context.sessionVibe.slice(1) : 'Auto-Detect';
+
             const embed = createEmbed('Info')
                 .setAuthor({ name: '🔄 Reso Smart Autoplay Status' })
                 .setDescription(
                     `### State: ${isEnabled ? '✅ Enabled' : '❌ Disabled'}\n` +
                     `> **Engine:** Resonance AI DJ (YouTube Music Radio)\n` +
-                    `> **Active Mode:** \`${currentMode}\`\n\n` +
+                    `> **Active Mode:** \`${currentMode}\`\n` +
+                    `> **Session Anchor:** Language: \`${sessionLang}\` • Vibe: \`${sessionVibe}\`\n\n` +
                     `**🌱 Current Recommendation Seed:**\n` +
                     `> ${seed?.info ? `**${truncate(seed.info.title, 45)}** by ${seed.info.author || 'Unknown'}` : '*No seed yet (play a song to set seed)*'}\n\n` +
                     `**🎧 Last Autoplay Selection:**\n` +

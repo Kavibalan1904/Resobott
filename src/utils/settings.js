@@ -74,29 +74,6 @@ function removeDesignatedChannel(guildId) {
     }
 }
 
-function getVoiceDjSettings(guildId) {
-    const defaultSettings = {
-        enabled: false,
-        mode: 'both',       // 'both' (voice + embed), 'voice', or 'text'
-        frequency: 'every_2', // 'every', 'every_2', 'every_3', 'request_only'
-        voice: 'radio',     // 'radio', 'british', 'chill', 'female'
-    };
-    if (!settings[guildId] || !settings[guildId].voiceDj) {
-        return defaultSettings;
-    }
-    return { ...defaultSettings, ...settings[guildId].voiceDj };
-}
-
-function setVoiceDjSettings(guildId, patch = {}) {
-    if (!settings[guildId]) settings[guildId] = {};
-    settings[guildId].voiceDj = {
-        ...getVoiceDjSettings(guildId),
-        ...patch,
-    };
-    saveSettings(true);
-    return settings[guildId].voiceDj;
-}
-
 // Initial load
 loadSettings();
 
@@ -105,6 +82,4 @@ module.exports = {
     setDesignatedChannel,
     removeDesignatedChannel,
     isDesignatedChannel,
-    getVoiceDjSettings,
-    setVoiceDjSettings,
 };

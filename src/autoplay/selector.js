@@ -1,6 +1,7 @@
 /**
  * Reso Smart Autoplay — Top-Candidate Selection & Musical Diversity
- * Applies artist diversity guards, weighted softmax selection, and selection explanations.
+ * Applies artist diversity guards, anti-ping-pong penalties, softmax selection with mode-aware temperature,
+ * and transparent selection explanations.
  */
 
 const { normalizeArtist } = require('./normalizer');
@@ -23,11 +24,13 @@ class CandidateSelector {
             return { selectedTrack: null, reason: 'No candidates available' };
         }
 
-        // Identify immediate last track's artist
+        // Identify immediate last track's artist and 2nd last track's artist
         const lastTrack = context?.currentTrack || (context?.recentSuccessfulTracks?.[0]) || null;
         const lastArtist = normalizeArtist(lastTrack?.info?.author || '');
+        const secondLastTrack = context?.recentSuccessfulTracks?.[1] || null;
+        const secondLastArtist = normalizeArtist(secondLastTrack?.info?.author || '');
 
-        // Apply artist diversity adjustment
+        // Apply artist diversity & ping-pong adjustment
         const diversityAdjusted = rankedCandidates.map((track) => {
             let adjustedScore = track.autoplayScore || 50;
             const candArtist = normalizeArtist(track.info?.author || '');
@@ -37,6 +40,9 @@ class CandidateSelector {
                 isConsecutive = true;
                 // Penalize consecutive artist repeat
                 adjustedScore = Math.max(1, adjustedScore - this.consecutiveArtistPenalty);
+            } else if (secondLastArtist && candArtist && (candArtist === secondLastArtist || candArtist.includes(secondLastArtist))) {
+                // Decay penalty for 2-step alternating repeat (ping-pong prevention)
+                adjustedScore = Math.max(1, adjustedScore - Math.round(this.consecutiveArtistPenalty * 0.5));
             }
 
             return {
@@ -60,17 +66,26 @@ class CandidateSelector {
         // Take Top-K group
         const topGroup = eligible.slice(0, this.topK);
 
-        // If top candidate has a dominant score margin (> 15 points higher than #2), pick #1 directly
+        // If top candidate has a dominant score margin (>= 15 points higher than #2), pick #1 directly
         if (topGroup.length === 1 || (topGroup.length > 1 && topGroup[0].adjustedScore - topGroup[1].adjustedScore >= 15)) {
             const picked = topGroup[0];
             const reason = this._generateReason(picked, context);
             return { selectedTrack: picked.track, reason };
         }
 
-        // Weighted random selection among top group for organic listening variety
-        // Weight = Math.exp((score - minScore) / temperature)
-        const minScore = topGroup[topGroup.length - 1].adjustedScore;
-        const weights = topGroup.map(item => Math.max(1, Math.round(item.adjustedScore - minScore + 5)));
+        // Softmax selection with temperature scaling based on mode
+        const mode = context?.mode || 'Balanced';
+        const temperatures = {
+            'Familiar': 5.0,
+            'Balanced': 8.0,
+            'Discovery': 12.0,
+            'Artist Focus': 6.0,
+            'Session Focus': 7.0,
+        };
+        const tau = temperatures[mode] || 8.0;
+
+        const maxScore = topGroup[0].adjustedScore;
+        const weights = topGroup.map(item => Math.exp((item.adjustedScore - maxScore) / tau));
         const totalWeight = weights.reduce((acc, w) => acc + w, 0);
 
         let randomVal = Math.random() * totalWeight;
@@ -89,9 +104,13 @@ class CandidateSelector {
     }
 
     _generateReason(item, context) {
-        const breakdown = item.track?.scoreBreakdown || {};
+        const track = item.track || {};
+        const breakdown = track.scoreBreakdown || {};
         const reasons = [];
 
+        if (track.peerArtist) {
+            reasons.push(`peer artist (${track.peerArtist})`);
+        }
         if (breakdown.seedRelevance >= 80) {
             reasons.push('high seed relevance');
         }

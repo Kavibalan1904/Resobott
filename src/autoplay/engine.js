@@ -9,7 +9,6 @@ const { filterCandidates } = require('./filter');
 const { candidateScorer } = require('./scorer');
 const { candidateSelector } = require('./selector');
 const { autoplayStore } = require('./store');
-const { isTrackDuplicate } = require('./normalizer');
 const { truncate } = require('../utils/helpers');
 const { setTrackMetadata } = require('../utils/trackMetadata');
 
@@ -19,6 +18,7 @@ const { YtMusicSearchProvider } = require('./providers/ytMusicSearchProvider');
 const { ArtistDiscoveryProvider } = require('./providers/artistDiscoveryProvider');
 const { RelatedSearchProvider } = require('./providers/relatedSearchProvider');
 const { HistoryDiscoveryProvider } = require('./providers/historyDiscoveryProvider');
+const { PeerDiscoveryProvider } = require('./providers/peerDiscoveryProvider');
 
 class AutoplayEngine {
     constructor() {
@@ -27,6 +27,7 @@ class AutoplayEngine {
         this.artistProvider = new ArtistDiscoveryProvider(6000);
         this.relatedProvider = new RelatedSearchProvider(6000);
         this.historyProvider = new HistoryDiscoveryProvider(6000);
+        this.peerProvider = new PeerDiscoveryProvider(6000);
 
         this.activeLocks = new Set(); // guildId set for active recommendation searches
     }
@@ -85,21 +86,7 @@ class AutoplayEngine {
 
             // Sync track history if available from client
             if (trackHistoryMap && trackHistoryMap.has(guildId)) {
-                const extHistory = trackHistoryMap.get(guildId) || [];
-                for (const t of extHistory) {
-                    if (t?.info) {
-                        const isAutoplay = t.requester?.id === 'autoplay';
-                        if (isAutoplay) {
-                            if (!context.recentAutoplayRecommendations.some(r => isTrackDuplicate(r.info, t.info))) {
-                                context.recentAutoplayRecommendations.push(t);
-                            }
-                        } else {
-                            if (!context.recentManualTracks.some(m => isTrackDuplicate(m.info, t.info))) {
-                                context.recentManualTracks.push(t);
-                            }
-                        }
-                    }
-                }
+                context.syncExternalHistory(trackHistoryMap.get(guildId) || []);
             }
 
             // Determine recommendation seed
@@ -109,7 +96,7 @@ class AutoplayEngine {
                 return null;
             }
 
-            console.log(`[AUTOPLAY] guild=${guildId} enabled=true mode=${context.mode}`);
+            console.log(`[AUTOPLAY] guild=${guildId} enabled=true mode=${context.mode} lang=${context.sessionLanguage || 'auto'} vibe=${context.sessionVibe || 'auto'}`);
             console.log(`[AUTOPLAY] seed="${truncate(seedTrack.info.title || 'Unknown', 40)}" by "${truncate(seedTrack.info.author || 'Unknown', 30)}"`);
 
             // Step 1: Candidate Generation (Provider Retrieval)
@@ -204,7 +191,7 @@ class AutoplayEngine {
     async _retrieveCandidates(player, seedTrack, context) {
         const candidates = [];
 
-        // Run Mix Provider and YTM / Related providers
+        // Primary providers: Mix, YTM, Related, and Peer Discovery
         const providerTasks = [
             this.mixProvider.getCandidates(player, seedTrack, context)
                 .then(tracks => ({ provider: 'youtube_mix', tracks }))
@@ -215,10 +202,19 @@ class AutoplayEngine {
             this.relatedProvider.getCandidates(player, seedTrack, context)
                 .then(tracks => ({ provider: 'related_search', tracks }))
                 .catch(err => ({ provider: 'related_search', tracks: [], error: err.message })),
+            this.peerProvider.getCandidates(player, seedTrack, context)
+                .then(tracks => ({ provider: 'peer_discovery', tracks }))
+                .catch(err => ({ provider: 'peer_discovery', tracks: [], error: err.message })),
         ];
 
-        // In Discovery mode or if explicit likes exist, also query artist / history discovery
-        if (context.mode === 'Discovery' || (context.explicitLikes && context.explicitLikes.size > 0)) {
+        // Mode specific additions
+        if (context.mode === 'Artist Focus') {
+            providerTasks.push(
+                this.artistProvider.getCandidates(player, seedTrack, context)
+                    .then(tracks => ({ provider: 'artist_discovery', tracks }))
+                    .catch(err => ({ provider: 'artist_discovery', tracks: [], error: err.message }))
+            );
+        } else if (context.mode === 'Discovery' || (context.explicitLikes && context.explicitLikes.size > 0)) {
             providerTasks.push(
                 this.historyProvider.getCandidates(player, seedTrack, context)
                     .then(tracks => ({ provider: 'history_discovery', tracks }))
@@ -253,13 +249,49 @@ class AutoplayEngine {
             }
         } catch { }
 
-        // Fallback 2: History discovery
+        // Fallback 2: Peer Discovery
+        if (fallbackCandidates.length === 0) {
+            try {
+                const peerTracks = await this.peerProvider.getCandidates(player, seedTrack, context);
+                if (peerTracks.length > 0) {
+                    console.log(`[AUTOPLAY] fallback_provider=peer_discovery candidates=${peerTracks.length}`);
+                    fallbackCandidates.push(...peerTracks);
+                }
+            } catch { }
+        }
+
+        // Fallback 3: History discovery
         if (fallbackCandidates.length === 0) {
             try {
                 const historyTracks = await this.historyProvider.getCandidates(player, seedTrack, context);
                 if (historyTracks.length > 0) {
                     console.log(`[AUTOPLAY] fallback_provider=history_discovery candidates=${historyTracks.length}`);
                     fallbackCandidates.push(...historyTracks);
+                }
+            } catch { }
+        }
+
+        // Fallback 4: General Session Language & Vibe Search
+        if (fallbackCandidates.length === 0) {
+            try {
+                const lang = context.sessionLanguage || '';
+                const vibe = context.sessionVibe || 'popular';
+                const query = `${lang} ${vibe} hit songs`.trim();
+                const searchFn = typeof player.search === 'function'
+                    ? player.search.bind(player)
+                    : player.node?.search?.bind(player.node);
+                if (searchFn) {
+                    const requester = { username: 'Autoplay', id: 'autoplay' };
+                    let res = await searchFn({ query, source: 'ytmsearch' }, requester).catch(() => null);
+                    if (!res || !res.tracks || res.tracks.length === 0) {
+                        res = await searchFn({ query, source: 'ytsearch' }, requester).catch(() => null);
+                    }
+                    if (res?.tracks?.length > 0) {
+                        for (const t of res.tracks.slice(0, 8)) {
+                            t.recommendationSource = 'session_fallback';
+                            fallbackCandidates.push(t);
+                        }
+                    }
                 }
             } catch { }
         }

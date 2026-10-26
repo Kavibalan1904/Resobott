@@ -39,6 +39,7 @@ const { YtMusicSearchProvider } = require('../src/autoplay/providers/ytMusicSear
 const { ArtistDiscoveryProvider } = require('../src/autoplay/providers/artistDiscoveryProvider');
 const { RelatedSearchProvider } = require('../src/autoplay/providers/relatedSearchProvider');
 const { HistoryDiscoveryProvider } = require('../src/autoplay/providers/historyDiscoveryProvider');
+const { PeerDiscoveryProvider } = require('../src/autoplay/providers/peerDiscoveryProvider');
 
 describe('Reso Smart Autoplay — 1. Normalization & Duplicate Detection', () => {
     it('should strip common video suffixes while preserving legitimate version tags', () => {
@@ -695,6 +696,134 @@ describe('Reso Smart Autoplay — 8. Autoplay & Recommendations Strict Separatio
         assert.ok(embed.data.description.includes('• 🔄 Autoplay On'), 'Should indicate Autoplay is enabled on server');
         assert.ok(!embed.data.description.includes('• 🔄 Autoplay Pick'), 'Should NOT mark user track as an autoplay pick');
         assert.ok(embed.data.footer.text.includes('Requested by DiscordUser'), 'Should credit the requesting user');
+    });
+});
+
+describe('Reso Smart Autoplay — 9. Refined Algorithm Features & Multi-Ecosystem Discovery', () => {
+    it('1. PeerDiscoveryProvider should discover tracks from known musical peers', async () => {
+        const provider = new PeerDiscoveryProvider(2000);
+        let capturedQuery = '';
+        const mockPlayer = {
+            search: async ({ query }) => {
+                capturedQuery = query;
+                return {
+                    tracks: [
+                        { info: { title: 'Vaseegara', author: 'Harris Jayaraj', duration: 250000, uri: 'http://yt/1' } },
+                    ],
+                };
+            },
+        };
+
+        const context = new ListeningSessionContext('g_peer_test');
+        context.sessionLanguage = 'tamil';
+        const seed = { info: { title: 'Arabic Kuthu', author: 'Anirudh Ravichander' } };
+
+        const candidates = await provider.getCandidates(mockPlayer, seed, context);
+        assert.ok(candidates.length > 0);
+        assert.strictEqual(candidates[0].recommendationSource, 'peer_discovery');
+        assert.ok(capturedQuery.toLowerCase().includes('hit songs'));
+        assert.ok(capturedQuery.toLowerCase().includes('tamil'));
+    });
+
+    it('2. Candidate filtering rejects non-music movie teasers, trailers, promos, and scenes', () => {
+        const context = new ListeningSessionContext('g_filter_movie');
+        const candidates = [
+            { info: { title: 'Leo - Official Trailer | Thalapathy Vijay', uri: 'http://yt/tr', duration: 150000 } },
+            { info: { title: 'Vikram - Movie Teaser HD', uri: 'http://yt/ts', duration: 120000 } },
+            { info: { title: 'Jailer Climax Fight Scene 4K', uri: 'http://yt/sc', duration: 240000 } },
+            { info: { title: 'Beast - Motion Poster', uri: 'http://yt/mp', duration: 60000 } },
+            { info: { title: 'Arabic Kuthu - Video Song | Anirudh', uri: 'http://yt/ok', duration: 240000 } },
+        ];
+
+        const { validCandidates, rejectionCounts } = filterCandidates(candidates, context);
+        assert.strictEqual(validCandidates.length, 1);
+        assert.strictEqual(validCandidates[0].info.title, 'Arabic Kuthu - Video Song | Anirudh');
+        assert.strictEqual(rejectionCounts.streamOrPodcast, 4);
+    });
+
+    it('3. Candidate filtering rejects explicit foreign language mismatch when session language is established', () => {
+        const context = new ListeningSessionContext('g_filter_lang');
+        context.sessionLanguage = 'tamil';
+
+        const candidates = [
+            { info: { title: 'Kalaavathi (Telugu Version)', uri: 'http://yt/tel', duration: 210000 } },
+            { info: { title: 'Arabic Kuthu (Hindi Version)', uri: 'http://yt/hin', duration: 210000 } },
+            { info: { title: 'Naa Ready (Tamil Song)', uri: 'http://yt/tam', duration: 240000 } },
+        ];
+
+        const { validCandidates, rejectionCounts } = filterCandidates(candidates, context);
+        assert.strictEqual(validCandidates.length, 1);
+        assert.strictEqual(validCandidates[0].info.title, 'Naa Ready (Tamil Song)');
+        assert.strictEqual(rejectionCounts.languageMismatch, 2);
+    });
+
+    it('4. Scorer applies quality penalties to karaoke, nightcore, sped up, and 8D audio variants', () => {
+        const context = new ListeningSessionContext('g_scorer_quality');
+        const seed = { info: { title: 'Normal Seed Song', author: 'Artist', duration: 200000 } };
+
+        const candidates = [
+            { info: { title: 'Song Clean Official Audio', author: 'Artist', duration: 200000 }, recommendationSource: 'ytmusic_search' },
+            { info: { title: 'Song Karaoke Backing Track', author: 'Artist', duration: 200000 }, recommendationSource: 'ytmusic_search' },
+            { info: { title: 'Song Sped Up Nightcore Remix', author: 'Artist', duration: 200000 }, recommendationSource: 'ytmusic_search' },
+            { info: { title: 'Song 8D Audio Bass Boosted', author: 'Artist', duration: 200000 }, recommendationSource: 'ytmusic_search' },
+        ];
+
+        const ranked = candidateScorer.scoreAndRankCandidates(candidates, seed, context);
+        assert.strictEqual(ranked[0].info.title, 'Song Clean Official Audio');
+        assert.ok(ranked[0].autoplayScore > ranked[1].autoplayScore);
+        assert.ok(ranked[0].scoreBreakdown.candidateQuality > ranked[1].scoreBreakdown.candidateQuality);
+    });
+
+    it('5. Scorer enforces zero language drift by boosting matching language and penalizing conflicting foreign languages', () => {
+        const context = new ListeningSessionContext('g_scorer_lang');
+        context.sessionLanguage = 'tamil';
+
+        const seed = { info: { title: 'Arabic Kuthu', author: 'Anirudh', duration: 240000 } };
+        const candidates = [
+            { info: { title: 'English Country Pop Anthem', author: 'Country Singer', duration: 220000 }, recommendationSource: 'ytmusic_search' },
+            { info: { title: 'Halamithi Habibo (Tamil)', author: 'Anirudh', duration: 240000 }, recommendationSource: 'ytmusic_search' },
+        ];
+
+        const ranked = candidateScorer.scoreAndRankCandidates(candidates, seed, context);
+        assert.strictEqual(ranked[0].info.title, 'Halamithi Habibo (Tamil)');
+        assert.ok(ranked[0].scoreBreakdown.sessionRelevance > ranked[1].scoreBreakdown.sessionRelevance);
+    });
+
+    it('6. Anti-ping-pong: CandidateSelector penalizes alternating repeats across the last 2 tracks', () => {
+        const selector = new CandidateSelector({ topK: 3, consecutiveArtistPenalty: 30 });
+        const context = new ListeningSessionContext('g_selector_pingpong');
+        // Track 1 (2 tracks ago): Anirudh
+        // Track 2 (1 track ago): Harris
+        context.currentTrack = { info: { title: 'Track 2', author: 'Harris Jayaraj' } };
+        context.recentSuccessfulTracks = [
+            { info: { title: 'Track 2', author: 'Harris Jayaraj' } },
+            { info: { title: 'Track 1', author: 'Anirudh' } },
+        ];
+
+        const candidates = [
+            { info: { title: 'Track by Anirudh', author: 'Anirudh' }, autoplayScore: 78 },
+            { info: { title: 'Track by Yuvan', author: 'Yuvan Shankar Raja' }, autoplayScore: 75 },
+        ];
+
+        // Anirudh was played 2 tracks ago, gets 2nd-step ping-pong penalty (30 * 0.5 = 15): 78 - 15 = 63
+        // Yuvan has 75 with no penalty. Yuvan wins!
+        const { selectedTrack } = selector.selectCandidate(candidates, context);
+        assert.strictEqual(selectedTrack.info.author, 'Yuvan Shankar Raja');
+    });
+
+    it('7. ListeningSessionContext synchronizes external history with newest items first and infers session anchors', () => {
+        const context = new ListeningSessionContext('g_sync_ext');
+        const extHistory = [
+            { info: { title: 'Old Song', author: 'Artist A' }, requester: { id: 'user1' } },
+            { info: { title: 'Why This Kolaveri Di', author: 'Anirudh' }, requester: { id: 'user1' } },
+            { info: { title: 'Arabic Kuthu', author: 'Anirudh' }, requester: { id: 'autoplay' } },
+        ];
+
+        context.syncExternalHistory(extHistory);
+        assert.strictEqual(context.mostRecentManualTrack.info.title, 'Why This Kolaveri Di');
+        assert.strictEqual(context.currentTrack.info.title, 'Arabic Kuthu');
+        assert.strictEqual(context.sessionLanguage, 'tamil');
+        assert.ok(context.artistPlayCounts.get('anirudh') >= 2);
     });
 });
 

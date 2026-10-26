@@ -1,49 +1,40 @@
 # Discord Bot Animator & Avatar Management
 
-This directory contains tools to apply animated GIF avatars to your Discord bot, switch between seasonal themes (like Halloween), and easily rollback anytime.
+This directory contains tools to manage and apply animated GIF avatars to your Discord bot and restore backups anytime.
 
 ---
 
-## 🎃 Available Avatars
+## 🎨 Available Avatars
 
 | File | Description | Theme |
 |------|-------------|-------|
-| [`avatar.gif`](file:///animator/avatar.gif) | Currently active avatar ready to upload (Default: Jack-o'-Lantern Flame) | Active |
-| [`avatar_halloween_flame.gif`](file:///animator/avatar_halloween_flame.gif) | **Jack-o'-Lantern Flame**: Glowing pumpkin orange & golden flame with witch hat, spiderweb, floating embers, and original pulsing equalizer | Halloween (Flame) |
-| [`avatar_halloween_spooky.gif`](file:///animator/avatar_halloween_spooky.gif) | **Spooky Phantom**: Royal witch violet & pumpkin amber gradient with witch hat, spiderweb, floating embers, and original pulsing equalizer | Halloween (Spooky) |
+| [`avatar.gif`](file:///animator/avatar.gif) | Currently active avatar ready to upload | Active |
 | [`avatar_original.gif`](file:///animator/avatar_original.gif) | **Original Icon**: Original cyan/purple neon gradient with pulsing visualizer | Original (Default) |
 | [`backup/`](file:///animator/backup/) | Permanent archive of all original avatars, square crops, zoomed crops, and high-res source logos/banners | Backup Vault |
 
 ---
 
-## 🚀 How to Apply Halloween Avatar
+## 🚀 How to Apply Avatar
 
 From the **Resobot root directory**, run any of the following:
 
-### 1. Apply Default Halloween Avatar (Flame)
+### 1. Apply Active Avatar (`avatar.gif`)
 ```bash
 npm run avatar:apply
 # or
 node animator/animate.js
 ```
 
-### 2. Apply Spooky Witch Violet Theme
-```bash
-npm run avatar:spooky
-# or
-node animator/animate.js ./animator/avatar_halloween_spooky.gif
-```
-
-### 3. Apply Custom GIF
+### 2. Apply Custom GIF
 ```bash
 node animator/animate.js ./path/to/custom-avatar.gif
 ```
 
 ---
 
-## 🔄 How to Rollback Anytime
+## 🔄 How to Rollback / Restore Original
 
-Whenever Halloween is over and you want to restore your original bot icon:
+Whenever you want to restore the original bot icon:
 
 ### Option A: Automatic Rollback (Restores file & uploads to Discord)
 ```bash
@@ -63,13 +54,6 @@ node animator/animate.js ./animator/avatar_original.gif
 ```
 
 ---
-
-## 🛠️ Regenerating / Customizing Themes
-
-If you ever want to re-render the Halloween avatars or customize particles/colors:
-```bash
-python animator/build_halloween_avatars.py
-```
 
 ## ⚠️ Discord Notes
 - Discord has a **rate limit** on avatar changes (typically 2 changes per 10 minutes).
