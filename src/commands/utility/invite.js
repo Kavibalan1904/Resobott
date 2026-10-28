@@ -1,13 +1,31 @@
-const { SlashCommandBuilder, OAuth2Scopes, PermissionFlagsBits } = require('discord.js');
+const {
+    SlashCommandBuilder,
+    ApplicationIntegrationType,
+    InteractionContextType,
+    OAuth2Scopes,
+    PermissionFlagsBits,
+    ActionRowBuilder,
+    ButtonBuilder,
+    ButtonStyle,
+} = require('discord.js');
 const { createEmbed, EMOJIS } = require('../../utils/embeds');
 
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('invite')
-        .setDescription('Get the invite link to add Reso to your server'),
+        .setDescription('Get the invite link to add Reso to your server or personal account')
+        .setIntegrationTypes([
+            ApplicationIntegrationType.GuildInstall,
+            ApplicationIntegrationType.UserInstall,
+        ])
+        .setContexts([
+            InteractionContextType.Guild,
+            InteractionContextType.BotDM,
+            InteractionContextType.PrivateChannel,
+        ]),
 
     async execute(interaction, client) {
-        const inviteUrl = client.generateInvite({
+        const guildInviteUrl = client.generateInvite({
             scopes: [OAuth2Scopes.Bot, OAuth2Scopes.ApplicationsCommands],
             permissions: [
                 PermissionFlagsBits.ViewChannel,
@@ -19,16 +37,36 @@ module.exports = {
             ],
         });
 
+        const userInstallUrl = `https://discord.com/oauth2/authorize?client_id=${client.user.id}&integration_type=1`;
+        const universalUrl = `https://discord.com/oauth2/authorize?client_id=${client.user.id}`;
+
         const embed = createEmbed('Info')
-            .setAuthor({ name: 'Invite Reso', iconURL: client.user.displayAvatarURL() })
+            .setAuthor({ name: 'Add Reso to Discord', iconURL: client.user.displayAvatarURL() })
             .setDescription(
-                `${EMOJIS.link} **Add Reso to your server!**\n\n` +
-                `[**Click here to invite**](${inviteUrl})\n\n` +
-                `Reso brings high-quality music streaming to your Discord server with ` +
-                `support for YouTube, Spotify, SoundCloud, and more.`
+                `${EMOJIS.link} **Choose how you'd like to use Reso:**\n\n` +
+                `🏰 **Add to Server**\n` +
+                `Bring Reso to your server to play music in voice channels with friends.\n` +
+                `👉 [**Invite to Server**](${guildInviteUrl})\n\n` +
+                `👤 **Install to Your Apps (Account Install)**\n` +
+                `Install Reso directly to your personal Discord account to use commands (` +
+                `\`/lyrics\`, \`/ping\`, \`/stats\`, \`/help\`) in **DMs, Group Chats, and any server**!\n` +
+                `👉 [**Install to My Profile**](${userInstallUrl})`
             )
             .setThumbnail(client.user.displayAvatarURL({ size: 256 }));
 
-        return interaction.reply({ embeds: [embed] });
+        const row = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setLabel('Add to Server')
+                .setStyle(ButtonStyle.Link)
+                .setURL(guildInviteUrl)
+                .setEmoji('🏰'),
+            new ButtonBuilder()
+                .setLabel('Install to Profile')
+                .setStyle(ButtonStyle.Link)
+                .setURL(userInstallUrl)
+                .setEmoji('👤'),
+        );
+
+        return interaction.reply({ embeds: [embed], components: [row] });
     },
 };

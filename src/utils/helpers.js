@@ -134,8 +134,8 @@ function checkVoicePermissions(voiceChannel, clientUser) {
  */
 function isInSameVoiceChannel(interaction) {
     const voiceChannel = getVoiceChannel(interaction);
-    if (!voiceChannel) return false;
-    const player = interaction.client.lavalink.getPlayer(interaction.guild.id);
+    if (!voiceChannel || !interaction.guildId) return false;
+    const player = interaction.client?.lavalink?.getPlayer?.(interaction.guildId);
     if (!player || !player.voiceChannelId) return true; // No player yet, so no conflict
     return player.voiceChannelId === voiceChannel.id;
 }

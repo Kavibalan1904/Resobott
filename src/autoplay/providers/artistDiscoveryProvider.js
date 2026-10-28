@@ -4,7 +4,7 @@
  */
 
 const { BaseCandidateProvider } = require('./baseProvider');
-const { normalizeArtist, getCanonicalIdentifier } = require('../normalizer');
+const { normalizeArtist } = require('../normalizer');
 const { parseTrackMetadata } = require('../../utils/recommendations');
 
 class ArtistDiscoveryProvider extends BaseCandidateProvider {
@@ -18,19 +18,18 @@ class ArtistDiscoveryProvider extends BaseCandidateProvider {
         const artist = this._extractArtist(seedTrack);
         if (!artist || artist.length < 2) return [];
 
-        const language = context?.sessionLanguage || '';
-        const query = `${artist}${language ? ` ${language}` : ''} hit songs`.trim();
+        const query = `${artist} hit songs`.trim();
         const requester = { username: 'Autoplay', id: 'autoplay' };
 
         try {
-            return await this.withTimeout(this._searchArtist(player, query, requester, seedTrack));
+            return await this.withTimeout(this._searchArtist(player, query, requester));
         } catch (err) {
             console.log(`[Autoplay] Artist discovery for "${query}" failed or timed out: ${err.message}`);
             return [];
         }
     }
 
-    async _searchArtist(player, query, requester, seedTrack) {
+    async _searchArtist(player, query, requester) {
         const searchFn = typeof player.search === 'function'
             ? player.search.bind(player)
             : player.node?.search?.bind(player.node);
@@ -44,12 +43,10 @@ class ArtistDiscoveryProvider extends BaseCandidateProvider {
 
         if (!res || !Array.isArray(res.tracks)) return [];
 
-        const seedId = seedTrack?.info ? getCanonicalIdentifier(seedTrack.info) : '';
         const candidates = [];
+        // To avoid constantly returning only the single most popular track, collect up to 8 diverse candidates
         for (const t of res.tracks.slice(0, 10)) {
             if (!t?.info) continue;
-            if (seedId && getCanonicalIdentifier(t.info) === seedId) continue;
-
             t.recommendationSource = 'artist_discovery';
             candidates.push(t);
             if (candidates.length >= 8) break;

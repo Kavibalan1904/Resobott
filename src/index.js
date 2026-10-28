@@ -382,9 +382,12 @@ async function main() {
 
             if (!interaction.isChatInputCommand()) return;
 
-            // Check designated command channel
-            const designatedChannel = getDesignatedChannel(interaction.guildId);
-            const exemptSlashCommands = ['setchannel', 'clearbot', 'birthday'];
+            const command = client.commands.get(interaction.commandName);
+            if (!command) return;
+
+            // Check designated command channel within guilds
+            const designatedChannel = interaction.guildId ? getDesignatedChannel(interaction.guildId) : null;
+            const exemptSlashCommands = ['setchannel', 'clearbot', 'birthday', 'ping', 'help', 'invite', 'stats', 'lyrics'];
             if (designatedChannel && interaction.channelId !== designatedChannel && !exemptSlashCommands.includes(interaction.commandName)) {
                 return interaction.reply({
                     content: `❌ I only respond to commands in <#${designatedChannel}>.`,
@@ -392,8 +395,21 @@ async function main() {
                 }).catch(() => {});
             }
 
-            const command = client.commands.get(interaction.commandName);
-            if (!command) return;
+            // User-Install check: If command is a guild-only music command, but executed outside a guild (e.g. DM / Group DM)
+            if (!interaction.guildId && command.category === 'music' && command.data.name !== 'lyrics') {
+                return interaction.reply({
+                    content: '🎵 Music playback commands can only be used inside a Discord server voice channel. You can still use `/lyrics`, `/ping`, `/help`, and `/stats` here in DMs!',
+                    flags: MessageFlags.Ephemeral
+                }).catch(() => {});
+            }
+
+            // User-Install check: If executed in a guild where Reso has not been invited yet
+            if (interaction.guildId && !client.guilds.cache.has(interaction.guildId) && command.category === 'music' && command.data.name !== 'lyrics') {
+                return interaction.reply({
+                    content: `👋 I'm not in this server yet! To play music in this server's voice channels, please invite me using </invite:0>!`,
+                    flags: MessageFlags.Ephemeral
+                }).catch(() => {});
+            }
 
             try {
                 await command.execute(interaction, client);

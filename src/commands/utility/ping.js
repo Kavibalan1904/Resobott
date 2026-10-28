@@ -1,11 +1,20 @@
-const { SlashCommandBuilder } = require('discord.js');
+const { SlashCommandBuilder, ApplicationIntegrationType, InteractionContextType } = require('discord.js');
 const { createEmbed, Colors, EMOJIS } = require('../../utils/embeds');
 const { getNodeHealthSummary, formatUptime } = require('../../utils/helpers');
 
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('ping')
-        .setDescription('Show bot, API, and Lavalink node latency'),
+        .setDescription('Show bot, API, and Lavalink node latency')
+        .setIntegrationTypes([
+            ApplicationIntegrationType.GuildInstall,
+            ApplicationIntegrationType.UserInstall,
+        ])
+        .setContexts([
+            InteractionContextType.Guild,
+            InteractionContextType.BotDM,
+            InteractionContextType.PrivateChannel,
+        ]),
 
     async execute(interaction, client) {
         const startTime = Date.now();

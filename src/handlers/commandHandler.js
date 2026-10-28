@@ -36,7 +36,17 @@ async function loadCommands(client) {
  * Register all slash commands globally via Discord REST API
  */
 async function registerSlashCommands(client) {
-    const commands = client.commands.map(cmd => cmd.data.toJSON());
+    const commands = client.commands.map(cmd => {
+        const json = typeof cmd.data.toJSON === 'function' ? cmd.data.toJSON() : cmd.data;
+        // Supply User-Installable Apps configuration for modern Discord API v10
+        if (!json.integration_types) {
+            json.integration_types = [0, 1]; // GuildInstall (0) & UserInstall (1)
+        }
+        if (!json.contexts) {
+            json.contexts = [0]; // Default to Guild context (0) for server-bound commands
+        }
+        return json;
+    });
     const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
 
     const clientId = (process.env.CLIENT_ID && /^\d+$/.test(process.env.CLIENT_ID)) ? process.env.CLIENT_ID : client.user?.id;

@@ -1,4 +1,4 @@
-const { SlashCommandBuilder } = require('discord.js');
+const { SlashCommandBuilder, ApplicationIntegrationType, InteractionContextType } = require('discord.js');
 const { errorEmbed, createEmbed, EMOJIS } = require('../../utils/embeds');
 const { truncate } = require('../../utils/helpers');
 
@@ -10,7 +10,16 @@ module.exports = {
             option.setName('query')
                 .setDescription('Song name to search (defaults to current track)')
                 .setRequired(false)
-        ),
+        )
+        .setIntegrationTypes([
+            ApplicationIntegrationType.GuildInstall,
+            ApplicationIntegrationType.UserInstall,
+        ])
+        .setContexts([
+            InteractionContextType.Guild,
+            InteractionContextType.BotDM,
+            InteractionContextType.PrivateChannel,
+        ]),
 
     async execute(interaction) {
         let deferred = false;
@@ -21,12 +30,12 @@ module.exports = {
             console.warn('[Reso] deferReply failed for /lyrics:', deferErr.message);
         }
 
-        const player = interaction.client.lavalink.getPlayer(interaction.guild.id);
+        const player = interaction.guildId ? interaction.client.lavalink?.getPlayer?.(interaction.guildId) : null;
         const query = interaction.options.getString('query')
             || player?.queue?.current?.info?.title;
 
         if (!query) {
-            const embed = errorEmbed('No song specified and nothing is playing. Please provide a song name.');
+            const embed = errorEmbed('No song specified and nothing is playing. Please provide a song name (e.g. `/lyrics query: Bohemian Rhapsody`).');
             if (interaction.deferred || interaction.replied || deferred) {
                 return interaction.editReply({ embeds: [embed] }).catch(() => {});
             } else {

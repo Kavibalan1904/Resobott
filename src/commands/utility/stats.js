@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, version: djsVersion } = require('discord.js');
+const { SlashCommandBuilder, ApplicationIntegrationType, InteractionContextType, version: djsVersion } = require('discord.js');
 const { createEmbed, EMOJIS } = require('../../utils/embeds');
 const { formatUptime } = require('../../utils/helpers');
 const os = require('os');
@@ -6,7 +6,16 @@ const os = require('os');
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('stats')
-        .setDescription('Show bot statistics and system information'),
+        .setDescription('Show bot statistics and system information')
+        .setIntegrationTypes([
+            ApplicationIntegrationType.GuildInstall,
+            ApplicationIntegrationType.UserInstall,
+        ])
+        .setContexts([
+            InteractionContextType.Guild,
+            InteractionContextType.BotDM,
+            InteractionContextType.PrivateChannel,
+        ]),
 
     async execute(interaction, client) {
         const memUsage = process.memoryUsage();

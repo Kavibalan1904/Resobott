@@ -1373,7 +1373,4 @@ module.exports = {
     getRecommendations,
     getAutoplayTrack,
     isFuzzyDuplicate,
-    PEER_ARTISTS,
-    DEFAULT_LANGUAGE_PEERS,
-    VIBE_CATEGORIES,
 };

@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, ActionRowBuilder, StringSelectMenuBuilder } = require('discord.js');
+const { SlashCommandBuilder, ApplicationIntegrationType, InteractionContextType, ActionRowBuilder, StringSelectMenuBuilder } = require('discord.js');
 const { createEmbed, EMOJIS } = require('../../utils/embeds');
 
 module.exports = {
@@ -9,7 +9,16 @@ module.exports = {
             option.setName('command')
                 .setDescription('Get help for a specific command')
                 .setRequired(false)
-        ),
+        )
+        .setIntegrationTypes([
+            ApplicationIntegrationType.GuildInstall,
+            ApplicationIntegrationType.UserInstall,
+        ])
+        .setContexts([
+            InteractionContextType.Guild,
+            InteractionContextType.BotDM,
+            InteractionContextType.PrivateChannel,
+        ]),
 
     async execute(interaction, client) {
         const commandName = interaction.options.getString('command');

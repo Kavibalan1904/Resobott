@@ -1,11 +1,11 @@
 /**
  * Reso Smart Autoplay — Provider D: Related-Song Search
- * Discovers similar songs using semantic similarity queries anchored in language.
+ * Discovers similar songs using semantic similarity queries.
  */
 
 const { BaseCandidateProvider } = require('./baseProvider');
 const { cleanVideoTitle } = require('../../utils/helpers');
-const { normalizeArtist, getCanonicalIdentifier } = require('../normalizer');
+const { normalizeArtist } = require('../normalizer');
 
 class RelatedSearchProvider extends BaseCandidateProvider {
     constructor(timeoutMs = 6000) {
@@ -19,20 +19,19 @@ class RelatedSearchProvider extends BaseCandidateProvider {
         const artist = normalizeArtist(seedTrack.info.author || '');
         if (!title) return [];
 
-        const language = context?.sessionLanguage || '';
-        // Anchor related query to language to prevent cross-language drift
-        const query = `songs like ${title} ${artist}${language ? ` ${language}` : ''}`.trim();
+        // Build related song query
+        const query = `songs like ${title} ${artist}`.trim();
         const requester = { username: 'Autoplay', id: 'autoplay' };
 
         try {
-            return await this.withTimeout(this._searchRelated(player, query, requester, seedTrack));
+            return await this.withTimeout(this._searchRelated(player, query, requester));
         } catch (err) {
             console.log(`[Autoplay] Related search for "${query}" failed or timed out: ${err.message}`);
             return [];
         }
     }
 
-    async _searchRelated(player, query, requester, seedTrack) {
+    async _searchRelated(player, query, requester) {
         const searchFn = typeof player.search === 'function'
             ? player.search.bind(player)
             : player.node?.search?.bind(player.node);
@@ -46,12 +45,9 @@ class RelatedSearchProvider extends BaseCandidateProvider {
 
         if (!res || !Array.isArray(res.tracks)) return [];
 
-        const seedId = seedTrack?.info ? getCanonicalIdentifier(seedTrack.info) : '';
         const candidates = [];
         for (const t of res.tracks.slice(0, 10)) {
             if (!t?.info) continue;
-            if (seedId && getCanonicalIdentifier(t.info) === seedId) continue;
-
             t.recommendationSource = 'related_search';
             candidates.push(t);
             if (candidates.length >= 8) break;
