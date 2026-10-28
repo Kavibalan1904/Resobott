@@ -10,14 +10,14 @@ module.exports = {
     async execute(interaction) {
         const voiceChannel = getVoiceChannel(interaction);
         if (!voiceChannel) {
-            return interaction.reply({ embeds: [errorEmbed('You need to be in a voice channel!')], ephemeral: true });
+            return interaction.reply({ embeds: [errorEmbed('Hop into a voice channel first so I know where to go! 🎧')], ephemeral: true });
         }
 
         const manager = interaction.client.lavalink;
         let player = manager.getPlayer(interaction.guild.id);
 
         if (player?.voiceChannelId === voiceChannel.id) {
-            return interaction.reply({ embeds: [errorEmbed('I\'m already in your voice channel!')], ephemeral: true });
+            return interaction.reply({ embeds: [errorEmbed('I am already in your voice channel chilling with you! ✨')], ephemeral: true });
         }
 
         try {
@@ -49,7 +49,7 @@ module.exports = {
 
             await ensurePlayerNode(player, interaction.client);
 
-            return interaction.reply({ embeds: [successEmbed(`Joined **${voiceChannel.name}**! 🎧`)] });
+            return interaction.reply({ embeds: [successEmbed(`Joined **${voiceChannel.name}**! Ready for some music ☕ 🎧`)] });
         } catch (error) {
             console.error('[Reso] Join error:', error);
             return interaction.reply({ embeds: [errorEmbed('Could not join the voice channel.')], ephemeral: true });

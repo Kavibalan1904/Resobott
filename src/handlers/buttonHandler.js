@@ -17,7 +17,7 @@ async function handlePlayerButton(interaction, client) {
     const guildId = interaction.guild?.id;
     if (!guildId) {
         return interaction.reply({
-            content: '❌ This can only be used in a server.',
+            content: '✨ This button is for voice channels inside a server.',
             flags: MessageFlags.Ephemeral,
         }).catch(() => {});
     }
@@ -26,7 +26,7 @@ async function handlePlayerButton(interaction, client) {
     const memberVC = interaction.member?.voice?.channel;
     if (!memberVC) {
         return interaction.reply({
-            content: '🎧 You need to be in a voice channel to use player controls!',
+            content: '🎧 Hop into the voice channel first so you can control the music!',
             flags: MessageFlags.Ephemeral,
         }).catch(() => {});
     }
@@ -34,7 +34,7 @@ async function handlePlayerButton(interaction, client) {
     const player = client.lavalink.getPlayer(guildId);
     if (!player) {
         return interaction.reply({
-            content: '❌ No active player in this server.',
+            content: '☕ Nothing is playing right now.',
             flags: MessageFlags.Ephemeral,
         }).catch(() => {});
     }
@@ -42,7 +42,7 @@ async function handlePlayerButton(interaction, client) {
     // Ensure user is in the same VC as bot
     if (player.voiceChannelId && memberVC.id !== player.voiceChannelId) {
         return interaction.reply({
-            content: '❌ You need to be in the same voice channel as the bot!',
+            content: '🎧 Join my voice channel so we can listen together!',
             flags: MessageFlags.Ephemeral,
         }).catch(() => {});
     }
@@ -54,7 +54,7 @@ async function handlePlayerButton(interaction, client) {
                 const history = client.trackHistory?.get(guildId) || [];
                 if (history.length < 2) {
                     return interaction.reply({
-                        content: '⏮️ No previous track in history.',
+                        content: '⏮️ We are at the very beginning — no earlier songs yet.',
                         flags: MessageFlags.Ephemeral,
                     }).catch(() => {});
                 }
@@ -79,7 +79,7 @@ async function handlePlayerButton(interaction, client) {
                 await player.skip(0, false);
 
                 await interaction.reply({
-                    embeds: [successEmbed(`⏮️ Playing previous: **${truncate(previousTrack.info?.title || 'Unknown', 50)}**`)],
+                    embeds: [successEmbed(`⏮️ Taking it back to: **${truncate(previousTrack.info?.title || 'Unknown', 50)}** ✨`)],
                     flags: MessageFlags.Ephemeral,
                 }).catch(() => {});
                 break;
@@ -99,7 +99,7 @@ async function handlePlayerButton(interaction, client) {
                         }).catch(() => {});
                     } else {
                         await interaction.reply({
-                            embeds: [successEmbed('▶️ Resumed playback!')],
+                            embeds: [successEmbed('▶️ Music resumed — enjoy the vibes! ✨')],
                             flags: MessageFlags.Ephemeral,
                         }).catch(() => {});
                     }
@@ -116,7 +116,7 @@ async function handlePlayerButton(interaction, client) {
                         }).catch(() => {});
                     } else {
                         await interaction.reply({
-                            embeds: [successEmbed('⏸️ Paused playback!')],
+                            embeds: [successEmbed('⏸️ Paused for a moment. Take your time! ☕')],
                             flags: MessageFlags.Ephemeral,
                         }).catch(() => {});
                     }
@@ -130,7 +130,7 @@ async function handlePlayerButton(interaction, client) {
 
                 if (player.queue.tracks.length === 0 && !player.queue.current) {
                     return interaction.reply({
-                        content: '⏭️ Nothing to skip to.',
+                        content: '⏭️ Nothing to skip to right now.',
                         flags: MessageFlags.Ephemeral,
                     }).catch(() => {});
                 }
@@ -138,7 +138,7 @@ async function handlePlayerButton(interaction, client) {
                 await player.skip(0, false);
 
                 await interaction.reply({
-                    embeds: [successEmbed(`⏭️ Skipped **${title}**`)],
+                    embeds: [successEmbed(`⏭️ Skipped **${title}** — moving along ✨`)],
                     flags: MessageFlags.Ephemeral,
                 }).catch(() => {});
                 break;
@@ -148,7 +148,7 @@ async function handlePlayerButton(interaction, client) {
                 const queue = player.queue.tracks;
                 if (queue.length < 2) {
                     return interaction.reply({
-                        content: '🔀 Need at least 2 songs in queue to shuffle.',
+                        content: '🔀 Add at least 2 songs in the queue to shuffle the mix!',
                         flags: MessageFlags.Ephemeral,
                     }).catch(() => {});
                 }
@@ -156,7 +156,7 @@ async function handlePlayerButton(interaction, client) {
                 player.queue.shuffle();
 
                 await interaction.reply({
-                    embeds: [successEmbed(`🔀 Shuffled **${queue.length}** songs in the queue!`)],
+                    embeds: [successEmbed(`🔀 Shuffled **${queue.length}** songs into a fresh mix! 🍃`)],
                     flags: MessageFlags.Ephemeral,
                 }).catch(() => {});
                 break;
@@ -184,7 +184,7 @@ async function handlePlayerButton(interaction, client) {
                 } catch { /* ignore */ }
 
                 await interaction.reply({
-                    embeds: [successEmbed('⏹️ Stopped playback and cleared queue. Use `/leave` to disconnect.')],
+                    embeds: [successEmbed('⏹️ Stopped playback and cleared the queue. Ready whenever you are! ☕')],
                     flags: MessageFlags.Ephemeral,
                 }).catch(() => {});
                 break;

@@ -10,28 +10,28 @@ module.exports = {
     async execute(interaction) {
         const voiceChannel = getVoiceChannel(interaction);
         if (!voiceChannel) {
-            return interaction.reply({ embeds: [errorEmbed('You need to be in a voice channel!')], ephemeral: true });
+            return interaction.reply({ embeds: [errorEmbed('Hop into a voice channel first so I can play this for you! 🎧')], ephemeral: true });
         }
 
         if (!isInSameVoiceChannel(interaction)) {
-            return interaction.reply({ embeds: [errorEmbed('You need to be in the same voice channel as the bot!')], ephemeral: true });
+            return interaction.reply({ embeds: [errorEmbed('Come join my voice channel so we can listen together! 🎧')], ephemeral: true });
         }
 
         const player = interaction.client.lavalink.getPlayer(interaction.guild.id);
         if (!player || (!player.playing && !player.paused) || !player.queue.current) {
-            return interaction.reply({ embeds: [errorEmbed('Nothing is playing right now.')], ephemeral: true });
+            return interaction.reply({ embeds: [errorEmbed('Nothing is playing right now. Put on a song with `/play`! ☕')], ephemeral: true });
         }
 
         if (!player.paused) {
-            return interaction.reply({ embeds: [errorEmbed('The player is not paused.')], ephemeral: true });
+            return interaction.reply({ embeds: [errorEmbed('The music is already flowing smoothly! ✨')], ephemeral: true });
         }
 
         try {
             await player.resume();
-            return interaction.reply({ embeds: [successEmbed('Resumed playback! ▶️')] });
+            return interaction.reply({ embeds: [successEmbed('Music resumed — enjoy the vibes! ▶️ ✨')] });
         } catch (error) {
             console.error('[Reso] Resume error:', error);
-            return interaction.reply({ embeds: [errorEmbed('Failed to resume playback.')], ephemeral: true });
+            return interaction.reply({ embeds: [errorEmbed('Could not resume playback right now.')], ephemeral: true });
         }
     },
 };

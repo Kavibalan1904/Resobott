@@ -210,7 +210,7 @@ client.on('voiceStateUpdate', (oldState, newState) => {
                     currentPlayer.destroy();
                     if (textChannel) {
                         const embed = createEmbed('Info')
-                            .setDescription(`${EMOJIS.music} Everyone left the voice channel, so I've disconnected. 👋`);
+                            .setDescription(`🍃 The room got quiet, so I took a little break to rest. Call me back anytime with \`/play\`! 👋`);
                         textChannel.send({ embeds: [embed] }).catch(() => { });
                     }
                 }

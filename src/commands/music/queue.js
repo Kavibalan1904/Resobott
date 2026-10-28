@@ -51,7 +51,7 @@ module.exports = {
                     `### ▶ Now Playing\n` +
                     `${source.color} **[${truncate(currentInfo.title, 50)}](${currentInfo.uri})** — \`${currentInfo.isStream ? 'Live' : formatMs(currentInfo.duration)}\`\n` +
                     `> ${currentInfo.author || 'Unknown'} • Requested by ${currentRequester}\n\n` +
-                    `*No more tracks in queue. Use \`${process.env.PREFIX || '>'}play\` to add more!*`
+                    `*The queue is peaceful and clear. Use \`${process.env.PREFIX || '>'}play\` to queue more favorites, or turn on \`/autoplay\`! ☕*`
                 )
                 .addFields(
                     { name: '🔁 Loop', value: loopModes[player.repeatMode] || 'Off', inline: true },

@@ -31,7 +31,7 @@ module.exports = {
 
         const voiceChannel = getVoiceChannel(interaction);
         if (!voiceChannel) {
-            return interaction.reply({ embeds: [errorEmbed('You need to be in a voice channel!')], ephemeral: true });
+            return interaction.reply({ embeds: [errorEmbed('Hop into a voice channel first so you can hear the difference! 🎧')], ephemeral: true });
         }
 
         await player.setVolume(level);
@@ -42,6 +42,6 @@ module.exports = {
         else if (level > 40) emoji = '🔉';
         else emoji = '🔈';
 
-        return interaction.reply({ embeds: [successEmbed(`${emoji} Volume set to **${level}%**`)] });
+        return interaction.reply({ embeds: [successEmbed(`${emoji} Volume adjusted to a cozy **${level}%**`)] });
     },
 };

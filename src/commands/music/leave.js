@@ -10,18 +10,18 @@ module.exports = {
     async execute(interaction) {
         const voiceChannel = getVoiceChannel(interaction);
         if (!voiceChannel) {
-            return interaction.reply({ embeds: [errorEmbed('You need to be in a voice channel!')], ephemeral: true });
+            return interaction.reply({ embeds: [errorEmbed('Hop into a voice channel first! 🎧')], ephemeral: true });
         }
 
         const player = interaction.client.lavalink.getPlayer(interaction.guild.id);
         if (!player) {
-            return interaction.reply({ embeds: [errorEmbed('I\'m not in a voice channel.')], ephemeral: true });
+            return interaction.reply({ embeds: [errorEmbed('I am not in a voice channel right now.')], ephemeral: true });
         }
 
         // Remove 24/7 mode if active
         interaction.client.twentyFourSeven?.delete(interaction.guild.id);
 
         await player.destroy();
-        return interaction.reply({ embeds: [successEmbed('Disconnected from the voice channel. 👋')] });
+        return interaction.reply({ embeds: [successEmbed('Left the voice channel — take care and see you next time! 🍃 👋')] });
     },
 };

@@ -110,7 +110,7 @@ module.exports = {
 
         const voiceChannel = getVoiceChannel(interaction);
         if (!voiceChannel) {
-            const embed = errorEmbed('You need to be in a voice channel!');
+            const embed = errorEmbed('Hop into a voice channel first so I can play this for you! 🎧');
             return interaction.editReply({ embeds: [embed] }).catch(() => { });
         }
 
@@ -129,7 +129,7 @@ module.exports = {
         const manager = interaction.client.lavalink;
 
         if (!rawStringQuery && !attachment) {
-            const embed = errorEmbed('Please provide either a song name/link in `query` or upload an audio file in `file`!');
+            const embed = errorEmbed('Please provide either a song name/link in `query` or upload an audio file in `file`! ☕');
             return interaction.editReply({ embeds: [embed] });
         }
 
@@ -419,7 +419,7 @@ module.exports = {
                 }
 
                 return interaction.editReply({
-                    embeds: [errorEmbed(`No results found for **${truncate(rawQuery, 50)}** on ${sourceLabel}.${tipMessage}`)]
+                    embeds: [errorEmbed(`Couldn't find any tracks for **${truncate(rawQuery, 50)}** on ${sourceLabel}.${tipMessage}`)]
                 });
             }
 

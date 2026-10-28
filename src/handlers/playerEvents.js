@@ -628,7 +628,7 @@ function setupLavalinkEvents(client) {
         if (!channel) return;
 
         const embed = createEmbed('Info')
-            .setDescription(`${EMOJIS.music} Queue has ended. Add more songs to keep the party going!\n*Use \`/autoplay\` to automatically queue similar songs!*\n*I'll stay here until everyone leaves or you use \`/leave\`.*`);
+            .setDescription(`✨ That's the end of our queue for now. Add another favorite with \`/play\`, or toggle \`/autoplay\` to keep the cozy vibes flowing! ☕\n*I'll hang out here until everyone leaves or you say \`/leave\`.*`);
         channel.send({ embeds: [embed] }).catch(() => { });
     });
 

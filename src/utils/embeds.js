@@ -2,18 +2,20 @@ const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelect
 const { createProgressBar, formatMs, truncate } = require('./helpers');
 const { getTrackMetadata } = require('./trackMetadata');
 
-// ── Reso Premium Color Palette ─────────────────────────────────
-// Signature gradient-inspired palette: deep violet → electric pink → warm coral
+// ── Reso Cozy & Warm Color Palette ─────────────────────────────
+// Signature warm fireside palette: warm amber → fireside glow → soft sage & twilight lavender
 const Colors = {
-    Primary: 0x7C3AED,   // Deep Violet (signature Reso color)
-    Success: 0x10B981,   // Emerald Green
-    Warning: 0xF59E0B,   // Amber
-    Error: 0xEF4444,     // Soft Red
-    Info: 0x6366F1,      // Indigo
-    Music: 0xEC4899,     // Electric Pink (now playing)
-    Queue: 0x8B5CF6,     // Purple (queue embeds)
-    NowPlaying: 0xEC4899, // Electric Pink
-    Autoplay: 0x06B6D4,  // Cyan (autoplay indicator)
+    Primary: 0xD97706,   // Warm Amber Gold (signature cozy glow)
+    Success: 0x10B981,   // Soft Sage / Mint
+    Warning: 0xF59E0B,   // Honey Amber
+    Error: 0xFB7185,     // Soft Coral Rose (gentle on eyes, never harsh blood red)
+    Info: 0x818CF8,      // Twilight Periwinkle
+    Music: 0xF59E0B,     // Warm Sunset Amber (now playing)
+    Queue: 0xA78BFA,     // Warm Twilight Lavender
+    NowPlaying: 0xF59E0B,// Warm Honey Amber
+    Autoplay: 0x14B8A6,  // Calming Seafoam / Teal
+    Cozy: 0xD97706,      // Fireside Glow
+    Lofi: 0xE879F9,      // Soft Lilac
 };
 
 // ── Premium Source Badges ──────────────────────────────────────
@@ -72,34 +74,53 @@ const EMOJIS = {
     sparkle: '✨',
     wave: '🌊',
     headphones: '🎧',
+    coffee: '☕',
+    tea: '🍵',
+    moon: '🌙',
+    sparkles: '✨',
+    leaf: '🍃',
+    warmth: '🕯️',
+    cozyError: '🍂',
+    cozySuccess: '✨',
 };
 
 /**
- * Create a themed Reso embed with premium styling
+ * Get cozy time greeting based on local hour
+ */
+function getCozyTimeGreeting() {
+    const hour = new Date().getHours();
+    if (hour >= 0 && hour < 5) return { text: 'Late Night Session', emoji: '🌙', note: 'Grab a warm drink & unwind' };
+    if (hour >= 5 && hour < 12) return { text: 'Morning Brew & Beats', emoji: '☕', note: 'Fresh coffee & good music' };
+    if (hour >= 12 && hour < 18) return { text: 'Afternoon Chill', emoji: '🍃', note: 'Relaxing through the day' };
+    return { text: 'Evening Wind Down', emoji: '✨', note: 'Settling in for the evening' };
+}
+
+/**
+ * Create a themed Reso embed with cozy warm styling
  */
 function createEmbed(type = 'Primary') {
     const color = Colors[type] || Colors.Primary;
     return new EmbedBuilder()
         .setColor(color)
         .setTimestamp()
-        .setFooter({ text: 'Reso  ♪  Resonance in every beat' });
+        .setFooter({ text: 'Reso  ☕  Good music & warm vibes' });
 }
 
-// ── Premium Progress Bar ───────────────────────────────────────
+// ── Cozy Smooth Progress Bar ───────────────────────────────────
 /**
- * Create a premium visual progress bar
- * Uses filled/empty blocks with a slider indicator
+ * Create a smooth visual progress bar
+ * Uses smooth lines with a clean position indicator
  */
 function premiumProgressBar(position, duration, length = 12) {
-    if (!duration || duration <= 0) return '`🔴` ━━━━━━━━━━━━ `LIVE`';
+    if (!duration || duration <= 0) return '`🔴` ━━━━━━━━━━━━ `LIVE STREAM`';
 
     const progress = Math.min(position / duration, 1);
     const filledLength = Math.round(progress * length);
     const emptyLength = Math.max(0, length - filledLength - 1);
 
     const filled = '━'.repeat(filledLength);
-    const slider = '◉';
-    const empty = '━'.repeat(emptyLength);
+    const slider = '●';
+    const empty = '─'.repeat(emptyLength);
 
     const elapsed = formatMs(position);
     const total = formatMs(duration);
@@ -175,6 +196,8 @@ function nowPlayingEmbed(track, player, client, recommendations = []) {
         autoplayText = ' • 🔄 Autoplay On';
     }
 
+    const greeting = getCozyTimeGreeting();
+
     // Build the rich description
     const description = [
         `### ${source.color} [${truncate(info.title || 'Unknown Track', 55)}](${info.uri || ''})`,
@@ -183,6 +206,7 @@ function nowPlayingEmbed(track, player, client, recommendations = []) {
         progress,
         '',
         `${volEmoji} \`${player.volume}%\`  ${loop.emoji} \`${loop.label}\`  ${EMOJIS.queue} \`${queueText}\`${filterText}${autoplayText}`,
+        `> *${greeting.note}*`,
     ].join('\n');
 
     const requesterName = isTrackAutoplay
@@ -192,13 +216,13 @@ function nowPlayingEmbed(track, player, client, recommendations = []) {
     const embed = new EmbedBuilder()
         .setColor(Colors.NowPlaying)
         .setAuthor({
-            name: '♪ Now Playing',
+            name: `${greeting.emoji} ${greeting.text} • Now Playing`,
             iconURL: 'https://cdn.discordapp.com/emojis/741605543046807626.gif',
         })
         .setDescription(description)
         .setThumbnail(info.artworkUrl || null)
         .setFooter({
-            text: `Reso  ♪  ${bitrateLabel ? bitrateLabel + ' • ' : ''}Requested by ${requesterName}`,
+            text: `Reso  ☕  ${bitrateLabel ? bitrateLabel + ' • ' : ''}Requested by ${requesterName}`,
         })
         .setTimestamp();
 
@@ -271,14 +295,14 @@ function createDisabledControls() {
 
 
 /**
- * Create a premium track-added embed
+ * Create a cozy track-added embed
  */
 function trackAddedEmbed(track) {
     const info = track.info || track;
     const source = getSourceBadge(info.sourceName);
 
     return createEmbed('Success')
-        .setAuthor({ name: '✨ Added to Queue' })
+        .setAuthor({ name: '✨ Queued up for you' })
         .setDescription(
             `**[${truncate(info.title || 'Unknown Track', 55)}](${info.uri || ''})**\n` +
             `> ${info.author || 'Unknown Artist'} • ${source.color} ${source.label}`
@@ -286,24 +310,24 @@ function trackAddedEmbed(track) {
         .setThumbnail(info.artworkUrl || null)
         .addFields(
             { name: `${EMOJIS.clock} Duration`, value: info.isStream ? '🔴 Live' : `\`${formatMs(info.duration)}\``, inline: true },
-            { name: `${EMOJIS.dj} Requested by`, value: `${track.requester || 'Unknown'}`, inline: true },
+            { name: `☕ Requested by`, value: `${track.requester || 'Unknown'}`, inline: true },
         );
 }
 
 /**
- * Create an error embed with premium styling
+ * Create a gentle error embed with warm, friendly styling
  */
 function errorEmbed(message) {
     return createEmbed('Error')
-        .setDescription(`${EMOJIS.error} ${message}`);
+        .setDescription(`🍂 ${message}`);
 }
 
 /**
- * Create a success embed
+ * Create a cozy success embed
  */
 function successEmbed(message) {
     return createEmbed('Success')
-        .setDescription(`${EMOJIS.success} ${message}`);
+        .setDescription(`✨ ${message}`);
 }
 
 /**
@@ -311,15 +335,15 @@ function successEmbed(message) {
  */
 function warningEmbed(message) {
     return createEmbed('Warning')
-        .setDescription(`${EMOJIS.warning} ${message}`);
+        .setDescription(`⚠️ ${message}`);
 }
 
 /**
- * Create an info embed
+ * Create a cozy info embed
  */
 function infoEmbed(message) {
     return createEmbed('Info')
-        .setDescription(`${EMOJIS.info} ${message}`);
+        .setDescription(`☕ ${message}`);
 }
 
 function capitalize(str) {
@@ -332,6 +356,7 @@ module.exports = {
     EMOJIS,
     SOURCE_BADGES,
     getSourceBadge,
+    getCozyTimeGreeting,
     createEmbed,
     nowPlayingEmbed,
     premiumProgressBar,
