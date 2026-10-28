@@ -7,15 +7,20 @@ const { validateAndSanitizeIntent } = require('./intentSchema');
 
 // Known vocabulary dictionaries
 const KNOWN_LANGUAGES = [
-    { pattern: /\btamil\b/i, label: 'Tamil' },
-    { pattern: /\bhindi\b/i, label: 'Hindi' },
-    { pattern: /\btelugu\b/i, label: 'Telugu' },
-    { pattern: /\bmalayalam\b/i, label: 'Malayalam' },
+    { pattern: /\b(tamil|kollywood|kuthu|gaana)\b/i, label: 'Tamil' },
+    { pattern: /\b(hindi|bollywood|desi)\b/i, label: 'Hindi' },
+    { pattern: /\b(telugu|tollywood)\b/i, label: 'Telugu' },
+    { pattern: /\b(malayalam|mollywood)\b/i, label: 'Malayalam' },
+    { pattern: /\b(kannada|sandalwood)\b/i, label: 'Kannada' },
     { pattern: /\benglish\b/i, label: 'English' },
     { pattern: /\bkorean|kpop|k-pop\b/i, label: 'Korean' },
     { pattern: /\bjapanese|jpop|j-pop|anime\b/i, label: 'Japanese' },
-    { pattern: /\bpunjabi\b/i, label: 'Punjabi' },
+    { pattern: /\bpunjabi|bhangra\b/i, label: 'Punjabi' },
     { pattern: /\bspanish|latino\b/i, label: 'Spanish' },
+    { pattern: /\bfrench\b/i, label: 'French' },
+    { pattern: /\bgerman\b/i, label: 'German' },
+    { pattern: /\barabic\b/i, label: 'Arabic' },
+    { pattern: /\b(chinese|cpop|mandopop)\b/i, label: 'Chinese' },
 ];
 
 const KNOWN_ERAS = [
@@ -30,11 +35,11 @@ const KNOWN_ERAS = [
 
 const KNOWN_MOODS = [
     { pattern: /\b(relaxing|calm|peaceful|soothing|chill|chillout|unwind)\b/i, label: 'chill', energy: 'low' },
-    { pattern: /\b(energetic|hype|pump(ed)?|workout|gym|running|beast)\b/i, label: 'energetic', energy: 'high' },
+    { pattern: /\b(energetic|hype|pump(ed)?|workout|gym|running|beast|mass|kuthu)\b/i, label: 'energetic', energy: 'high' },
     { pattern: /\b(gaming|ranked|esports|competitive)\b/i, label: 'gaming', energy: 'high' },
     { pattern: /\b(nostalgic|memories|throwback|childhood)\b/i, label: 'nostalgic', energy: 'medium' },
     { pattern: /\b(late[- ]night|midnight|night drive|insomnia)\b/i, label: 'late-night', energy: 'low' },
-    { pattern: /\b(sad|melancholic|heartbroken|emotional|crying)\b/i, label: 'melancholic', energy: 'low' },
+    { pattern: /\b(sad|melancholic|heartbroken|emotional|crying|breakup)\b/i, label: 'melancholic', energy: 'low' },
     { pattern: /\b(romantic|love|crush|date night)\b/i, label: 'romantic', energy: 'medium' },
     { pattern: /\b(happy|cheerful|feel[- ]good|upbeat|joyful)\b/i, label: 'upbeat', energy: 'high' },
     { pattern: /\b(party|dance|club|festival)\b/i, label: 'party', energy: 'high' },
@@ -44,6 +49,8 @@ const KNOWN_MOODS = [
 
 const KNOWN_GENRES = [
     { pattern: /\b(melod(y|ies)|melodious)\b/i, label: 'melody' },
+    { pattern: /\b(kuthu|gaana|folk)\b/i, label: 'folk' },
+    { pattern: /\b(soundtrack|ost|bgm|score|theme)\b/i, label: 'soundtrack' },
     { pattern: /\b(indie|indie pop|indie rock)\b/i, label: 'indie' },
     { pattern: /\b(lo[- ]?fi|lofi)\b/i, label: 'lo-fi' },
     { pattern: /\b(hip[- ]?hop|rap)\b/i, label: 'hip-hop' },
@@ -54,9 +61,10 @@ const KNOWN_GENRES = [
     { pattern: /\b(phonk)\b/i, label: 'phonk' },
     { pattern: /\b(synthwave|vaporwave)\b/i, label: 'synthwave' },
     { pattern: /\b(r&b|soul)\b/i, label: 'r&b' },
-    { pattern: /\b(folk|country)\b/i, label: 'folk' },
+    { pattern: /\b(country)\b/i, label: 'country' },
     { pattern: /\b(classical|carnatic|hindustani)\b/i, label: 'classical' },
     { pattern: /\b(instrumental|ambient)\b/i, label: 'instrumental' },
+    { pattern: /\b(qawwali|ghazal|sufi)\b/i, label: 'sufi' },
 ];
 
 /**
@@ -90,6 +98,98 @@ function extractCount(text) {
         const count = parseInt(match[1], 10);
         if (!isNaN(count) && count >= 3 && count <= 25) return count;
     }
+    return null;
+}
+
+/**
+ * Capitalize first letter of each word
+ */
+function capitalizeWords(str) {
+    if (!str || typeof str !== 'string') return '';
+    return str.replace(/\b\w/g, char => char.toUpperCase());
+}
+
+/**
+ * Extract subject information (movie, soundtrack, album, artist) from user input
+ */
+function extractSubjectInfo(text, positiveText) {
+    const raw = String(positiveText || text || '').trim();
+    if (!raw) return null;
+
+    // 1. Movie / Film patterns:
+    // e.g. "karuppu movie songs", "leo movie songs", "vikram movie soundtrack"
+    const moviePrefixMatch = raw.match(/^(.+?)\s+(?:movie|film|cinema)\s*(?:songs?|tracks?|soundtrack|ost|music|audio)?$/i);
+    if (moviePrefixMatch && moviePrefixMatch[1]) {
+        const title = moviePrefixMatch[1].trim();
+        if (title.length >= 2 && !['a', 'the', 'any', 'good', 'best', 'popular', 'new'].includes(title.toLowerCase())) {
+            return {
+                type: 'movie',
+                title,
+                isMovie: true,
+                isSoundtrack: true,
+            };
+        }
+    }
+
+    const fromMovieMatch = raw.match(/\b(?:songs?|music|soundtrack|ost|score|theme|tracks?)\s+(?:from|of)\s+(?:the\s+)?(?:movie\s+|film\s+)?([a-zA-Z0-9\s'’-]+)/i);
+    if (fromMovieMatch && fromMovieMatch[1]) {
+        const title = fromMovieMatch[1].replace(/\b(movie|film|cinema)\b/gi, '').trim();
+        if (title.length >= 2) {
+            return {
+                type: 'movie',
+                title,
+                isMovie: true,
+                isSoundtrack: true,
+            };
+        }
+    }
+
+    // 2. Soundtrack / OST / Album patterns:
+    // e.g. "interstellar soundtrack", "attack on titan ost"
+    const ostMatch = raw.match(/^(.+?)\s+(?:soundtrack|ost|score|album)\s*(?:songs?|tracks?|music)?$/i);
+    if (ostMatch && ostMatch[1]) {
+        const title = ostMatch[1].trim();
+        if (title.length >= 2 && !['movie', 'film', 'game', 'anime'].includes(title.toLowerCase())) {
+            return {
+                type: 'soundtrack',
+                title,
+                isMovie: false,
+                isSoundtrack: true,
+            };
+        }
+    }
+
+    // 3. Artist patterns:
+    // e.g. "by anirudh", "songs by taylor swift", "anirudh hits"
+    const byArtistMatch = raw.match(/\b(?:songs?|music|tracks?|hits?)\s+by\s+([a-zA-Z0-9\s'’-]+)/i);
+    if (byArtistMatch && byArtistMatch[1]) {
+        const artist = byArtistMatch[1].trim();
+        if (artist.length >= 2) {
+            return {
+                type: 'artist',
+                artist,
+            };
+        }
+    }
+
+    // 4. "<SpecificTitle> songs" pattern where title is not purely a language, era, or mood
+    const songsMatch = raw.match(/^(.+?)\s+(?:songs?|tracks?|music|hits?)$/i);
+    if (songsMatch && songsMatch[1]) {
+        const candidate = songsMatch[1].trim();
+        const candidateLower = candidate.toLowerCase();
+        const isLang = KNOWN_LANGUAGES.some(l => l.pattern.test(candidateLower) && candidateLower.replace(l.pattern, '').trim().length === 0);
+        const isGenre = KNOWN_GENRES.some(g => g.pattern.test(candidateLower) && candidateLower.replace(g.pattern, '').trim().length === 0);
+        const isMood = KNOWN_MOODS.some(m => m.pattern.test(candidateLower) && candidateLower.replace(m.pattern, '').trim().length === 0);
+        const isEra = KNOWN_ERAS.some(e => e.pattern.test(candidateLower) && candidateLower.replace(e.pattern, '').trim().length === 0);
+
+        if (!isLang && !isGenre && !isMood && !isEra && candidate.length >= 2) {
+            return {
+                type: 'subject',
+                title: candidate,
+            };
+        }
+    }
+
     return null;
 }
 
@@ -135,10 +235,12 @@ function parseDeterministicRequest(rawRequest = '', overrideCount = null, contex
     // 5. Extract Mood & Energy from positiveText
     let mood = 'chill';
     let energy = 'medium';
+    let moodExplicitlyFound = false;
     for (const m of KNOWN_MOODS) {
         if (m.pattern.test(positiveText)) {
             mood = m.label;
             energy = m.energy;
+            moodExplicitlyFound = true;
             break;
         }
     }
@@ -155,17 +257,52 @@ function parseDeterministicRequest(rawRequest = '', overrideCount = null, contex
     const detectedCount = extractCount(text);
     const finalCount = overrideCount || detectedCount || 10;
 
-    // 8. Determine Intent Type
+    // 8. Extract Subject Info (movie, soundtrack, album, artist)
+    const subjectInfo = extractSubjectInfo(text, positiveText);
+
+    // 9. Determine Intent Type & Summary
     let intentType = 'mood_playlist';
+    let summary = '';
+
     if (isSimilarTrack) {
         intentType = 'similar_track';
+        summary = context?.title ? `Tracks similar to ${context.title}` : 'Similar Music Vibe';
+    } else if (subjectInfo?.isMovie) {
+        intentType = 'playlist';
+        if (!moodExplicitlyFound) mood = 'soundtrack';
+        if (!genres.includes('soundtrack')) genres.push('soundtrack');
+        summary = `${capitalizeWords(subjectInfo.title)} Movie Songs Playlist`;
+    } else if (subjectInfo?.type === 'soundtrack') {
+        intentType = 'playlist';
+        if (!moodExplicitlyFound) mood = 'soundtrack';
+        if (!genres.includes('soundtrack')) genres.push('soundtrack');
+        summary = `${capitalizeWords(subjectInfo.title)} Soundtrack Playlist`;
+    } else if (subjectInfo?.artist) {
+        intentType = 'artist_playlist';
+        summary = `Best of ${capitalizeWords(subjectInfo.artist)}`;
+    } else if (subjectInfo?.title) {
+        intentType = 'playlist';
+        summary = `${capitalizeWords(subjectInfo.title)} Music Vibe`;
     } else if (/\b(discover|fresh|hidden gems?|underground)\b/i.test(text)) {
         intentType = 'discovery_playlist';
+        summary = `${languages.join(', ') || 'Fresh'} Discovery Vibe`;
     } else if (/\b(by|artist|singer|band)\b/i.test(text) && genres.length === 0) {
         intentType = 'artist_playlist';
+        summary = 'Artist Music Vibe';
+    } else {
+        const langStr = languages.join(', ');
+        const genreStr = genres.join(' ');
+        const eraStr = eras.join(' ');
+        summary = [
+            mood.toUpperCase(),
+            langStr,
+            eraStr,
+            genreStr || 'Music',
+            'Vibe',
+        ].filter(Boolean).join(' ');
     }
 
-    // 9. Generate targeted search queries
+    // 10. Generate targeted search queries
     const searchQueries = buildQueries({
         languages,
         genres,
@@ -175,19 +312,8 @@ function parseDeterministicRequest(rawRequest = '', overrideCount = null, contex
         text,
         isSimilarTrack,
         context,
+        subjectInfo,
     });
-
-    // 10. Summary
-    const langStr = languages.join(', ');
-    const genreStr = genres.join(' ');
-    const eraStr = eras.join(' ');
-    const summary = [
-        mood.toUpperCase(),
-        langStr,
-        eraStr,
-        genreStr || 'Music',
-        'Vibe',
-    ].filter(Boolean).join(' ');
 
     const rawIntent = {
         intent: intentType,
@@ -196,7 +322,7 @@ function parseDeterministicRequest(rawRequest = '', overrideCount = null, contex
         genres,
         eras,
         energy,
-        artists: [],
+        artists: subjectInfo?.artist ? [subjectInfo.artist] : [],
         seedTracks: context?.title ? [context.title] : [],
         excludedTerms,
         trackCount: finalCount,
@@ -213,7 +339,7 @@ function parseDeterministicRequest(rawRequest = '', overrideCount = null, contex
 /**
  * Generate 3 to 5 realistic search queries combining extracted intent tokens
  */
-function buildQueries({ languages, genres, eras, mood, energy, text, isSimilarTrack, context }) {
+function buildQueries({ languages, genres, eras, mood, energy, text, isSimilarTrack, context, subjectInfo }) {
     const queries = [];
     const lang = languages[0] || '';
     const genre = genres[0] || '';
@@ -230,43 +356,78 @@ function buildQueries({ languages, genres, eras, mood, energy, text, isSimilarTr
         }
     }
 
-    // Specific combinations
-    if (lang && era && genre) {
-        queries.push(`${lang} ${era} ${genre} hits`);
-        queries.push(`best ${lang} ${genre} songs ${era}`);
-        queries.push(`${lang} ${era} melodies collection`);
-    } else if (lang && genre) {
-        queries.push(`${lang} ${genre} songs`);
-        queries.push(`best ${lang} ${genre} playlist`);
-        queries.push(`${lang} ${mood} ${genre}`);
-    } else if (lang && era) {
-        queries.push(`${lang} ${era} hit songs`);
-        queries.push(`golden ${lang} songs ${era}`);
-        queries.push(`${lang} ${era} classics`);
-    } else if (lang && mood) {
-        queries.push(`${lang} ${mood} songs playlist`);
-        queries.push(`relaxing ${lang} hits`);
-        queries.push(`${lang} ${mood} music`);
-    } else if (mood === 'gaming') {
-        queries.push('gaming music ranked mix');
-        queries.push('hype gaming playlist edm phonk');
-        queries.push('electronic gaming tracks');
-    } else if (genre) {
-        queries.push(`${genre} music playlist`);
-        queries.push(`best ${genre} songs`);
-        queries.push(`${mood} ${genre} tracks`);
+    // 1. Movie / Soundtrack / Artist specific queries
+    if (subjectInfo?.isMovie) {
+        const m = subjectInfo.title;
+        queries.push(`${m} movie songs`);
+        queries.push(`${m} songs`);
+        queries.push(`${m} audio songs`);
+        queries.push(`${m} movie soundtrack`);
+        if (mood && mood !== 'chill' && mood !== 'soundtrack') {
+            queries.push(`${m} ${mood} songs`);
+        }
+    } else if (subjectInfo?.type === 'soundtrack') {
+        const s = subjectInfo.title;
+        queries.push(`${s} soundtrack`);
+        queries.push(`${s} ost`);
+        queries.push(`${s} songs`);
+        queries.push(`${s} score`);
+    } else if (subjectInfo?.artist) {
+        const a = subjectInfo.artist;
+        queries.push(`${a} hit songs`);
+        queries.push(`${a} best songs`);
+        queries.push(mood && mood !== 'chill' ? `${a} ${mood} songs` : `${a} top tracks`);
+        if (genre) queries.push(`${a} ${genre} songs`);
+    } else if (subjectInfo?.title) {
+        const t = subjectInfo.title;
+        queries.push(`${t} songs`);
+        queries.push(`${t} music`);
+        if (lang) queries.push(`${lang} ${t} songs`);
+        if (mood && mood !== 'chill') queries.push(`${t} ${mood} songs`);
     } else {
-        // Generic mood or text-based fallback
-        queries.push(`${mood} music playlist`);
-        queries.push(`best ${mood} songs`);
+        // Specific combinations
+        if (lang && era && genre) {
+            queries.push(`${lang} ${era} ${genre} hits`);
+            queries.push(`best ${lang} ${genre} songs ${era}`);
+            queries.push(`${lang} ${era} melodies collection`);
+        } else if (lang && genre) {
+            queries.push(`${lang} ${genre} songs`);
+            queries.push(`best ${lang} ${genre} playlist`);
+            queries.push(`${lang} ${mood} ${genre}`);
+        } else if (lang && era) {
+            queries.push(`${lang} ${era} hit songs`);
+            queries.push(`golden ${lang} songs ${era}`);
+            queries.push(`${lang} ${era} classics`);
+        } else if (lang && mood) {
+            queries.push(`${lang} ${mood} songs playlist`);
+            queries.push(`relaxing ${lang} hits`);
+            queries.push(`${lang} ${mood} music`);
+        } else if (mood === 'gaming') {
+            queries.push('gaming music ranked mix');
+            queries.push('hype gaming playlist edm phonk');
+            queries.push('electronic gaming tracks');
+        } else if (genre) {
+            queries.push(`${genre} music playlist`);
+            queries.push(`best ${genre} songs`);
+            queries.push(`${mood} ${genre} tracks`);
+        } else if (mood && mood !== 'chill') {
+            queries.push(`${mood} music playlist`);
+            queries.push(`best ${mood} songs`);
+        }
     }
 
-    // Add a sanitized version of the raw prompt if queries are sparse
+    // Add a sanitized version of the user's prompt if queries are sparse
     const cleanedRaw = text
-        .replace(/\b(play|make|give me|create|find|a|the|songs?|playlist|tracks?|for|from)\b/gi, '')
+        .replace(/\b(play|make|give me|create|find|a|the|playlist|for)\b/gi, '')
+        .replace(/\s+/g, ' ')
         .trim();
-    if (cleanedRaw && cleanedRaw.length > 3) {
-        queries.push(cleanedRaw);
+    if (cleanedRaw && cleanedRaw.length > 2 && !queries.includes(cleanedRaw)) {
+        if (subjectInfo) {
+            // Put cleaned user prompt near the top
+            queries.splice(1, 0, cleanedRaw);
+        } else {
+            queries.push(cleanedRaw);
+        }
     }
 
     // Deduplicate and bound to 4 queries max

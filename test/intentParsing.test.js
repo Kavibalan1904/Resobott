@@ -87,6 +87,37 @@ describe('Deterministic Fallback Parser', () => {
         assert.strictEqual(result.intent, 'similar_track');
         assert.ok(result.searchQueries.some(q => q.includes('Anirudh') || q.includes('Arabian Nights')));
     });
+
+    it('should parse movie song requests like "karuppu movie songs" into targeted search queries', () => {
+        const result = parseDeterministicRequest('karuppu movie songs');
+        assert.strictEqual(result.intent, 'playlist');
+        assert.strictEqual(result.summary, 'Karuppu Movie Songs Playlist');
+        assert.ok(result.searchQueries.length >= 3);
+        assert.ok(result.searchQueries.includes('karuppu movie songs'));
+        assert.ok(result.searchQueries.some(q => q.includes('karuppu songs')));
+        // Ensure generic fallback queries are NOT injected
+        assert.ok(!result.searchQueries.some(q => q.includes('chill music playlist')));
+    });
+
+    it('should parse soundtrack requests like "interstellar soundtrack" accurately', () => {
+        const result = parseDeterministicRequest('interstellar soundtrack');
+        assert.strictEqual(result.intent, 'playlist');
+        assert.strictEqual(result.summary, 'Interstellar Soundtrack Playlist');
+        assert.ok(result.searchQueries.some(q => q.includes('interstellar soundtrack')));
+        assert.ok(result.searchQueries.some(q => q.includes('interstellar ost')));
+    });
+
+    it('should recognize regional cinema words like "tamil kuthu songs" and "kollywood hits"', () => {
+        const result1 = parseDeterministicRequest('tamil kuthu songs');
+        assert.ok(result1.languages.includes('Tamil'));
+        assert.ok(result1.genres.includes('folk'));
+        assert.strictEqual(result1.energy, 'high');
+
+        const result2 = parseDeterministicRequest('kollywood 90s melodies');
+        assert.ok(result2.languages.includes('Tamil'));
+        assert.ok(result2.eras.includes('1990s'));
+        assert.ok(result2.genres.includes('melody'));
+    });
 });
 
 describe('AI Provider Factory & Fallback Handling', () => {

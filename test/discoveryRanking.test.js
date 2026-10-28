@@ -58,6 +58,36 @@ describe('Track Filtering and Deduplication', () => {
         assert.strictEqual(result.length, 1);
         assert.strictEqual(result[0].info.title, 'Normal Chill Track');
     });
+
+    it('should filter out non-music video uploads (full movies, comedy scenes, trailers)', () => {
+        const tracks = [
+            { info: { title: 'Karuppu (2008) Tamil Full Movie HD', uri: 'http://yt/1', author: 'MovieChannel', duration: 7200000 } },
+            { info: { title: 'Karuppu Movie Comedy Scenes', uri: 'http://yt/2', author: 'MovieChannel', duration: 360000 } },
+            { info: { title: 'Karuppu Official Teaser', uri: 'http://yt/3', author: 'MovieChannel', duration: 60000 } },
+            { info: { title: 'Karuppu - Kannukulla Nikkira Audio Song', uri: 'http://yt/4', author: 'Sony Music South', duration: 250000 } },
+            { info: { title: 'Karuppu (Title Track)', uri: 'http://yt/5', author: 'Sony Music South', duration: 210000 } },
+        ];
+
+        const intent = { mood: 'soundtrack', excludedTerms: [] };
+        const result = djService.filterAndDeduplicate(tracks, intent, null, 'g1');
+
+        assert.strictEqual(result.length, 2);
+        assert.ok(result.some(t => t.info.title.includes('Kannukulla Nikkira')));
+        assert.ok(result.some(t => t.info.title.includes('Title Track')));
+    });
+
+    it('should preserve distinct songs from the same movie or artist with different subtitles/durations', () => {
+        const tracks = [
+            { info: { title: 'Karuppu (Kannukulla Nikkira)', uri: 'http://yt/1', author: 'Sony Music South', duration: 250000 } },
+            { info: { title: 'Karuppu (Title Track)', uri: 'http://yt/2', author: 'Sony Music South', duration: 210000 } },
+            { info: { title: 'Karuppu (Theme Music)', uri: 'http://yt/3', author: 'Sony Music South', duration: 110000 } },
+        ];
+
+        const intent = { mood: 'soundtrack', excludedTerms: [] };
+        const result = djService.filterAndDeduplicate(tracks, intent, null, 'g1');
+
+        assert.strictEqual(result.length, 3);
+    });
 });
 
 describe('Deterministic Ranking & User Feedback Boost', () => {
@@ -98,6 +128,22 @@ describe('Deterministic Ranking & User Feedback Boost', () => {
 
         assert.strictEqual(ranked[0].info.author, 'Anirudh');
         assert.strictEqual(ranked[1].info.author, 'BadSinger');
+    });
+
+    it('should boost tracks matching specific query keywords (e.g. movie name)', () => {
+        const tracks = [
+            { info: { title: 'Random Song', uri: 'http://yt/1', author: 'Singer', duration: 200000 } },
+            { info: { title: 'Karuppu Kannukulla Nikkira', uri: 'http://yt/2', author: 'Singer', duration: 250000 } },
+        ];
+
+        const intent = {
+            mood: 'soundtrack',
+            searchQueries: ['karuppu movie songs', 'karuppu songs'],
+            trackCount: 10,
+        };
+
+        const ranked = djService.rankTracks(tracks, intent, 'g1', 'u1');
+        assert.strictEqual(ranked[0].info.title, 'Karuppu Kannukulla Nikkira');
     });
 });
 
@@ -142,5 +188,37 @@ describe('Mocked Search & Discovery', () => {
         const djService = new DJService({ provider: null });
         const res = await djService._searchWithTimeout(mockPlayer, 'slow query', {}, 10);
         assert.deepStrictEqual(res, []);
+    });
+
+    it('should trigger emergency raw fallback search when initial queries yield 0 tracks', async () => {
+        let searchedQueries = [];
+        const mockPlayer = {
+            search: async ({ query }) => {
+                searchedQueries.push(query);
+                if (query.includes('karuppu movie songs')) {
+                    return {
+                        tracks: [
+                            { info: { title: 'Karuppu Kannukulla Nikkira', uri: 'http://yt/1', author: 'Sony Music South', duration: 250000 } },
+                            { info: { title: 'Karuppu Title Track', uri: 'http://yt/2', author: 'Sony Music South', duration: 210000 } },
+                        ],
+                    };
+                }
+                return { tracks: [] };
+            },
+        };
+
+        const djService = new DJService({ provider: null });
+        const intent = {
+            intent: 'playlist',
+            mood: 'soundtrack',
+            rawRequest: 'karuppu movie songs',
+            searchQueries: ['unmatched query 1', 'unmatched query 2'],
+            trackCount: 5,
+        };
+
+        const result = await djService.discoverAndRankTracks(mockPlayer, intent, { id: 'u123', username: 'Tester' }, 'g123');
+
+        assert.strictEqual(result.tracks.length, 2);
+        assert.ok(searchedQueries.includes('karuppu movie songs'));
     });
 });

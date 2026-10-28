@@ -108,7 +108,11 @@ class DJService {
             'You are Reso AI DJ, an expert music curator embedded in a Discord bot.',
             'Your role is to understand the user\'s musical vibe request and produce a compact JSON playlist generation plan.',
             'Adhere strictly to the requested JSON schema.',
-            'Formulate 3 to 5 realistic search queries that will match real songs on YouTube.',
+            'Formulate 3 to 5 realistic, high-precision search queries that will match real songs on YouTube Music or YouTube.',
+            'When the user requests songs from a specific movie, soundtrack, album, or artist (e.g., "karuppu movie songs", "leo songs", "interstellar soundtrack", "anirudh hits"):',
+            '  - Create targeted search queries to find real songs and audio tracks from that movie, album, or artist.',
+            '  - Do NOT generate full movie queries, 2-hour mix queries, or unrelated generic playlists.',
+            '  - Accurately describe the movie, album, or artist in the summary.',
             'Do NOT invent fake song URLs, video IDs, or unreleased titles.',
             'Extract any negative exclusions mentioned (e.g., "no sad songs", "without slow romantic tracks").',
         ].join('\n');
@@ -136,6 +140,7 @@ class DJService {
             }
 
             const validated = validateAndSanitizeIntent(rawJson, overrideCount);
+            validated.rawRequest = sanitizedPrompt;
 
             // Ensure search queries are valid
             let searchQueries = Array.isArray(rawJson.searchQueries)
@@ -156,8 +161,10 @@ class DJService {
             };
         } catch (err) {
             console.warn(`[Reso DJ] AI interpretation failed (${err.message}). Falling back to deterministic engine.`);
+            const fallbackIntent = parseDeterministicRequest(sanitizedPrompt, overrideCount, context);
+            fallbackIntent.rawRequest = sanitizedPrompt;
             return {
-                intent: parseDeterministicRequest(sanitizedPrompt, overrideCount, context),
+                intent: fallbackIntent,
                 isFallback: true,
                 fallbackReason: err.message,
             };
@@ -165,7 +172,7 @@ class DJService {
     }
 
     /**
-     * Search Lavalink for a query with timeout
+     * Search Lavalink for a query with timeout and multi-source resilience
      * @param {object} player Lavalink Player
      * @param {string} query Search query
      * @param {object} user Discord User
@@ -173,20 +180,41 @@ class DJService {
      * @returns {Promise<Array>}
      */
     async _searchWithTimeout(player, query, user, timeoutMs = 7000) {
-        if (!player || !player.search) return [];
+        if (!player) return [];
+        const searchFn = typeof player.search === 'function'
+            ? player.search.bind(player)
+            : player.node?.search?.bind(player.node);
+        if (!searchFn) return [];
 
-        try {
-            const searchPromise = player.search({ query, source: 'ytsearch' }, user);
-            const timeoutPromise = new Promise((_, reject) =>
-                setTimeout(() => reject(new Error('Search timeout')), timeoutMs)
-            );
+        const startTime = Date.now();
+        // Priority sources: ytmsearch (clean audio), ytsearch (broad video), spsearch (Spotify)
+        const sources = ['ytmsearch', 'ytsearch', 'spsearch'];
 
-            const result = await Promise.race([searchPromise, timeoutPromise]);
-            return result?.tracks || [];
-        } catch (err) {
-            console.warn(`[Reso DJ] Search query "${truncate(query, 35)}" failed: ${err.message}`);
-            return [];
+        for (const source of sources) {
+            const elapsed = Date.now() - startTime;
+            const remainingMs = timeoutMs - elapsed;
+            if (remainingMs <= 10) break;
+
+            try {
+                const searchPromise = searchFn({ query, source }, user);
+                const timeoutPromise = new Promise((_, reject) =>
+                    setTimeout(() => reject(new Error('Search timeout')), remainingMs)
+                );
+
+                const result = await Promise.race([searchPromise, timeoutPromise]);
+                if (result && Array.isArray(result.tracks) && result.tracks.length > 0) {
+                    return result.tracks;
+                }
+            } catch (err) {
+                if (err.message === 'Search timeout') {
+                    console.warn(`[Reso DJ] Search query "${truncate(query, 35)}" timed out after ${timeoutMs}ms`);
+                    break;
+                }
+                // Source failed or unsupported on this node, fallback to next source
+            }
         }
+
+        return [];
     }
 
     /**
@@ -214,7 +242,29 @@ class DJService {
         }
 
         // Apply filters, deduplication, and ranking
-        const filtered = this.filterAndDeduplicate(candidateTracks, intent, user, guildId);
+        let filtered = this.filterAndDeduplicate(candidateTracks, intent, user, guildId);
+
+        // Emergency raw fallback: if initial search results were empty, try direct searches
+        if (filtered.length === 0 && (intent.rawRequest || intent.summary)) {
+            const rawTarget = intent.rawRequest || intent.summary;
+            const emergencyQueries = [
+                rawTarget,
+                `${rawTarget} songs`,
+                `${rawTarget} soundtrack`,
+            ].filter(Boolean);
+
+            for (const eq of emergencyQueries) {
+                const emergencyTracks = await this._searchWithTimeout(player, eq, user, 6000);
+                if (emergencyTracks.length > 0) {
+                    const emergencyFiltered = this.filterAndDeduplicate(emergencyTracks, intent, user, guildId);
+                    if (emergencyFiltered.length > 0) {
+                        filtered.push(...emergencyFiltered);
+                        break;
+                    }
+                }
+            }
+        }
+
         const ranked = this.rankTracks(filtered, intent, guildId, user?.id);
 
         const finalTracks = ranked.slice(0, intent.trackCount);
@@ -242,10 +292,12 @@ class DJService {
 
         // Remove video tags & noise
         title = title
-            .replace(/\[.*?\]|\(.*?\)/g, ' ') // Strip brackets & parens content
-            .replace(/\b(official\s+)?(video|audio|music\s+video|lyric\s+video|lyrics?|audio\s+song|full\s+song|full\s+audio|full\s+video|hd|4k|remastered|visualizer|mv|song)\b/gi, ' ')
-            .replace(/[\-–—_|:!]/g, ' ')     // Strip punctuation
-            .replace(/\s+/g, ' ')            // Normalize whitespace
+            .replace(/\s*[\(\[\{](?:official\s+)?(?:video(?:\s+song)?|music\s+video|lyric(?:al)?(?:\s+video)?|audio(?:\s+song)?|full\s+song|full\s+video|4k|hd|remastered|visualizer|redux|mv)[\)\]\}]/gi, ' ')
+            .replace(/\[.*?\]/g, ' ')
+            .replace(/\b(official\s+)?(video|audio|music\s+video|lyric\s+video|lyrics?|full\s+audio\s+song|audio\s+song|full\s+song|full\s+audio|full\s+video|hd|4k|remastered|visualizer|mv)\b/gi, ' ')
+            .replace(/\b(song|songs)\b/gi, ' ')
+            .replace(/[\(\)\[\]\{\}\-–—_|:!]/g, ' ') // Strip punctuation including brackets/parens
+            .replace(/\s+/g, ' ')                    // Normalize whitespace
             .trim();
 
         return title;
@@ -260,6 +312,7 @@ class DJService {
 
         const excludedTerms = (intent.excludedTerms || []).map(t => t.toLowerCase().trim()).filter(Boolean);
         const allowLive = /\b(live|concert|radio|stream)\b/i.test(intent.mood || '');
+        const NON_MUSIC_REGEX = /\b(full\s+movie|full\s+film|movie\s+scenes?|comedy\s+scenes?|trailers?|teasers?|review|reaction|interview|making\s+of|behind\s+the\s+scenes)\b/i;
 
         for (const track of tracks) {
             if (!track || !track.info) continue;
@@ -268,10 +321,13 @@ class DJService {
             // 1. Basic validation: must have title and URI
             if (!info.title || !info.uri) continue;
 
-            // 2. Filter out live streams unless user requested live
+            // 2. Filter out non-music video fluff (full movies, comedy clips, movie trailers)
+            if (NON_MUSIC_REGEX.test(info.title)) continue;
+
+            // 3. Filter out live streams unless user requested live
             if (info.isStream && !allowLive) continue;
 
-            // 3. Duration check: discard tracks shorter than 30s or longer than 20 mins
+            // 4. Duration check: discard tracks shorter than 30s or longer than 20 mins
             const durationMs = info.duration || 0;
             if (durationMs > 0 && (durationMs < 30000 || durationMs > 1200000)) {
                 continue;
@@ -280,7 +336,7 @@ class DJService {
             const titleLower = info.title.toLowerCase();
             const authorLower = (info.author || '').toLowerCase();
 
-            // 4. Apply excluded terms
+            // 5. Apply excluded terms
             let isExcluded = false;
             for (const excluded of excludedTerms) {
                 if (titleLower.includes(excluded) || authorLower.includes(excluded)) {
@@ -290,13 +346,14 @@ class DJService {
             }
             if (isExcluded) continue;
 
-            // 5. Canonical deduplication
+            // 6. Canonical deduplication with duration bucket
             const canonical = this.canonicalizeTitle(info.title);
             if (!canonical) continue;
 
-            // Create signature based on cleaned title and first word of author
+            // Create signature based on cleaned title, author key, and duration bucket (within 15s)
             const authorKey = authorLower.split(/[\s,]+/)[0] || '';
-            const signature = `${canonical}::${authorKey}`;
+            const durationBucket = Math.round(durationMs / 15000);
+            const signature = `${canonical}::${authorKey}::${durationBucket}`;
 
             if (seenSignatures.has(signature)) {
                 continue;
@@ -340,6 +397,24 @@ class DJService {
             // Mood match boost
             if (intent.mood && title.includes(intent.mood.toLowerCase())) {
                 score += 10;
+            }
+
+            // Subject / Search query match boost (e.g. "karuppu")
+            if (intent.searchQueries && intent.searchQueries.length > 0) {
+                const primaryQuery = intent.searchQueries[0].toLowerCase();
+                const primaryWords = primaryQuery.split(/\s+/).filter(w => w.length > 3 && !['songs', 'movie', 'soundtrack', 'playlist', 'audio', 'music'].includes(w));
+                for (const word of primaryWords) {
+                    if (title.includes(word) || author.includes(word)) {
+                        score += 30; // Boost tracks matching requested movie/subject
+                    }
+                }
+            }
+
+            // Explicit artist boost
+            for (const artist of (intent.artists || [])) {
+                if (title.includes(artist.toLowerCase()) || author.includes(artist.toLowerCase())) {
+                    score += 25;
+                }
             }
 
             // User preference like boost
