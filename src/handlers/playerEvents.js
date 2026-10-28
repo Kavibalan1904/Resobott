@@ -107,7 +107,7 @@ function setupLavalinkEvents(client) {
      * Source-aware: retries on the original source first, then falls back to YouTube.
      * Returns true if retry was initiated, false if we should skip.
      */
-    async function retryTrack(player, track, reason) {
+    async function retryTrack(player, track, reason, errorDetails = '') {
         const guildId = player.guildId;
         const trackKey = track?.info?.uri || track?.info?.title || 'unknown';
 
@@ -159,9 +159,12 @@ function setupLavalinkEvents(client) {
             if (!searchQuery) return false;
             if (!player.node || !player.node.connected) return false;
 
-            // If a track fails, retry on YouTube Music first (official audio release, avoids video login wall/codecs),
-            // then fall back to standard YouTube video search picking an alternate track.
-            const fallbackSources = ['ytmsearch', 'ytsearch'];
+            // If YouTube blocks playback (e.g. login required / bot detection), prioritize SoundCloud (scsearch)
+            // to bypass the YouTube login block completely. Otherwise try official audio (ytmsearch), then video (ytsearch), then SoundCloud.
+            const isYoutubeBlock = /login|All clients failed|bot detection/i.test(`${reason} ${errorDetails}`);
+            const fallbackSources = isYoutubeBlock
+                ? ['scsearch', 'ytmsearch', 'ytsearch']
+                : ['ytmsearch', 'ytsearch', 'scsearch'];
 
             for (const fallbackSource of fallbackSources) {
                 const ts = new Date().toISOString();
@@ -204,6 +207,8 @@ function setupLavalinkEvents(client) {
                             let messageText;
                             if (isSamePlatform) {
                                 messageText = `Primary audio stream for **${truncate(rawTitle, 50)}** ${reason}. Reconnected with alternative audio stream.`;
+                            } else if (isYoutubeBlock) {
+                                messageText = `YouTube audio stream for **${truncate(rawTitle, 50)}** was blocked (login required). Switched to alternative audio on **${resolvedSource}**.`;
                             } else if (originalSource && originalSource !== 'unknown') {
                                 messageText = `Track **${truncate(rawTitle, 50)}** was unavailable on **${capitalize(originalSource)}**. Switched to **${resolvedSource}**.`;
                             } else {
@@ -644,16 +649,19 @@ function setupLavalinkEvents(client) {
             markNodeError(player.node.id);
         }
 
-        // Attempt retry before giving up
-        const retried = await retryTrack(player, track, 'failed to load');
+        // Attempt retry before giving up, passing exact error details so retryTrack can select an optimal source (e.g. SoundCloud on YouTube login block)
+        const retried = await retryTrack(player, track, 'failed to load', errorMsg);
         if (retried) return; // Retry initiated, don't skip
 
-        // Retry failed or already retried — skip with error message
+        // Retry failed or already retried — skip with informative error message
         const channel = getPlayerTextChannel(player);
         if (channel) {
-            const embed = errorEmbed(
-                `Failed to play **${truncate(track?.info?.title, 50)}**\n\`\`\`${truncate(payload?.exception?.message || 'Unknown error', 200)}\`\`\``
-            );
+            const isLoginError = /requires login|All clients failed|bot detection/i.test(errorMsg);
+            let description = `Failed to play **${truncate(track?.info?.title, 50)}**\n\`\`\`${truncate(errorMsg, 200)}\`\`\``;
+            if (isLoginError) {
+                description += `\n💡 **Tip**: YouTube is currently restricting playback on the server. Try playing via SoundCloud (\`/play query: ${truncate(track?.info?.title, 30)} source: SoundCloud\`) or using a Spotify link.`;
+            }
+            const embed = errorEmbed(description);
             channel.send({ embeds: [embed] }).catch(() => { });
         }
 

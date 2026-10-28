@@ -62,6 +62,12 @@ async function searchSpotifyTrack(player, item, user) {
             if (res?.tracks?.length > 0) return res;
         } catch {}
     }
+    for (const q of queries) {
+        try {
+            const res = await player.search({ query: q, source: 'scsearch' }, user);
+            if (res?.tracks?.length > 0) return res;
+        } catch {}
+    }
     return null;
 }
 
@@ -270,6 +276,15 @@ module.exports = {
                         console.log(`[Reso] ↻ ${searchSource} yielded no results, falling back to ytsearch...`);
                         result = await player.search({ query, source: 'ytsearch' }, interaction.user);
                         if (result?.tracks?.length > 0) fallbackNote = 'Searched via YouTube Video';
+                    } catch {}
+                }
+
+                // If still no tracks found, try SoundCloud as ultimate fallback
+                if (!isUrl && !isAttachment && (!result || !result.tracks || result.tracks.length === 0)) {
+                    try {
+                        console.log(`[Reso] ↻ No tracks found on primary source, trying SoundCloud (scsearch)...`);
+                        result = await player.search({ query, source: 'scsearch' }, interaction.user);
+                        if (result?.tracks?.length > 0) fallbackNote = 'Searched via SoundCloud';
                     } catch {}
                 }
 

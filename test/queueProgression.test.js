@@ -127,4 +127,97 @@ describe('Queue Progression & Auto-Advance Regression Tests', () => {
         assert.strictEqual(mockPlayer.queue.current, nextTrack, 'Expected queue.current to advance to nextTrack');
         assert.strictEqual(playCalled, 1, 'Expected player.play() to be called for nextTrack');
     });
+
+    it('should retry via scsearch (SoundCloud) first on YouTube login errors and play resolved track', async () => {
+        const { client, manager } = createMockSetup();
+
+        let playedTrack = null;
+        const searchSources = [];
+        const loginBlockedTrack = { info: { title: 'Megham Karukatha', author: 'Anirudh', uri: 'uri:yt_blocked' } };
+        const scTrack = { info: { title: 'Megham Karukatha', author: 'Anirudh', sourceName: 'soundcloud', uri: 'uri:sc_resolved' } };
+
+        const mockPlayer = {
+            guildId: 'guild_login_test',
+            playing: false,
+            paused: false,
+            destroyed: false,
+            connected: true,
+            node: { id: 'primary-main', connected: true },
+            queue: {
+                current: loginBlockedTrack,
+                tracks: [],
+            },
+            get: () => 0,
+            search: async ({ source }) => {
+                searchSources.push(source);
+                if (source === 'scsearch') {
+                    return { tracks: [scTrack] };
+                }
+                return { tracks: [] };
+            },
+            play: async (opt) => {
+                playedTrack = opt?.clientTrack;
+            },
+            stopPlaying: async () => {},
+        };
+
+        const errorPayload = {
+            exception: {
+                message: 'All clients failed to load the item. Client [ANDROID_MUSIC] failed: This video requires login.',
+            },
+        };
+
+        manager.emit('trackError', mockPlayer, loginBlockedTrack, errorPayload);
+        await new Promise(r => setTimeout(r, 60));
+
+        assert.strictEqual(searchSources[0], 'scsearch', 'Expected first retry attempt to be scsearch due to YouTube login block');
+        assert.strictEqual(playedTrack, scTrack, 'Expected player.play to be called with resolved SoundCloud track');
+    });
+
+    it('should display helpful tip suggesting SoundCloud/Spotify when all retries fail on YouTube login errors', async () => {
+        const { client, manager } = createMockSetup();
+
+        let sentEmbed = null;
+        const mockChannel = {
+            send: async ({ embeds }) => {
+                sentEmbed = embeds?.[0];
+            },
+        };
+        client.channels.cache.set('channel_123', mockChannel);
+
+        const loginBlockedTrack = { info: { title: 'Megham Karukatha', author: 'Anirudh', uri: 'uri:all_fail' } };
+        const mockPlayer = {
+            guildId: 'guild_tip_test',
+            textChannelId: 'channel_123',
+            playing: false,
+            paused: false,
+            destroyed: false,
+            connected: true,
+            node: { id: 'primary-main', connected: true },
+            queue: {
+                current: loginBlockedTrack,
+                tracks: [],
+            },
+            get: () => 0,
+            getData: () => undefined,
+            setData: () => {},
+            search: async () => ({ tracks: [] }), // all retries fail
+            play: async () => {},
+            stopPlaying: async () => {},
+        };
+
+        const errorPayload = {
+            exception: {
+                message: 'All clients failed to load the item. Client [ANDROID_MUSIC] failed: This video requires login.',
+            },
+        };
+
+        manager.emit('trackError', mockPlayer, loginBlockedTrack, errorPayload);
+        await new Promise(r => setTimeout(r, 60));
+
+        assert.ok(sentEmbed, 'Expected error embed to be sent');
+        const desc = sentEmbed.data?.description || '';
+        assert.ok(desc.includes('YouTube is currently restricting playback'), 'Expected description to include helpful tip about YouTube restrictions');
+        assert.ok(desc.includes('SoundCloud'), 'Expected description to mention SoundCloud workaround');
+    });
 });
