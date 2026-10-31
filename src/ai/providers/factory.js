@@ -28,7 +28,7 @@ function createAIProvider(overrides = {}) {
 
     const defaultProvider = (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || process.env.GEMINI_KEY) ? 'gemini' : (process.env.AI_PROVIDER || 'gemini');
     const providerType = (overrides.provider || defaultProvider).trim().toLowerCase();
-    const model = overrides.model || process.env.AI_MODEL || (providerType === 'gemini' ? 'gemini-3.8-flash' : 'gpt-4o-mini');
+    const model = overrides.model || process.env.AI_MODEL || (providerType === 'gemini' ? 'gemini-1.5-flash' : 'gpt-4o-mini');
     const baseUrl = overrides.baseUrl || process.env.AI_BASE_URL || undefined;
 
     const config = {

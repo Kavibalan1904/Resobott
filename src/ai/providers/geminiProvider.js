@@ -8,7 +8,7 @@ const BaseAIProvider = require('./baseProvider');
 class GeminiProvider extends BaseAIProvider {
     constructor(config = {}) {
         super(config);
-        this.model = config.model || 'gemini-3.8-flash';
+        this.model = config.model || 'gemini-1.5-flash';
         this.baseUrl = config.baseUrl || 'https://generativelanguage.googleapis.com';
     }
 
@@ -75,9 +75,9 @@ class GeminiProvider extends BaseAIProvider {
         }
 
         const fallbackCandidates = [
-            'gemini-3.8-flash',
             'gemini-1.5-flash',
             'gemini-1.5-pro',
+            'gemini-3.8-flash',
             'gemini-2.5-flash',
         ];
 
@@ -172,11 +172,27 @@ class GeminiProvider extends BaseAIProvider {
                         continue;
                     }
 
-                    // Transient errors (503, 429) can retry once
-                    if ((status === 503 || status === 429) && attempt < maxAttempts) {
-                        console.warn(`[Reso AI] Gemini transient error (${status}). Retrying once...`);
-                        await new Promise(r => setTimeout(r, 1000));
-                        continue;
+                    // Transient errors (503 high demand, 429 rate limit): failover to another model
+                    if (status === 503 || status === 429) {
+                        console.warn(`[Reso AI] Gemini model "${cleanModel}" overloaded (${status}: ${errorBody}). Failing over to alternative model...`);
+                        for (const alt of fallbackCandidates) {
+                            if (!triedModels.has(alt)) {
+                                console.log(`[Reso AI] Failover to "${alt}"...`);
+                                this.model = alt;
+                                try {
+                                    return await this.generateCompletion({ prompt, systemPrompt, schema }, triedModels);
+                                } catch (e) {
+                                    if (e.message?.includes('503') || e.message?.includes('429') || e.message?.includes('404')) continue;
+                                    throw e;
+                                }
+                            }
+                        }
+
+                        // If all fallbacks exhausted and attempt < maxAttempts, wait and retry once
+                        if (attempt < maxAttempts) {
+                            await new Promise(r => setTimeout(r, 1500));
+                            continue;
+                        }
                     }
 
                     throw new Error(`Gemini API returned status ${status}: ${errorBody}`);
