@@ -88,9 +88,65 @@ describe('Track Filtering and Deduplication', () => {
 
         assert.strictEqual(result.length, 3);
     });
+
+    it('should filter out completely unrelated tracks when specific artist is requested', () => {
+        const candidateTracks = [
+            { info: { title: 'Theekkoluthi', author: 'Nivas K Prasanna', uri: 'http://yt/1', duration: 365000 } },
+            { info: { title: 'Uyire Un Uyirena (From "Zero")', author: 'Nivas K. Prasanna', uri: 'http://yt/2', duration: 285000 } },
+            { info: { title: 'Imaithidathe', author: 'Nivas K Prasanna', uri: 'http://yt/3', duration: 223000 } },
+            { info: { title: 'Thennaadu (From "Bison")', author: 'Nivas K Prasanna', uri: 'http://yt/4', duration: 302000 } },
+            { info: { title: 'Vinmeen Vithaiyil', author: 'Nivas K Prasanna', uri: 'http://yt/5', duration: 290000 } },
+            { info: { title: 'Neeyum Naanum', author: 'Nivas K Prasanna', uri: 'http://yt/6', duration: 275000 } },
+            { info: { title: 'Melody (feat. MC Mushti)', author: 'M.H.R', uri: 'http://yt/7', duration: 231000 } },
+            { info: { title: 'Melody', author: 'DJ Swemex', uri: 'http://yt/8', duration: 312000 } },
+            { info: { title: 'Vizhigalin Aruginil', author: 'Ramesh Vinayagam', uri: 'http://yt/9', duration: 328000 } },
+        ];
+
+        const intent = {
+            intent: 'artist_playlist',
+            artists: ['Nivas K Prasanna'],
+            genres: ['melody'],
+            mood: 'chill',
+            trackCount: 6,
+        };
+
+        const result = djService.filterAndDeduplicate(candidateTracks, intent, null, 'g1');
+        // Unrelated tracks (M.H.R, DJ Swemex, Ramesh Vinayagam) must be filtered out!
+        assert.ok(!result.some(t => t.info.author === 'M.H.R'));
+        assert.ok(!result.some(t => t.info.author === 'DJ Swemex'));
+        assert.ok(!result.some(t => t.info.author === 'Ramesh Vinayagam'));
+        assert.strictEqual(result.length, 6);
+        assert.ok(result.every(t => t.info.author.includes('Nivas')));
+    });
+
+    it('should not penalize requested artist with diversity penalty and rank them top', () => {
+        const candidateTracks = [
+            { info: { title: 'Song A', author: 'Nivas K Prasanna', uri: 'http://yt/1', duration: 200000 } },
+            { info: { title: 'Song B', author: 'Nivas K Prasanna', uri: 'http://yt/2', duration: 200000 } },
+            { info: { title: 'Song C', author: 'Nivas K Prasanna', uri: 'http://yt/3', duration: 200000 } },
+            { info: { title: 'Song D', author: 'Nivas K Prasanna', uri: 'http://yt/4', duration: 200000 } },
+            { info: { title: 'Random Melody Track', author: 'OtherArtist', uri: 'http://yt/5', duration: 200000 } },
+        ];
+
+        const intent = {
+            intent: 'artist_playlist',
+            artists: ['Nivas K Prasanna'],
+            genres: ['melody'],
+            mood: 'chill',
+            trackCount: 5,
+        };
+
+        const ranked = djService.rankTracks(candidateTracks, intent, 'g1', 'u1');
+        // All Nivas K Prasanna songs should rank higher than OtherArtist
+        const otherArtistIndex = ranked.findIndex(t => t.info.author === 'OtherArtist');
+        assert.strictEqual(otherArtistIndex, 4, 'OtherArtist should be ranked last');
+        for (let i = 0; i < 4; i++) {
+            assert.strictEqual(ranked[i].info.author, 'Nivas K Prasanna');
+        }
+    });
 });
 
-describe('Deterministic Ranking & User Feedback Boost', () => {
+describe('Mocked Search & Discovery', () => {
     const djService = new DJService({ provider: null });
 
     it('should boost tracks matching language and genre hints', () => {

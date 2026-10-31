@@ -160,8 +160,8 @@ function extractSubjectInfo(text, positiveText) {
     }
 
     // 3. Artist patterns:
-    // e.g. "by anirudh", "songs by taylor swift", "anirudh hits"
-    const byArtistMatch = raw.match(/\b(?:songs?|music|tracks?|hits?)\s+by\s+([a-zA-Z0-9\s'’-]+)/i);
+    // e.g. "by anirudh", "songs by taylor swift", "songs of nivas k prasanna", "best of anirudh"
+    const byArtistMatch = raw.match(/\b(?:songs?|music|tracks?|hits?|melod(?:y|ies))\s+(?:by|from|of)\s+([a-zA-Z0-9\s'’.-]+)/i);
     if (byArtistMatch && byArtistMatch[1]) {
         const artist = byArtistMatch[1].trim();
         if (artist.length >= 2) {
@@ -172,7 +172,37 @@ function extractSubjectInfo(text, positiveText) {
         }
     }
 
-    // 4. "<SpecificTitle> songs" pattern where title is not purely a language, era, or mood
+    const bestOfMatch = raw.match(/^(?:best\s+of|top\s+hits\s+of|songs\s+of)\s+([a-zA-Z0-9\s'’.-]+)/i);
+    if (bestOfMatch && bestOfMatch[1]) {
+        const artist = bestOfMatch[1].trim();
+        if (artist.length >= 2) {
+            return {
+                type: 'artist',
+                artist,
+            };
+        }
+    }
+
+    // 4. "<Artist> (melod(y|ies)|hits|classics|love|romantic|sad|kuthu|mass|chill|pop|rock|acoustic)" pattern
+    // e.g. "nivas k prasanna melody songs", "nivas k prasanna melodies", "anirudh hits", "harris jayaraj romantic songs"
+    const artistGenreSongMatch = raw.match(/^(.+?)\s+(?:melod(?:y|ies)|hits?|classics?|love|romantic|sad|kuthu|mass|dance|chill|acoustic|lofi|rock|pop)\s*(?:songs?|tracks?|music|audio)?$/i);
+    if (artistGenreSongMatch && artistGenreSongMatch[1]) {
+        const candidate = artistGenreSongMatch[1].trim();
+        const candidateLower = candidate.toLowerCase();
+        const isLang = KNOWN_LANGUAGES.some(l => l.pattern.test(candidateLower) && candidateLower.replace(l.pattern, '').trim().length === 0);
+        const isGenre = KNOWN_GENRES.some(g => g.pattern.test(candidateLower) && candidateLower.replace(g.pattern, '').trim().length === 0);
+        const isMood = KNOWN_MOODS.some(m => m.pattern.test(candidateLower) && candidateLower.replace(m.pattern, '').trim().length === 0);
+        const isEra = KNOWN_ERAS.some(e => e.pattern.test(candidateLower) && candidateLower.replace(e.pattern, '').trim().length === 0);
+
+        if (!isLang && !isGenre && !isMood && !isEra && candidate.length >= 2) {
+            return {
+                type: 'artist',
+                artist: candidate,
+            };
+        }
+    }
+
+    // 5. "<SpecificTitle> songs" pattern where title is not purely a language, era, or mood
     const songsMatch = raw.match(/^(.+?)\s+(?:songs?|tracks?|music|hits?)$/i);
     if (songsMatch && songsMatch[1]) {
         const candidate = songsMatch[1].trim();
@@ -279,7 +309,14 @@ function parseDeterministicRequest(rawRequest = '', overrideCount = null, contex
         summary = `${capitalizeWords(subjectInfo.title)} Soundtrack Playlist`;
     } else if (subjectInfo?.artist) {
         intentType = 'artist_playlist';
-        summary = `Best of ${capitalizeWords(subjectInfo.artist)}`;
+        const formattedArtist = capitalizeWords(subjectInfo.artist);
+        if (genres.length > 0) {
+            summary = `Best of ${formattedArtist} ${capitalizeWords(genres.join(' '))} Playlist`;
+        } else if (mood && mood !== 'chill') {
+            summary = `Best of ${formattedArtist} ${capitalizeWords(mood)} Playlist`;
+        } else {
+            summary = `Best of ${formattedArtist}`;
+        }
     } else if (subjectInfo?.title) {
         intentType = 'playlist';
         summary = `${capitalizeWords(subjectInfo.title)} Music Vibe`;
@@ -374,10 +411,23 @@ function buildQueries({ languages, genres, eras, mood, energy, text, isSimilarTr
         queries.push(`${s} score`);
     } else if (subjectInfo?.artist) {
         const a = subjectInfo.artist;
-        queries.push(`${a} hit songs`);
-        queries.push(`${a} best songs`);
-        queries.push(mood && mood !== 'chill' ? `${a} ${mood} songs` : `${a} top tracks`);
-        if (genre) queries.push(`${a} ${genre} songs`);
+        if (genres.length > 0) {
+            const g = genres.join(' ');
+            queries.push(`${a} ${g} songs`);
+            queries.push(`${a} ${g}`);
+            queries.push(`${a} hit songs`);
+            queries.push(`${a} best songs`);
+        } else if (mood && mood !== 'chill') {
+            queries.push(`${a} ${mood} songs`);
+            queries.push(`${a} hit songs`);
+            queries.push(`${a} best songs`);
+            queries.push(`${a} top tracks`);
+        } else {
+            queries.push(`${a} hit songs`);
+            queries.push(`${a} best songs`);
+            queries.push(`${a} top tracks`);
+            queries.push(`${a} songs`);
+        }
     } else if (subjectInfo?.title) {
         const t = subjectInfo.title;
         queries.push(`${t} songs`);

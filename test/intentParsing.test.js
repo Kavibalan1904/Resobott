@@ -118,6 +118,30 @@ describe('Deterministic Fallback Parser', () => {
         assert.ok(result2.eras.includes('1990s'));
         assert.ok(result2.genres.includes('melody'));
     });
+
+    it('should parse "nivas k prasanna melody songs" into artist playlist with targeted queries', () => {
+        const result = parseDeterministicRequest('nivas k prasanna melody songs');
+        assert.strictEqual(result.intent, 'artist_playlist');
+        assert.ok(result.artists.some(a => a.toLowerCase().includes('nivas')));
+        assert.ok(result.genres.includes('melody'));
+        assert.ok(result.searchQueries.every(q => q.toLowerCase().includes('nivas k prasanna')));
+        assert.ok(!result.searchQueries.some(q => q === 'melody music playlist' || q === 'best melody songs'));
+    });
+
+    it('should parse "nivas k prasanna melodies" into artist playlist accurately', () => {
+        const result = parseDeterministicRequest('nivas k prasanna melodies');
+        assert.strictEqual(result.intent, 'artist_playlist');
+        assert.ok(result.artists.some(a => a.toLowerCase().includes('nivas')));
+        assert.ok(result.genres.includes('melody'));
+        assert.ok(result.searchQueries.some(q => q.toLowerCase().includes('nivas k prasanna melody')));
+    });
+
+    it('should parse "anirudh hits" into artist playlist', () => {
+        const result = parseDeterministicRequest('anirudh hits');
+        assert.strictEqual(result.intent, 'artist_playlist');
+        assert.ok(result.artists.some(a => a.toLowerCase().includes('anirudh')));
+        assert.ok(result.searchQueries.some(q => q.toLowerCase().includes('anirudh hit songs')));
+    });
 });
 
 describe('AI Provider Factory & Fallback Handling', () => {

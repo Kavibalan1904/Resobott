@@ -179,7 +179,7 @@ class DJService {
      * @param {number} timeoutMs Max time per search
      * @returns {Promise<Array>}
      */
-    async _searchWithTimeout(player, query, user, timeoutMs = 7000) {
+    async _searchWithTimeout(player, query, user, timeoutMs = 7000, preferSpotify = false) {
         if (!player) return [];
         const searchFn = typeof player.search === 'function'
             ? player.search.bind(player)
@@ -187,8 +187,11 @@ class DJService {
         if (!searchFn) return [];
 
         const startTime = Date.now();
-        // Priority sources: ytmsearch (clean audio), ytsearch (broad video), spsearch (Spotify)
-        const sources = ['ytmsearch', 'ytsearch', 'spsearch'];
+        // Priority sources: For artist queries, check Spotify (spsearch) first for official catalog,
+        // followed by YouTube Music (ytmsearch) and broad YouTube video (ytsearch).
+        const sources = preferSpotify
+            ? ['spsearch', 'ytmsearch', 'ytsearch']
+            : ['ytmsearch', 'ytsearch', 'spsearch'];
 
         for (const source of sources) {
             const elapsed = Date.now() - startTime;
@@ -229,9 +232,12 @@ class DJService {
         const queries = intent.searchQueries || ['popular songs'];
         const candidateTracks = [];
 
+        const isArtistIntent = intent.intent === 'artist_playlist' || (Array.isArray(intent.artists) && intent.artists.length > 0);
+
         // Execute bounded searches (parallel with Promise.allSettled)
-        const searchPromises = queries.slice(0, 4).map(q =>
-            this._searchWithTimeout(player, q, user, 7000)
+        // For artist requests, alternate preferSpotify so we discover official tracks from both Spotify and YouTube
+        const searchPromises = queries.slice(0, 4).map((q, idx) =>
+            this._searchWithTimeout(player, q, user, 7000, isArtistIntent ? (idx % 2 === 0) : false)
         );
 
         const settledResults = await Promise.allSettled(searchPromises);
@@ -306,6 +312,39 @@ class DJService {
     /**
      * Filter out unplayable, live, or excluded tracks and deduplicate
      */
+    /**
+     * Check if a track is composed, sung, or associated with the requested artist(s)
+     */
+    isArtistMatch(track, artists) {
+        if (!track || !track.info || !artists || artists.length === 0) return false;
+        const title = (track.info.title || '').toLowerCase();
+        const author = (track.info.author || '').toLowerCase();
+
+        for (const rawArtist of artists) {
+            const artist = rawArtist.toLowerCase().trim();
+            if (!artist) continue;
+
+            // Direct full name match in author or title
+            if (author.includes(artist) || title.includes(artist)) return true;
+
+            // Multi-word name matching (e.g. "Nivas K Prasanna" -> tokens: "nivas", "prasanna")
+            const tokens = artist.split(/\s+/).filter(t => t.length > 2 && !['and', 'the', 'feat', 'ft'].includes(t));
+            if (tokens.length >= 2) {
+                // All non-trivial tokens match in author or title
+                if (tokens.every(t => author.includes(t) || title.includes(t))) return true;
+
+                // Primary distinctive token (e.g. "nivas" for "nivas k prasanna")
+                const primaryToken = tokens[0];
+                if (primaryToken.length >= 4 && (author.includes(primaryToken) || title.includes(primaryToken))) {
+                    return true;
+                }
+            } else if (tokens.length === 1 && tokens[0].length >= 3) {
+                if (author.includes(tokens[0]) || title.includes(tokens[0])) return true;
+            }
+        }
+        return false;
+    }
+
     filterAndDeduplicate(tracks, intent, user, guildId) {
         const seenSignatures = new Set();
         const validTracks = [];
@@ -363,6 +402,26 @@ class DJService {
             validTracks.push(track);
         }
 
+        // In artist playlists, strictly filter and prioritize authentic artist tracks
+        if (intent.artists && intent.artists.length > 0) {
+            const artistMatches = validTracks.filter(t => this.isArtistMatch(t, intent.artists));
+            // If we found enough authentic artist tracks, discard all unrelated tracks!
+            if (artistMatches.length >= Math.min(intent.trackCount, 6)) {
+                return artistMatches;
+            }
+            // If fewer, keep all matching artist tracks at the front, and filter out obvious spam/unrelated
+            const filtered = validTracks.filter(t => {
+                if (this.isArtistMatch(t, intent.artists)) return true;
+                const titleLower = (t.info?.title || '').toLowerCase();
+                // Reject generic "Melody" tracks by random artists
+                if (/^melody\b/i.test(titleLower) || /\b(feat\.|dj\s)/i.test(titleLower)) return false;
+                return true;
+            });
+            if (filtered.length > 0) {
+                return filtered;
+            }
+        }
+
         return validTracks;
     }
 
@@ -411,10 +470,11 @@ class DJService {
             }
 
             // Explicit artist boost
-            for (const artist of (intent.artists || [])) {
-                if (title.includes(artist.toLowerCase()) || author.includes(artist.toLowerCase())) {
-                    score += 25;
-                }
+            const isTargetArtist = intent.artists && intent.artists.length > 0 && this.isArtistMatch(track, intent.artists);
+            if (isTargetArtist) {
+                score += 100; // Massive priority boost for requested artist
+            } else if (intent.intent === 'artist_playlist') {
+                score -= 80; // Heavy penalty for non-matching artists in an artist playlist
             }
 
             // User preference like boost
@@ -431,13 +491,15 @@ class DJService {
                 }
             }
 
-            // Diversity penalty: reduce score if artist has appeared multiple times
-            const primaryArtist = author.split(/[\s,]+/)[0] || 'unknown';
-            const count = artistCounts.get(primaryArtist) || 0;
-            if (count > 0) {
-                score -= count * 15;
+            // Diversity penalty: DO NOT penalize the target artist in artist playlists!
+            if (!isTargetArtist) {
+                const primaryArtist = author.split(/[\s,]+/)[0] || 'unknown';
+                const count = artistCounts.get(primaryArtist) || 0;
+                if (count > 0) {
+                    score -= count * 15;
+                }
+                artistCounts.set(primaryArtist, count + 1);
             }
-            artistCounts.set(primaryArtist, count + 1);
 
             return { track, score };
         });
