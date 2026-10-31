@@ -185,6 +185,13 @@ npm test
 
 ---
 
+## 📜 Legal & Compliance
+
+- **[Terms of Service](https://kavibalan1904.github.io/Resobott/terms.html)**
+- **[Privacy Policy](https://kavibalan1904.github.io/Resobott/privacy.html)**
+
+---
+
 ## 📄 License
 
 MIT © Reso

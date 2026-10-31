@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Privacy Policy — Reso Discord Bot</title>
+    <meta name="description" content="Privacy Policy for Reso, a Discord music and audio bot.">
+    <meta property="og:title" content="Reso — Privacy Policy">
+    <meta property="og:description" content="Information on how Reso collects, uses, and protects your data on Discord.">
+    <meta property="og:type" content="website">
+    <meta name="theme-color" content="#D97706">
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body>
+    <header class="header">
+        <div class="nav-container">
+            <a href="index.html" class="logo">
+                <span class="logo-icon">🎵</span>
+                <span class="logo-text">Reso</span>
+            </a>
+            <nav class="nav-links">
+                <a href="index.html">Home</a>
+                <a href="terms.html">Terms</a>
+                <a href="privacy.html" class="active">Privacy</a>
+                <a href="https://github.com/Kavibalan1904/Resobott" target="_blank" rel="noopener noreferrer" class="nav-github">GitHub</a>
+                <a href="https://discord.com/oauth2/authorize?client_id=1511708373668597841&permissions=8&integration_type=0&scope=bot+applications.commands" target="_blank" rel="noopener noreferrer" class="btn btn-primary btn-sm">Add to Discord</a>
+            </nav>
+        </div>
+    </header>
+
+    <main class="legal-page">
+        <div class="legal-container">
+            <div class="legal-header">
+                <span class="badge">Transparency & Security</span>
+                <h1>Privacy Policy</h1>
+                <p class="last-updated">Last Updated: October 31, 2026 • Effective Date: October 31, 2026</p>
+            </div>
+
+            <article class="legal-body">
+                <section>
+                    <h2>1. Overview</h2>
+                    <p>
+                        This Privacy Policy outlines how <strong>Reso</strong> ("the Bot", "we", "us", or "our") collects, uses, stores, and protects information when you use our bot on Discord. We are committed to transparency, user privacy, and strict compliance with the <a href="https://discord.com/developers/docs/policies-and-agreements/developer-terms-of-service" target="_blank" rel="noopener noreferrer">Discord Developer Policy</a> and <a href="https://discord.com/privacy" target="_blank" rel="noopener noreferrer">Discord Privacy Policy</a>.
+                    </p>
+                </section>
+
+                <section>
+                    <h2>2. Information We Collect</h2>
+                    <p>We only collect the minimal technical data strictly necessary to provide music playback and bot features:</p>
+
+                    <h3>A. Discord Identifiers</h3>
+                    <ul>
+                        <li><strong>User IDs & Usernames:</strong> Stored temporarily to associate command interactions, manage voting skips, register track requesters, and save custom user playlists.</li>
+                        <li><strong>Guild (Server) IDs:</strong> Used to maintain per-guild playback queues, 24/7 mode settings, designated command channels, and volume preferences.</li>
+                        <li><strong>Channel IDs (Text & Voice):</strong> Used to route audio to your voice channel and post player embeds in your designated text channels.</li>
+                    </ul>
+
+                    <h3>B. User-Provided Content & Preferences</h3>
+                    <ul>
+                        <li><strong>Search Queries:</strong> Song names, playlist URLs, or search terms entered via commands like <code>/play</code>, <code>/vibe</code>, or <code>/lyrics</code>.</li>
+                        <li><strong>Custom Playlists:</strong> Track titles, URLs, and playlist names saved explicitly by users using the <code>/playlist save</code> command.</li>
+                        <li><strong>DJ Preference Feedback:</strong> Thumbs up / down feedback given on AI DJ playlists to refine future recommendations (stored per-user, per-guild).</li>
+                    </ul>
+
+                    <div class="alert-box">
+                        <div class="alert-icon">🛡️</div>
+                        <div class="alert-content">
+                            <strong>Absolute Voice Privacy Guarantee:</strong>
+                            <p>Reso connects to voice channels solely as an audio sender. <strong>Reso NEVER records, stores, monitors, transcribes, or transmits any microphone input or voice conversations of any user.</strong> We have zero voice-recording capabilities enabled in our bot code.</p>
+                        </div>
+                    </div>
+                </section>
+
+                <section>
+                    <h2>3. How We Use Collected Information</h2>
+                    <p>Information gathered by Reso is used solely for the following purposes:</p>
+                    <ul>
+                        <li>Joining voice channels and streaming requested audio tracks.</li>
+                        <li>Maintaining playback queues, repeat modes, and audio filter settings.</li>
+                        <li>Saving and loading user-created personal playlists.</li>
+                        <li>Providing contextual music recommendations and smart autoplay when the queue finishes.</li>
+                        <li>Preventing command spam, denial-of-service attacks, and enforcing cooldown rate limits.</li>
+                    </ul>
+                    <p><strong>We do NOT sell, rent, monetize, or trade any user data to third parties, data brokers, or advertisers.</strong></p>
+                </section>
+
+                <section>
+                    <h2>4. Data Storage & Retention</h2>
+                    <ul>
+                        <li><strong>In-Memory (Transient) Data:</strong> Active playback queues, current track position, volume levels, and vote-skip records are stored in volatile RAM memory. This data is automatically wiped when playback ends, the queue is cleared, or the bot leaves the voice channel.</li>
+                        <li><strong>Persistent Storage:</strong> User playlists (<code>playlists.json</code>), guild settings (<code>settings.json</code>), autoplay configurations (<code>autoplay_settings.json</code>), and DJ feedback preferences (<code>dj_preferences.json</code>) are stored locally in secure JSON files on the bot's server.</li>
+                        <li><strong>Message Cache:</strong> Message cache size is strictly bounded to 50 items and auto-swept every 30 minutes to minimize memory retention.</li>
+                    </ul>
+                </section>
+
+                <section>
+                    <h2>5. Third-Party Services & Sub-Processors</h2>
+                    <p>To fulfill your music playback requests, Reso interfaces with external APIs on an on-demand basis:</p>
+                    <ul>
+                        <li><strong>Discord API:</strong> Delivers slash command interactions, gateways, and voice state management.</li>
+                        <li><strong>Lavalink Servers:</strong> Handles audio stream decoding and voice packet transmission.</li>
+                        <li><strong>Spotify, YouTube & SoundCloud:</strong> Resolves song titles, artwork, artist metadata, and playable audio streams.</li>
+                        <li><strong>Google Gemini API:</strong> Processes text vibe requests from the <code>/vibe</code> command into structured search queries. No passwords, personal credentials, or voice data are ever passed to Google.</li>
+                        <li><strong>Genius API:</strong> Fetches song lyrics when users explicitly request <code>/lyrics</code>.</li>
+                    </ul>
+                </section>
+
+                <section>
+                    <h2>6. User Rights & Data Deletion</h2>
+                    <p>You have full control over your data stored by Reso:</p>
+                    <ul>
+                        <li><strong>Delete Saved Playlists:</strong> Run <code>/playlist delete &lt;name&gt;</code> to permanently erase any saved playlist.</li>
+                        <li><strong>Clear Channel Settings:</strong> Run <code>/setchannel reset</code> to remove designated channel bindings.</li>
+                        <li><strong>Remove Bot from Guild:</strong> Kicking or banning Reso immediately stops all playback and purges volatile server session data.</li>
+                        <li><strong>Complete Data Erasure Request:</strong> To request complete removal of all your data (including saved playlists and DJ preferences across all guilds), contact us via our <a href="https://github.com/Kavibalan1904/Resobott/issues" target="_blank" rel="noopener noreferrer">GitHub Issues page</a> with your Discord User ID. All associated records will be permanently deleted within 7 business days.</li>
+                    </ul>
+                </section>
+
+                <section>
+                    <h2>7. Children's Privacy</h2>
+                    <p>
+                        Reso is not directed at children under the age of 13 (or under 16 in the European Economic Area). We do not knowingly collect or solicit personal information from children. If we learn that a user is underage according to Discord's Terms of Service, we will immediately delete any associated stored data upon notification.
+                    </p>
+                </section>
+
+                <section>
+                    <h2>8. Security Measures</h2>
+                    <p>
+                        We implement appropriate technical measures to protect stored data against unauthorized access, loss, or alteration. All API tokens and server secrets are strictly guarded via environment variables, and external network interactions occur exclusively over encrypted TLS/HTTPS and WSS connections.
+                    </p>
+                </section>
+
+                <section>
+                    <h2>9. Changes to This Privacy Policy</h2>
+                    <p>
+                        We may update this Privacy Policy periodically to reflect new features or legal requirements. Material updates will be highlighted with a revised "Last Updated" date on this page. We encourage you to review this policy periodically.
+                    </p>
+                </section>
+
+                <section>
+                    <h2>10. Contact Us</h2>
+                    <p>If you have any questions, feedback, or data privacy requests regarding Reso, please contact us:</p>
+                    <ul>
+                        <li><strong>Project Lead / Developer:</strong> Kavibalan</li>
+                        <li><strong>GitHub Repository:</strong> <a href="https://github.com/Kavibalan1904/Resobott" target="_blank" rel="noopener noreferrer">github.com/Kavibalan1904/Resobott</a></li>
+                        <li><strong>Issue Tracker:</strong> <a href="https://github.com/Kavibalan1904/Resobott/issues" target="_blank" rel="noopener noreferrer">Submit a Privacy Request / Issue</a></li>
+                    </ul>
+                </section>
+            </article>
+        </div>
+    </main>
+
+    <footer class="footer">
+        <div class="footer-container">
+            <div class="footer-brand">
+                <div class="logo">
+                    <span class="logo-icon">🎵</span>
+                    <span class="logo-text">Reso</span>
+                </div>
+                <p>Resonance in every beat • Good music & warm vibes.</p>
+                <p class="copyright">&copy; 2026 Reso Bot. Developed by Kavibalan.</p>
+            </div>
+            <div class="footer-links">
+                <h4>Legal</h4>
+                <a href="terms.html">Terms of Service</a>
+                <a href="privacy.html">Privacy Policy</a>
+                <a href="index.html">Home</a>
+            </div>
+            <div class="footer-links">
+                <h4>Connect</h4>
+                <a href="https://github.com/Kavibalan1904/Resobott" target="_blank" rel="noopener noreferrer">GitHub</a>
+                <a href="https://discord.com/terms" target="_blank" rel="noopener noreferrer">Discord Terms</a>
+            </div>
+        </div>
+    </footer>
+</body>
+</html>
