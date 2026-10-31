@@ -8,7 +8,7 @@ const BaseAIProvider = require('./baseProvider');
 class GeminiProvider extends BaseAIProvider {
     constructor(config = {}) {
         super(config);
-        this.model = config.model || 'gemini-2.0-flash';
+        this.model = config.model || 'gemini-3.8-flash';
         this.baseUrl = config.baseUrl || 'https://generativelanguage.googleapis.com';
     }
 
@@ -29,21 +29,31 @@ class GeminiProvider extends BaseAIProvider {
             const data = await res.json();
             const models = Array.isArray(data?.models) ? data.models : [];
 
-            // Filter models supporting generateContent and not already tried
+            // Filter models supporting generateContent, text output, and not TTS/audio/image-only
             const usable = models.filter(m => {
-                const name = (m.name || '').replace(/^models\//, '');
-                return Array.isArray(m.supportedGenerationMethods) &&
-                    m.supportedGenerationMethods.includes('generateContent') &&
-                    !triedModels.has(name);
+                const name = (m.name || '').replace(/^models\//, '').toLowerCase();
+                const methods = Array.isArray(m.supportedGenerationMethods) ? m.supportedGenerationMethods : [];
+                if (!methods.includes('generateContent')) return false;
+                if (triedModels.has(name)) return false;
+
+                // Exclude audio/TTS/image/embedding models that reject text output
+                if (name.includes('tts') || name.includes('audio') || name.includes('imagen') || name.includes('embedding') || name.includes('robotics')) {
+                    return false;
+                }
+
+                if (Array.isArray(m.supportedOutputModalities) && !m.supportedOutputModalities.includes('TEXT')) {
+                    return false;
+                }
+
+                return true;
             });
             if (usable.length === 0) return null;
 
-            // Prioritize standard stable flash models: 2.0-flash, 2.0-flash-lite, 1.5-flash, 1.5-pro
-            const candidate = usable.find(m => m.name?.includes('2.0-flash'))
-                || usable.find(m => m.name?.includes('2.0-flash-lite'))
+            // Prioritize standard stable text flash/pro models
+            const candidate = usable.find(m => m.name?.includes('3.8-flash'))
                 || usable.find(m => m.name?.includes('1.5-flash'))
                 || usable.find(m => m.name?.includes('1.5-pro'))
-                || usable.find(m => m.name?.includes('flash'))
+                || usable.find(m => m.name?.includes('flash') && !m.name?.includes('tts') && !m.name?.includes('audio'))
                 || usable.find(m => m.name?.includes('pro'))
                 || usable[0];
 
@@ -65,10 +75,10 @@ class GeminiProvider extends BaseAIProvider {
         }
 
         const fallbackCandidates = [
-            'gemini-2.0-flash',
-            'gemini-2.0-flash-lite',
+            'gemini-3.8-flash',
             'gemini-1.5-flash',
             'gemini-1.5-pro',
+            'gemini-2.5-flash',
         ];
 
         const cleanModel = this.model.replace(/^models\//, '');
@@ -128,9 +138,11 @@ class GeminiProvider extends BaseAIProvider {
                         errorBody = response.statusText;
                     }
 
-                    // 404 handler: Auto-discover active models and retry (preventing infinite loops)
-                    if (status === 404) {
-                        console.warn(`[Reso AI] Gemini model "${cleanModel}" returned 404 (${errorBody}). Finding active model...`);
+                    // Model compatibility handler: 404 (model deprecated) or 400 (modality/audio-only model like TTS)
+                    const isUnsupportedModel = status === 404 || (status === 400 && (errorBody.includes('modality') || errorBody.includes('modalities') || errorBody.includes('not supported by the model')));
+
+                    if (isUnsupportedModel) {
+                        console.warn(`[Reso AI] Gemini model "${cleanModel}" is unsupported (${errorBody}). Finding next text model...`);
                         const discovered = await this.discoverAvailableModel(triedModels);
                         if (discovered && !triedModels.has(discovered)) {
                             console.log(`[Reso AI] ✓ Switching to active model "${discovered}"...`);
@@ -146,7 +158,7 @@ class GeminiProvider extends BaseAIProvider {
                                 try {
                                     return await this.generateCompletion({ prompt, systemPrompt, schema }, triedModels);
                                 } catch (e) {
-                                    if (e.message?.includes('404')) continue;
+                                    if (e.message?.includes('404') || e.message?.includes('modality') || e.message?.includes('modalities')) continue;
                                     throw e;
                                 }
                             }

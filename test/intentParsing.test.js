@@ -153,7 +153,7 @@ describe('AI Provider Factory & Fallback Handling', () => {
     it('should instantiate Gemini provider when configured', () => {
         const provider = createAIProvider({ apiKey: 'fake_key', provider: 'gemini' });
         assert.ok(provider instanceof BaseAIProvider);
-        assert.strictEqual(provider.model, 'gemini-2.0-flash');
+        assert.strictEqual(provider.model, 'gemini-3.8-flash');
     });
 
     it('should instantiate OpenAI provider when configured', () => {
@@ -171,7 +171,7 @@ describe('AI Provider Factory & Fallback Handling', () => {
             const provider = createAIProvider();
             assert.ok(provider instanceof BaseAIProvider);
             assert.strictEqual(provider.apiKey, 'test_gemini_key_123');
-            assert.strictEqual(provider.model, 'gemini-2.0-flash');
+            assert.strictEqual(provider.model, 'gemini-3.8-flash');
         } finally {
             if (originalAIKey) process.env.AI_API_KEY = originalAIKey;
             else delete process.env.AI_API_KEY;
@@ -190,7 +190,7 @@ describe('AI Provider Factory & Fallback Handling', () => {
             const provider = createAIProvider();
             assert.ok(provider instanceof BaseAIProvider);
             assert.strictEqual(provider.apiKey, 'test_google_key_456');
-            assert.strictEqual(provider.model, 'gemini-2.0-flash');
+            assert.strictEqual(provider.model, 'gemini-3.8-flash');
         } finally {
             if (originalAIKey) process.env.AI_API_KEY = originalAIKey;
             else delete process.env.AI_API_KEY;
