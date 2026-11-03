@@ -116,12 +116,15 @@ function setupLavalinkEvents(client) {
             return true; // Pretend handled to prevent skip
         }
 
-        const currentRetries = consecutiveRetries.get(guildId) || 0;
+        const now = Date.now();
+        const retryRecord = consecutiveRetries.get(guildId) || { count: 0, lastTime: 0 };
+        // Reset counter if previous retry occurred more than 45 seconds ago (not a tight crash loop)
+        const currentRetries = (now - retryRecord.lastTime < 45000) ? retryRecord.count : 0;
         if (currentRetries >= 2) {
             console.log(`[Reso] 🛑 Bounded retry limit reached (2) for guild ${guildId}. Skipping track instead of looping.`);
             return false;
         }
-        consecutiveRetries.set(guildId, currentRetries + 1);
+        consecutiveRetries.set(guildId, { count: currentRetries + 1, lastTime: now });
 
         // Get or create the retry set for this guild
         if (!retriedTracks.has(guildId)) {
@@ -150,21 +153,27 @@ function setupLavalinkEvents(client) {
         try {
             // Build a search query from the clean track title + author
             const rawTitle = track?.info?.title || '';
-            const cleanTitle = cleanVideoTitle(rawTitle) || rawTitle;
-            const author = track?.info?.author || '';
-            const searchQuery = cleanTitle.trim();
+            const author = track?.info?.author && !/unknown|various/i.test(track.info.author) ? track.info.author : '';
+            const sanitizedTitle = (cleanVideoTitle(rawTitle) || rawTitle)
+                .replace(/["'“”‘’]/g, '')
+                .replace(/\s+/g, ' ')
+                .trim();
+            const searchQuery = author && !sanitizedTitle.toLowerCase().includes(author.toLowerCase())
+                ? `${sanitizedTitle} ${author}`
+                : sanitizedTitle;
+            const cleanTitle = sanitizedTitle;
             const isrc = track?.info?.isrc || null;
             const originalSource = (track?.info?.sourceName || '').toLowerCase();
 
             if (!searchQuery) return false;
             if (!player.node || !player.node.connected) return false;
 
-            // If YouTube blocks playback (e.g. login required / bot detection), prioritize SoundCloud (scsearch)
-            // to bypass the YouTube login block completely. Otherwise try official audio (ytmsearch), then video (ytsearch), then SoundCloud.
+            // If YouTube blocks playback (e.g. login required / bot detection), prioritize alternative sources
+            // including SoundCloud (scsearch) and Spotify (spsearch) to bypass the YouTube login block completely.
             const isYoutubeBlock = /login|All clients failed|bot detection/i.test(`${reason} ${errorDetails}`);
             const fallbackSources = isYoutubeBlock
-                ? ['scsearch', 'ytmsearch', 'ytsearch']
-                : ['ytmsearch', 'ytsearch', 'scsearch'];
+                ? ['scsearch', 'spsearch', 'ytmsearch', 'ytsearch']
+                : ['spsearch', 'ytmsearch', 'scsearch', 'ytsearch'];
 
             for (const fallbackSource of fallbackSources) {
                 const ts = new Date().toISOString();
@@ -364,6 +373,9 @@ function setupLavalinkEvents(client) {
         if (track && !isAutoplayTrack && track.requester && track.requester.id !== 'autoplay') {
             updateSessionState(player.guildId, track);
         }
+
+        // Clear consecutive retries once a track successfully starts playing
+        consecutiveRetries.delete(player.guildId);
 
         // Update Resonance AI DJ listening session context
         const autoContext = guildContextManager.getContext(player.guildId);

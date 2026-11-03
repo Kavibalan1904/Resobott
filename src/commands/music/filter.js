@@ -190,16 +190,9 @@ function buildCombinedFilters(activeFilters) {
         }
     }
 
-    // If no active filters, reset everything
+    // If no active filters, reset everything by returning an empty object (clears all Lavalink filters)
     if (activeFilters.size === 0) {
-        return {
-            equalizer: Array.from({ length: 15 }, (_, i) => ({ band: i, gain: 0.0 })),
-            timescale: { speed: 1.0, pitch: 1.0, rate: 1.0 },
-            rotation: { rotationHz: 0.0 },
-            tremolo: { frequency: 0.0, depth: 0.0 },
-            vibrato: { frequency: 0.0, depth: 0.0 },
-            karaoke: { level: 0.0, monoLevel: 0.0, filterBand: 0.0, filterWidth: 0.0 },
-        };
+        return {};
     }
 
     return combined;
