@@ -54,6 +54,10 @@ class TrackMetadataStore {
         }
         if (metadata.selectionReason !== undefined) track.selectionReason = metadata.selectionReason;
         if (metadata.requester !== undefined) track.requester = metadata.requester;
+        if (metadata.sourceName !== undefined) {
+            track.sourceName = metadata.sourceName;
+            if (track.info) track.info.sourceName = metadata.sourceName;
+        }
 
         let guildMap = this.store.get(guildId);
         if (!guildMap) {
@@ -67,6 +71,7 @@ class TrackMetadataStore {
             categoryLabel: metadata.categoryLabel ?? track.categoryLabel ?? null,
             selectionReason: metadata.selectionReason ?? track.selectionReason ?? null,
             requester: metadata.requester ?? track.requester ?? null,
+            sourceName: metadata.sourceName ?? track.sourceName ?? track.info?.sourceName ?? null,
             timestamp: Date.now(),
         };
 
@@ -128,6 +133,7 @@ class TrackMetadataStore {
         const categoryLabel = track.categoryLabel ?? foundData?.categoryLabel ?? null;
         const selectionReason = track.selectionReason ?? foundData?.selectionReason ?? null;
         const requester = track.requester ?? foundData?.requester ?? null;
+        const sourceName = track.sourceName ?? foundData?.sourceName ?? track.info?.sourceName ?? null;
 
         return {
             isAutoplay,
@@ -135,6 +141,7 @@ class TrackMetadataStore {
             categoryLabel,
             selectionReason,
             requester,
+            sourceName,
         };
     }
 

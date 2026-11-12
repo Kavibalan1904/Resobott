@@ -21,6 +21,7 @@ const Colors = {
 // ── Premium Source Badges ──────────────────────────────────────
 const SOURCE_BADGES = {
     youtube: { emoji: '🔴', label: 'YouTube', color: '🔴' },
+    youtubemusic: { emoji: '🎵', label: 'YouTube Music', color: '🔴' },
     spotify: { emoji: '🟢', label: 'Spotify', color: '🟢' },
     soundcloud: { emoji: '🟠', label: 'SoundCloud', color: '🟠' },
     applemusic: { emoji: '🍎', label: 'Apple Music', color: '🍎' },
@@ -30,6 +31,44 @@ const SOURCE_BADGES = {
     twitch: { emoji: '🟣', label: 'Twitch', color: '🟣' },
     vimeo: { emoji: '🔷', label: 'Vimeo', color: '🔷' },
 };
+
+/**
+ * Resolve the true source of a track (e.g. differentiating Spotify vs YouTube)
+ * Handles LavaSrc ISRC resolving, Spotify URI detection, and stored metadata.
+ */
+function getEffectiveSource(track, guildId = null) {
+    if (!track) return 'unknown';
+    const info = track.info || track;
+
+    // Check track metadata store first if guildId provided
+    if (guildId) {
+        try {
+            const meta = getTrackMetadata(guildId, track);
+            if (meta?.sourceName) return meta.sourceName.toLowerCase();
+        } catch {}
+    }
+
+    // Direct track properties
+    if (track.sourceName) return String(track.sourceName).toLowerCase();
+
+    // Check URI for Spotify signature
+    const uri = info.uri || '';
+    if (typeof uri === 'string' && (uri.includes('spotify.com') || uri.startsWith('spotify:'))) {
+        return 'spotify';
+    }
+
+    // Check sourceName on info
+    if (info.sourceName) {
+        const raw = String(info.sourceName).toLowerCase().replace(/\s+/g, '');
+        if (raw === 'spotify') return 'spotify';
+        if (raw === 'youtubemusic') return 'youtubemusic';
+        if (raw === 'youtube') return 'youtube';
+        if (raw === 'soundcloud') return 'soundcloud';
+        return raw;
+    }
+
+    return 'unknown';
+}
 
 function getSourceBadge(sourceName) {
     if (!sourceName) return { emoji: '🎵', label: 'Unknown', color: '⚪' };
@@ -159,8 +198,9 @@ function nowPlayingEmbed(track, player, client, recommendations = []) {
         ? '`🔴` ━━━━━━━━━━━━ `LIVE STREAM`'
         : premiumProgressBar(position, duration);
 
-    // Source badge
-    const source = getSourceBadge(info.sourceName);
+    // Source badge (differentiating Spotify and YouTube accurately)
+    const effectiveSourceName = getEffectiveSource(track, player?.guildId);
+    const source = getSourceBadge(effectiveSourceName);
 
     // Volume emoji
     const volEmoji = getVolumeEmoji(player.volume);
@@ -297,9 +337,10 @@ function createDisabledControls() {
 /**
  * Create a cozy track-added embed
  */
-function trackAddedEmbed(track) {
+function trackAddedEmbed(track, guildId = null) {
     const info = track.info || track;
-    const source = getSourceBadge(info.sourceName);
+    const effectiveSourceName = getEffectiveSource(track, guildId);
+    const source = getSourceBadge(effectiveSourceName);
 
     return createEmbed('Success')
         .setAuthor({ name: '✨ Queued up for you' })
@@ -356,6 +397,7 @@ module.exports = {
     EMOJIS,
     SOURCE_BADGES,
     getSourceBadge,
+    getEffectiveSource,
     getCozyTimeGreeting,
     createEmbed,
     nowPlayingEmbed,

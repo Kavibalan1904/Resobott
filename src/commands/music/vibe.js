@@ -4,7 +4,7 @@
  */
 
 const { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType } = require('discord.js');
-const { createEmbed, errorEmbed, successEmbed, EMOJIS, Colors, getSourceBadge } = require('../../utils/embeds');
+const { createEmbed, errorEmbed, successEmbed, EMOJIS, Colors, getSourceBadge, getEffectiveSource } = require('../../utils/embeds');
 const {
     getVoiceChannel,
     checkVoicePermissions,
@@ -163,7 +163,8 @@ module.exports = {
             // Build preview embed
             const trackLines = tracks.map((track, i) => {
                 const info = track.info || {};
-                const src = getSourceBadge(info.sourceName);
+                const trackEffSource = getEffectiveSource(track, interaction.guild?.id);
+                const src = getSourceBadge(trackEffSource);
                 const dur = info.isStream ? 'Live' : formatMs(info.duration);
                 return `\`${i + 1}.\` ${src.color} **[${truncate(info.title, 42)}](${info.uri || ''})**\n　　 ${EMOJIS.clock} \`${dur}\` • ${info.author || 'Unknown'}`;
             }).join('\n');

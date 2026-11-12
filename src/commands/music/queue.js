@@ -1,5 +1,5 @@
 const { SlashCommandBuilder } = require('discord.js');
-const { errorEmbed, createEmbed, EMOJIS, getSourceBadge } = require('../../utils/embeds');
+const { errorEmbed, createEmbed, EMOJIS, getSourceBadge, getEffectiveSource } = require('../../utils/embeds');
 const { truncate, paginate, formatMs } = require('../../utils/helpers');
 const { autoplayStore } = require('../../autoplay');
 
@@ -30,7 +30,8 @@ module.exports = {
             track: '🔂 Track',
             queue: '🔁 Queue',
         };
-        const source = getSourceBadge(currentInfo.sourceName);
+        const currentEffSource = getEffectiveSource(currentTrack, interaction.guild.id);
+        const source = getSourceBadge(currentEffSource);
 
         // Calculate total queue duration
         let totalDurationMs = currentInfo.duration || 0;
@@ -68,7 +69,8 @@ module.exports = {
             const info = track.info || {};
             const position = (currentPage - 1) * 10 + index + 1;
             const dur = info.isStream ? 'Live' : formatMs(info.duration);
-            const src = getSourceBadge(info.sourceName);
+            const trackEffSource = getEffectiveSource(track, interaction.guild.id);
+            const src = getSourceBadge(trackEffSource);
             const req = track.requester?.username || track.requester?.tag || track.requester || 'Unknown';
             return `\`${position}.\` ${src.color} **[${truncate(info.title, 42)}](${info.uri})** — \`${dur}\`\n　　 ${info.author || 'Unknown'} • ${req}`;
         }).join('\n');

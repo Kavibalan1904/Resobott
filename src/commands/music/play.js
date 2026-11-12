@@ -1,6 +1,6 @@
 const path = require('path');
 const { SlashCommandBuilder } = require('discord.js');
-const { errorEmbed, successEmbed, createEmbed, EMOJIS, capitalize } = require('../../utils/embeds');
+const { errorEmbed, successEmbed, createEmbed, EMOJIS, capitalize, getSourceBadge, getEffectiveSource } = require('../../utils/embeds');
 const {
     getVoiceChannel,
     checkVoicePermissions,
@@ -430,14 +430,21 @@ module.exports = {
 
             // If it's a playlist or album
             if (result.loadType === 'playlist' || result.playlist) {
+                const playlistDetectedSource = detectedPlatform || (isUrl && isSpotifyUrl(rawQuery || query) ? 'spotify' : null);
                 const tracks = result.tracks.map(track => {
                     track.requester = interaction.user;
                     track.isAutoplay = false;
                     track.isRecommendation = false;
+                    const effSource = playlistDetectedSource || getEffectiveSource(track);
+                    if (playlistDetectedSource) {
+                        track.sourceName = playlistDetectedSource;
+                        if (track.info) track.info.sourceName = playlistDetectedSource;
+                    }
                     setTrackMetadata(interaction.guild.id, track, {
                         isAutoplay: false,
                         isRecommendation: false,
                         requester: interaction.user,
+                        sourceName: effSource,
                     });
                     return track;
                 });
@@ -451,7 +458,9 @@ module.exports = {
                 const playlistTitle = result.playlist?.name || 'Playlist';
                 const firstTrack = tracks[0];
                 const firstInfo = firstTrack?.info || {};
-                const sourceName = firstInfo.sourceName ? capitalize(firstInfo.sourceName) : 'Unknown';
+                const effectiveSource = getEffectiveSource(firstTrack, interaction.guild.id);
+                const sourceBadge = getSourceBadge(effectiveSource);
+                const sourceName = sourceBadge.label;
 
                 const embed = createEmbed('Success')
                     .setAuthor({ name: '📀 Playlist Queued' })
@@ -472,10 +481,22 @@ module.exports = {
             track.requester = interaction.user;
             track.isAutoplay = false;
             track.isRecommendation = false;
+
+            // Preserve and accurately assign sourceName
+            if (detectedPlatform === 'spotify' || (isUrl && isSpotifyUrl(rawQuery || query)) || (searchSource === 'spsearch' && !isUrl)) {
+                track.sourceName = 'spotify';
+                if (track.info) track.info.sourceName = 'spotify';
+            } else if (detectedPlatform) {
+                track.sourceName = detectedPlatform;
+                if (track.info) track.info.sourceName = detectedPlatform;
+            }
+
+            const effectiveSource = getEffectiveSource(track, interaction.guild.id);
             setTrackMetadata(interaction.guild.id, track, {
                 isAutoplay: false,
                 isRecommendation: false,
                 requester: interaction.user,
+                sourceName: effectiveSource,
             });
 
             if (isAttachment) {
@@ -499,8 +520,10 @@ module.exports = {
             }
 
             const info = track.info || {};
-            const sourceEmoji = SOURCE_EMOJIS[detectedPlatform] || SOURCE_EMOJIS[source] || '🔍';
-            const matchedSource = isAttachment ? 'Audio Upload' : (info.sourceName ? capitalize(info.sourceName) : 'Unknown');
+            const effSource = getEffectiveSource(track, interaction.guild.id);
+            const sourceBadge = getSourceBadge(effSource);
+            const sourceEmoji = isAttachment ? '📁' : (SOURCE_EMOJIS[effSource] || sourceBadge.emoji || '🔍');
+            const matchedSource = isAttachment ? 'Audio Upload' : sourceBadge.label;
 
             const embed = createEmbed('Success')
                 .setDescription(

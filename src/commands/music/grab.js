@@ -23,7 +23,7 @@ module.exports = {
             .setThumbnail(info.artworkUrl || null)
             .addFields(
                 { name: `${EMOJIS.clock} Duration`, value: info.isStream ? 'Live' : formatMs(info.duration), inline: true },
-                { name: `${EMOJIS.disc} Source`, value: capitalize(info.sourceName || 'Unknown'), inline: true },
+                { name: `${EMOJIS.disc} Source`, value: `${getSourceBadge(getEffectiveSource(track, interaction.guild.id)).color} ${getSourceBadge(getEffectiveSource(track, interaction.guild.id)).label}`, inline: true },
                 { name: `${EMOJIS.link} URL`, value: `[Click here](${info.uri})`, inline: true },
             )
             .setFooter({ text: `Reso • Saved from ${interaction.guild.name}` });
