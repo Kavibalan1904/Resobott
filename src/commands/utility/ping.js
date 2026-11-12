@@ -1,5 +1,5 @@
 const { SlashCommandBuilder, ApplicationIntegrationType, InteractionContextType } = require('discord.js');
-const { createEmbed, Colors, EMOJIS } = require('../../utils/embeds');
+const { createEmbed, Colors } = require('../../utils/embeds');
 const { getNodeHealthSummary, formatUptime } = require('../../utils/helpers');
 
 module.exports = {
@@ -128,13 +128,11 @@ module.exports = {
                 const nodeLatStatus = latMs != null ? getLatencyStatus(latMs) : { emoji: '⚪' };
                 const latStr = latMs != null ? `${nodeLatStatus.emoji} \`${latMs}ms\`` : '`--`';
 
-                const cpuStr = n.cpuLoad != null ? `CPU: \`${n.cpuLoad}%\`` : null;
-                const ramStr = n.memUsedMb != null ? `RAM: \`${n.memUsedMb}MB\`` : null;
-                const playerStr = `Players: \`${n.players}/${n.totalPlayers}\``;
+                const playerStr = `Streams: \`${n.players}\``;
                 const uptimeStr = n.uptime ? `Up: \`${formatUptime(n.uptime)}\`` : null;
                 const errTag = n.hasRecentError ? ' ⚠️ *Recent drops*' : '';
 
-                const details = [latStr, cpuStr, ramStr, playerStr, uptimeStr]
+                const details = [latStr, playerStr, uptimeStr]
                     .filter(Boolean)
                     .join(' • ');
 

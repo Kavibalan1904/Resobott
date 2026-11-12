@@ -1,12 +1,11 @@
-const { SlashCommandBuilder, ApplicationIntegrationType, InteractionContextType, version: djsVersion } = require('discord.js');
+const { SlashCommandBuilder, ApplicationIntegrationType, InteractionContextType } = require('discord.js');
 const { createEmbed, EMOJIS } = require('../../utils/embeds');
 const { formatUptime } = require('../../utils/helpers');
-const os = require('os');
 
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('stats')
-        .setDescription('Show bot statistics and system information')
+        .setDescription('Show bot statistics and audio engine status')
         .setIntegrationTypes([
             ApplicationIntegrationType.GuildInstall,
             ApplicationIntegrationType.UserInstall,
@@ -18,43 +17,58 @@ module.exports = {
         ]),
 
     async execute(interaction, client) {
-        const memUsage = process.memoryUsage();
-        const heapUsed = (memUsage.heapUsed / 1024 / 1024).toFixed(1);
-        const heapTotal = (memUsage.heapTotal / 1024 / 1024).toFixed(1);
-        const rss = (memUsage.rss / 1024 / 1024).toFixed(1);
+        const totalMembers = client.guilds.cache.reduce((acc, g) => acc + (g.memberCount || 0), 0);
+        const totalGuilds = client.guilds.cache.size;
 
-        const totalMembers = client.guilds.cache.reduce((acc, g) => acc + g.memberCount, 0);
-        const totalChannels = client.channels.cache.size;
+        // Lavalink & Player info
+        const manager = client.lavalink;
+        const nodes = manager?.nodeManager?.nodes;
+        const connectedNodes = nodes ? [...nodes.values()].filter(n => n.connected).length : 0;
+        const totalNodes = nodes ? nodes.size : 0;
 
-        // Lavalink node info
-        const nodes = client.lavalink.nodeManager.nodes;
-        const connectedNodes = [...nodes.values()].filter(n => n.connected).length;
-        const totalPlayers = [...nodes.values()].reduce((acc, n) => acc + (n.stats?.players || 0), 0);
+        let activeStreams = 0;
+        let totalSessions = 0;
+        if (manager?.players) {
+            totalSessions = manager.players.size;
+            for (const player of manager.players.values()) {
+                if (player?.playing) activeStreams++;
+            }
+        }
+
+        const engineStatus = totalNodes === 0
+            ? '⚪ Not Connected'
+            : connectedNodes === totalNodes
+                ? '🟢 All Systems Operational'
+                : connectedNodes > 0
+                    ? `🟡 Degraded (${connectedNodes}/${totalNodes} Online)`
+                    : '🔴 Offline';
 
         const embed = createEmbed('Info')
-            .setAuthor({ name: 'Reso Statistics', iconURL: client.user.displayAvatarURL() })
-            .setThumbnail(client.user.displayAvatarURL({ size: 256 }))
+            .setAuthor({
+                name: 'Reso • Service Overview',
+                iconURL: client.user?.displayAvatarURL?.(),
+            })
+            .setThumbnail(client.user?.displayAvatarURL?.({ size: 256 }))
             .addFields(
-                { name: '📊 General', value: [
-                    `${EMOJIS.disc} **Servers:** ${client.guilds.cache.size}`,
-                    `👥 **Users:** ${totalMembers.toLocaleString()}`,
-                    `📺 **Channels:** ${totalChannels}`,
-                    `⌚ **Uptime:** ${formatUptime(client.uptime)}`,
-                ].join('\n'), inline: true },
-
-                { name: '🖥️ System', value: [
-                    `📦 **Node.js:** ${process.version}`,
-                    `🔧 **Discord.js:** v${djsVersion}`,
-                    `💾 **Memory:** ${heapUsed}/${heapTotal} MB`,
-                    `📊 **RSS:** ${rss} MB`,
-                ].join('\n'), inline: true },
-
-                { name: '🎵 Music (Lavalink)', value: [
-                    `🟢 **Nodes:** ${connectedNodes}/${nodes.size} connected`,
-                    `🎤 **Players:** ${totalPlayers} active`,
-                    `📋 **Commands:** ${client.commands.size}`,
-                    `🌐 **Platform:** ${os.platform()} ${os.arch()}`,
-                ].join('\n'), inline: true },
+                {
+                    name: '📊 Overview',
+                    value: [
+                        `${EMOJIS.disc} **Servers:** ${totalGuilds.toLocaleString()}`,
+                        `👥 **Users Reached:** ${totalMembers.toLocaleString()}`,
+                        `⌚ **Uptime:** ${formatUptime(client.uptime)}`,
+                        `📋 **Commands:** ${client.commands?.size || 0}`,
+                    ].join('\n'),
+                    inline: true,
+                },
+                {
+                    name: '🎵 Audio Engine',
+                    value: [
+                        `📻 **Status:** ${engineStatus}`,
+                        `🎶 **Active Streams:** ${activeStreams}`,
+                        `🎧 **Active Sessions:** ${totalSessions}`,
+                    ].join('\n'),
+                    inline: true,
+                },
             );
 
         return interaction.reply({ embeds: [embed] });
