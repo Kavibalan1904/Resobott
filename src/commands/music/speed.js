@@ -1,6 +1,7 @@
 const { SlashCommandBuilder } = require('discord.js');
-const { errorEmbed, successEmbed, createEmbed, EMOJIS } = require('../../utils/embeds');
+const { errorEmbed, createEmbed, EMOJIS } = require('../../utils/embeds');
 const { getVoiceChannel } = require('../../utils/helpers');
+const { FILTER_PRESETS } = require('./filter');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -30,19 +31,37 @@ module.exports = {
         await interaction.deferReply();
 
         try {
-            // Use Lavalink timescale filter — speed only, preserve pitch
+            // Rebuild the full filter object from all active filters first, then overlay the timescale speed
+            if (!player.activeFilters) player.activeFilters = new Set();
+
+            const combined = {};
+            for (const filterName of player.activeFilters) {
+                const preset = FILTER_PRESETS[filterName];
+                if (!preset) continue;
+                for (const [key, value] of Object.entries(preset.filter)) {
+                    if (key === 'equalizer') {
+                        if (!combined.equalizer) combined.equalizer = [];
+                        for (const band of value) {
+                            const existing = combined.equalizer.find(b => b.band === band.band);
+                            if (existing) {
+                                existing.gain = Math.min(1.0, existing.gain + band.gain);
+                            } else {
+                                combined.equalizer.push({ ...band });
+                            }
+                        }
+                    } else if (key !== 'timescale') {
+                        // Preserve non-timescale filters; timescale will be overridden by speed setting
+                        combined[key] = value;
+                    }
+                }
+            }
+
+            // Apply the speed timescale, preserving pitch
+            combined.timescale = { speed: speed, pitch: 1.0, rate: 1.0 };
+
             await player.node.updatePlayer({
                 guildId: player.guildId,
-                playerOptions: {
-                    filters: {
-                        ...player.filterData || {},
-                        timescale: {
-                            speed: speed,
-                            pitch: 1.0,  // Keep original pitch
-                            rate: 1.0,
-                        },
-                    },
-                },
+                playerOptions: { filters: combined },
             });
 
             // Store the speed setting for display

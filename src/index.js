@@ -131,8 +131,8 @@ client.lavalink = new LavalinkManager({
     },
     playerOptions: {
         defaultSearchPlatform: 'spsearch', // Spotify search via LavaSrc — resolves to YouTube audio via ISRC for best match
-        clientBasedPositionUpdateInterval: 500, // Smooth 500ms local position tracking
-        volumeDecrementer: 0.75, // 100% client volume → 75% Lavalink volume (headroom, prevents clipping)
+        clientBasedPositionUpdateInterval: 1500, // 1.5s local position tracking (reduces event loop pressure vs 500ms)
+        volumeDecrementer: 1, // 1:1 volume passthrough — no filter chain rebuild on volume changes
         onDisconnect: {
             autoReconnect: true,
             destroyPlayer: false,
