@@ -42,3 +42,4 @@ async function isOwner(userId, client) {
 }
 
 module.exports = { isOwner };
+

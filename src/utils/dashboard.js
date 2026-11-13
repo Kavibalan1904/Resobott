@@ -437,8 +437,8 @@ function handleDashboardRequest(req, res, client) {
     const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
     const pathname = url.pathname;
 
-    // 1. Root / health check — always returns 200 OK so hosting pings work
-    if (pathname === '/' || pathname === '/health') {
+    // 1. Plain health check endpoint for container probes
+    if (pathname === '/health') {
         res.writeHead(200, { 'Content-Type': 'text/plain' });
         return res.end('Reso Music Bot is running 24/7!');
     }
@@ -470,8 +470,14 @@ function handleDashboardRequest(req, res, client) {
         return res.end(JSON.stringify(metrics));
     }
 
-    // 4. Web Dashboard HTML
-    if (pathname === '/dashboard' || pathname === '/monitor') {
+    // 4. Web Dashboard HTML (served at /, /dashboard, or /monitor)
+    if (pathname === '/' || pathname === '/dashboard' || pathname === '/monitor') {
+        const accept = req.headers?.accept || '';
+        // If curl or plain-text health ping to root, return friendly plain text
+        if (pathname === '/' && accept.includes('text/plain') && !accept.includes('text/html')) {
+            res.writeHead(200, { 'Content-Type': 'text/plain' });
+            return res.end('Reso Music Bot is running 24/7!');
+        }
         const html = generateDashboardHtml();
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
         return res.end(html);

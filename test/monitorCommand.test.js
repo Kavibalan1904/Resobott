@@ -32,7 +32,7 @@ describe('Owner Monitor Command & Dashboard Verification', () => {
         const mockClient = {
             application: {
                 owner: { id: '888888888888888888' },
-                fetch: async () => {},
+                fetch: async () => { },
             },
         };
         assert.strictEqual(await isOwner('888888888888888888', mockClient), true);
@@ -135,7 +135,7 @@ describe('Owner Monitor Command & Dashboard Verification', () => {
 
         // Verify Node Health Embed
         const nodeEmbed = editReplyData.embeds[0].data;
-        assert.ok(nodeEmbed.description.includes('`42ms`'));
+        assert.ok(nodeEmbed.description.includes('**Discord WS:** `42ms`'));
         assert.ok(nodeEmbed.fields.some(f => f.name.includes('primary-main')));
 
         // Verify Sessions Embed
@@ -178,7 +178,7 @@ describe('Owner Monitor Command & Dashboard Verification', () => {
 
         let healthResponse = '';
         const mockHealthRes = {
-            writeHead: (status, headers) => {},
+            writeHead: (status, headers) => { },
             end: (body) => { healthResponse = body; },
         };
         handleDashboardRequest({ url: '/health', headers: {} }, mockHealthRes, mockClient);
@@ -186,7 +186,7 @@ describe('Owner Monitor Command & Dashboard Verification', () => {
 
         let dashResponse = '';
         const mockDashRes = {
-            writeHead: (status, headers) => {},
+            writeHead: (status, headers) => { },
             end: (body) => { dashResponse = body; },
         };
         handleDashboardRequest({ url: '/dashboard', headers: {} }, mockDashRes, mockClient);

@@ -161,7 +161,7 @@ function buildMonitorButtons(metrics) {
     );
 
     // Add web dashboard link if PORT or web URL is configured
-    const port = process.env.PORT || 3000;
+    const port = parseInt(process.env.SERVER_PORT || process.env.PORT || process.env.DASHBOARD_PORT) || 3000;
     const key = (process.env.DASHBOARD_KEY || process.env.OWNER_ID || 'reso').trim();
     const dashboardHost = process.env.DASHBOARD_URL || `http://localhost:${port}`;
 
@@ -179,3 +179,4 @@ function buildMonitorButtons(metrics) {
 
 module.exports.buildMonitorEmbeds = buildMonitorEmbeds;
 module.exports.buildMonitorButtons = buildMonitorButtons;
+
