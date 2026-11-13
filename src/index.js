@@ -387,7 +387,7 @@ async function main() {
 
             // Check designated command channel within guilds
             const designatedChannel = interaction.guildId ? getDesignatedChannel(interaction.guildId) : null;
-            const exemptSlashCommands = ['setchannel', 'clearbot', 'birthday', 'ping', 'help', 'invite', 'stats', 'lyrics'];
+            const exemptSlashCommands = ['setchannel', 'clearbot', 'ping', 'help', 'invite', 'stats', 'lyrics'];
             if (designatedChannel && interaction.channelId !== designatedChannel && !exemptSlashCommands.includes(interaction.commandName)) {
                 return interaction.reply({
                     content: `❌ I only respond to commands in <#${designatedChannel}>.`,
@@ -443,7 +443,7 @@ async function main() {
 
             // Check designated command channel
             const designatedChannel = getDesignatedChannel(message.guild.id);
-            const exemptPrefixCommands = ['setchannel', 'clearbot', 'cleanup', 'purgebot', 'cleanbot', 'clearb', 'birthday', 'bday', 'hbd'];
+            const exemptPrefixCommands = ['setchannel', 'clearbot', 'cleanup', 'purgebot', 'cleanbot', 'clearb'];
             if (designatedChannel && message.channel.id !== designatedChannel && !exemptPrefixCommands.includes(commandName)) {
                 const warningMsg = await message.reply(`❌ I only respond to commands in <#${designatedChannel}>.`).catch(() => null);
                 if (warningMsg) {
