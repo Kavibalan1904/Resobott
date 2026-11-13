@@ -18,15 +18,15 @@ const { setTrackMetadata } = require('./utils/trackMetadata');
 const { getDesignatedChannel } = require('./utils/settings');
 const { createEmbed, EMOJIS } = require('./utils/embeds');
 const { createAIProvider } = require('./ai/providers/factory');
+const { handleDashboardRequest } = require('./utils/dashboard');
 
-// ── HTTP Health Check Server (Optional) ─────────────────────────
-const PORT = process.env.PORT;
+// ── HTTP Health Check & Monitor Server ───────────────────────────
+const PORT = process.env.PORT || process.env.DASHBOARD_PORT;
 if (PORT) {
     http.createServer((req, res) => {
-        res.writeHead(200, { 'Content-Type': 'text/plain' });
-        res.end('Reso Music Bot is running 24/7!');
+        handleDashboardRequest(req, res, client);
     }).listen(PORT, () => {
-        console.log(`[Reso] ✓ Health check listening on port ${PORT}`);
+        console.log(`[Reso] ✓ Health check & Monitor Dashboard listening on port ${PORT}`);
     });
 }
 
@@ -379,6 +379,26 @@ async function main() {
                 return;
             }
 
+            // ── Handle monitor refresh button ──
+            if (interaction.isButton() && interaction.customId === 'monitor_refresh') {
+                try {
+                    const { isOwner } = require('./utils/owner');
+                    const { getSystemMetrics } = require('./utils/dashboard');
+                    const { buildMonitorEmbeds, buildMonitorButtons } = require('./commands/utility/monitor');
+
+                    if (!await isOwner(interaction.user.id, client)) {
+                        return interaction.reply({ content: '❌ Restricted to bot owner.', flags: MessageFlags.Ephemeral });
+                    }
+                    const metrics = getSystemMetrics(client);
+                    const embeds = buildMonitorEmbeds(metrics, client);
+                    const components = buildMonitorButtons(metrics);
+                    await interaction.update({ embeds, components });
+                } catch (err) {
+                    console.error('[Reso] Monitor refresh error:', err);
+                }
+                return;
+            }
+
 
             if (!interaction.isChatInputCommand()) return;
 
@@ -387,7 +407,7 @@ async function main() {
 
             // Check designated command channel within guilds
             const designatedChannel = interaction.guildId ? getDesignatedChannel(interaction.guildId) : null;
-            const exemptSlashCommands = ['setchannel', 'clearbot', 'ping', 'help', 'invite', 'stats', 'lyrics'];
+            const exemptSlashCommands = ['setchannel', 'clearbot', 'ping', 'help', 'invite', 'stats', 'lyrics', 'monitor'];
             if (designatedChannel && interaction.channelId !== designatedChannel && !exemptSlashCommands.includes(interaction.commandName)) {
                 return interaction.reply({
                     content: `❌ I only respond to commands in <#${designatedChannel}>.`,
@@ -443,7 +463,7 @@ async function main() {
 
             // Check designated command channel
             const designatedChannel = getDesignatedChannel(message.guild.id);
-            const exemptPrefixCommands = ['setchannel', 'clearbot', 'cleanup', 'purgebot', 'cleanbot', 'clearb'];
+            const exemptPrefixCommands = ['setchannel', 'clearbot', 'cleanup', 'purgebot', 'cleanbot', 'clearb', 'monitor', 'sys', 'nodes', 'dash'];
             if (designatedChannel && message.channel.id !== designatedChannel && !exemptPrefixCommands.includes(commandName)) {
                 const warningMsg = await message.reply(`❌ I only respond to commands in <#${designatedChannel}>.`).catch(() => null);
                 if (warningMsg) {

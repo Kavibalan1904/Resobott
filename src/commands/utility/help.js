@@ -1,5 +1,6 @@
 const { SlashCommandBuilder, ApplicationIntegrationType, InteractionContextType, ActionRowBuilder, StringSelectMenuBuilder } = require('discord.js');
 const { createEmbed, EMOJIS } = require('../../utils/embeds');
+const { isOwner } = require('../../utils/owner');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -22,11 +23,12 @@ module.exports = {
 
     async execute(interaction, client) {
         const commandName = interaction.options.getString('command');
+        const isCallerOwner = await isOwner(interaction.user.id, client);
 
         // ── Specific command help ───────────────────────────────
         if (commandName) {
             const command = client.commands.get(commandName.toLowerCase()) || client.aliases?.get(commandName.toLowerCase());
-            if (!command) {
+            if (!command || (command.ownerOnly && !isCallerOwner)) {
                 const embed = createEmbed('Error')
                     .setDescription(`${EMOJIS.error} Command \`${commandName}\` not found.`);
                 return interaction.reply({ embeds: [embed], ephemeral: true });
@@ -64,6 +66,7 @@ module.exports = {
         // ── Full command list ───────────────────────────────────
         const categories = {};
         client.commands.forEach(cmd => {
+            if (cmd.ownerOnly && !isCallerOwner) return;
             const cat = cmd.category || 'Other';
             if (!categories[cat]) categories[cat] = [];
             categories[cat].push(cmd);
