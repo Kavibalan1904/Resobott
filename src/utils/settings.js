@@ -113,6 +113,26 @@ function resetHasSeenGuide(guildId) {
     }
 }
 
+function hasUserSeenGuide(userId) {
+    if (!userId) return true;
+    return Boolean(settings._users?.[userId]?.hasSeenGuide);
+}
+
+function setUserSeenGuide(userId, seen = true) {
+    if (!userId) return;
+    if (!settings._users) settings._users = {};
+    if (!settings._users[userId]) settings._users[userId] = {};
+    settings._users[userId].hasSeenGuide = seen;
+    saveSettings(true);
+}
+
+function resetUserSeenGuide(userId) {
+    if (settings._users?.[userId]?.hasSeenGuide !== undefined) {
+        delete settings._users[userId].hasSeenGuide;
+        saveSettings(true);
+    }
+}
+
 // Initial load
 loadSettings();
 
@@ -127,4 +147,7 @@ module.exports = {
     hasSeenGuide,
     setHasSeenGuide,
     resetHasSeenGuide,
+    hasUserSeenGuide,
+    setUserSeenGuide,
+    resetUserSeenGuide,
 };

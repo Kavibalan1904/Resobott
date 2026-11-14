@@ -19,6 +19,7 @@ const { getDesignatedChannel } = require('./utils/settings');
 const { createEmbed, EMOJIS } = require('./utils/embeds');
 const { createAIProvider } = require('./ai/providers/factory');
 const { handleDashboardRequest } = require('./utils/dashboard');
+const { checkAndPromptFirstTimeGuide } = require('./utils/onboarding');
 
 // ── HTTP Health Check & Monitor Server ───────────────────────────
 // Bot-Hosting uses SERVER_PORT, other clouds use PORT. Always bind to 0.0.0.0 for container proxy access.
@@ -438,6 +439,11 @@ async function main() {
 
             try {
                 await command.execute(interaction, client);
+
+                // Prompt quick guide if user is using the bot for the first time
+                if (interaction.channel && interaction.user && !interaction.user.bot && interaction.commandName !== 'help') {
+                    checkAndPromptFirstTimeGuide(interaction.channel, interaction.user, interaction.guildId).catch(() => {});
+                }
             } catch (error) {
                 // If interaction expired (code 10062 Unknown interaction), log a warning and return cleanly
                 if (error.code === 10062 || error.message?.includes('Unknown interaction')) {
@@ -557,6 +563,11 @@ async function main() {
 
             try {
                 await command.execute(interaction, client);
+
+                // Prompt quick guide if user is using the bot for the first time
+                if (interaction.channel && interaction.user && !interaction.user.bot && interaction.commandName !== 'help') {
+                    checkAndPromptFirstTimeGuide(interaction.channel, interaction.user, interaction.guildId).catch(() => {});
+                }
             } catch (error) {
                 console.error(`[Reso] Command error (${commandName}):`, error);
                 const errorMsg = { content: '❌ An error occurred while executing this command.' };

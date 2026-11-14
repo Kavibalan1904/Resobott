@@ -432,9 +432,9 @@ function setupLavalinkEvents(client) {
             lastNowPlayingMessage.delete(player.guildId);
         }
 
-        // ── First-time Onboarding Prompt in new servers ──
+        // ── First-time Onboarding Prompt for new users ──
         if (player.guildId && !isAutoplayTrack && track.requester && track.requester.id !== 'autoplay') {
-            checkAndPromptFirstTimeGuide(channel, player.guildId, track.requester).catch(() => {});
+            checkAndPromptFirstTimeGuide(channel, track.requester, player.guildId).catch(() => {});
         }
     });
 

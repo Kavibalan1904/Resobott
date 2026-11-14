@@ -3,15 +3,19 @@ const assert = require('node:assert');
 const { EventEmitter } = require('events');
 
 const { checkAndPromptFirstTimeGuide, createQuickGuideEmbed } = require('../src/utils/onboarding');
-const { hasSeenGuide, setHasSeenGuide, resetHasSeenGuide } = require('../src/utils/settings');
+const { hasSeenGuide, setHasSeenGuide, resetHasSeenGuide, hasUserSeenGuide, setUserSeenGuide, resetUserSeenGuide } = require('../src/utils/settings');
 const { isTrackDuplicate } = require('../src/autoplay/normalizer');
 const { filterCandidates } = require('../src/autoplay/filter');
 
 describe('First-time Server Onboarding & Anti-Duplication Regression', () => {
     const testGuildId = 'test_guild_onboarding_123';
+    const testUserId1 = 'user_first_time_101';
+    const testUserId2 = 'user_first_time_102';
 
     beforeEach(() => {
         resetHasSeenGuide(testGuildId);
+        resetUserSeenGuide(testUserId1);
+        resetUserSeenGuide(testUserId2);
     });
 
     it('createQuickGuideEmbed should contain slash commands, > prefix, autoplay, and playlist save/load instructions', () => {
@@ -32,7 +36,76 @@ describe('First-time Server Onboarding & Anti-Duplication Regression', () => {
         assert.ok(desc.includes('playlist list') || desc.includes('/playlist list'), 'Expected mention of playlist list');
     });
 
-    it('should prompt first-time guide on new server and mark as seen so it never prompts again', async () => {
+    it('should prompt first-time guide for each new user who uses the bot and never repeat for that user', async () => {
+        assert.strictEqual(hasUserSeenGuide(testUserId1), false);
+        assert.strictEqual(hasUserSeenGuide(testUserId2), false);
+
+        let sentMessage = null;
+        let collectorEmitter = null;
+        const mockChannel = {
+            guildId: testGuildId,
+            send: async (payload) => {
+                collectorEmitter = new EventEmitter();
+                collectorEmitter.stop = () => {};
+                sentMessage = {
+                    ...payload,
+                    createMessageComponentCollector: () => collectorEmitter,
+                    edit: async () => {},
+                };
+                return sentMessage;
+            },
+        };
+
+        const mockUser1 = { id: testUserId1, username: 'KaviMusic', bot: false };
+        const mockUser2 = { id: testUserId2, username: 'AlexBeats', bot: false };
+
+        // 1. User 1 uses the bot for the first time
+        await checkAndPromptFirstTimeGuide(mockChannel, mockUser1, testGuildId);
+
+        assert.ok(sentMessage, 'Expected prompt message to be sent for User 1');
+        assert.strictEqual(sentMessage.components.length, 1);
+        const buttons1 = sentMessage.components[0].components;
+        assert.strictEqual(buttons1.length, 2);
+        assert.strictEqual(buttons1[0].data.custom_id, `guide_yes_${testUserId1}`);
+        assert.strictEqual(buttons1[1].data.custom_id, `guide_no_${testUserId1}`);
+        assert.ok(sentMessage.embeds[0].data.description.includes(`<@${testUserId1}>`));
+
+        // User 1 is marked as seen
+        assert.strictEqual(hasUserSeenGuide(testUserId1), true);
+
+        // Calling again for User 1 must NOT send a second prompt
+        sentMessage = null;
+        await checkAndPromptFirstTimeGuide(mockChannel, mockUser1, testGuildId);
+        assert.strictEqual(sentMessage, null, 'Expected second invocation for User 1 to be suppressed');
+
+        // 2. User 2 uses the bot for the first time (same or different channel/server)
+        await checkAndPromptFirstTimeGuide(mockChannel, mockUser2, testGuildId);
+        assert.ok(sentMessage, 'Expected prompt message to be sent for User 2');
+        assert.strictEqual(hasUserSeenGuide(testUserId2), true);
+        const buttons2 = sentMessage.components[0].components;
+        assert.strictEqual(buttons2[0].data.custom_id, `guide_yes_${testUserId2}`);
+    });
+
+    it('should ignore bots and internal autoplay requester from guide prompt', async () => {
+        let sentMessage = null;
+        const mockChannel = {
+            guildId: testGuildId,
+            send: async (payload) => {
+                sentMessage = payload;
+                return sentMessage;
+            },
+        };
+
+        // Discord Bot user
+        await checkAndPromptFirstTimeGuide(mockChannel, { id: 'bot_999', bot: true }, testGuildId);
+        assert.strictEqual(sentMessage, null);
+
+        // Internal autoplay requester
+        await checkAndPromptFirstTimeGuide(mockChannel, { id: 'autoplay', bot: false }, testGuildId);
+        assert.strictEqual(sentMessage, null);
+    });
+
+    it('should prompt first-time guide on new server (guild fallback) and mark as seen', async () => {
         assert.strictEqual(hasSeenGuide(testGuildId), false);
 
         let sentMessage = null;
@@ -50,7 +123,7 @@ describe('First-time Server Onboarding & Anti-Duplication Regression', () => {
             },
         };
 
-        await checkAndPromptFirstTimeGuide(mockChannel, testGuildId, { username: 'testuser' });
+        await checkAndPromptFirstTimeGuide(mockChannel, testGuildId);
 
         assert.ok(sentMessage, 'Expected prompt message to be sent');
         assert.strictEqual(sentMessage.components.length, 1);
@@ -64,7 +137,7 @@ describe('First-time Server Onboarding & Anti-Duplication Regression', () => {
 
         // Calling again must NOT send any second prompt
         sentMessage = null;
-        await checkAndPromptFirstTimeGuide(mockChannel, testGuildId, { username: 'testuser' });
+        await checkAndPromptFirstTimeGuide(mockChannel, testGuildId);
         assert.strictEqual(sentMessage, null, 'Expected second invocation to be suppressed');
     });
 
