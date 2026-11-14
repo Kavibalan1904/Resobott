@@ -4,6 +4,7 @@ const { getVoiceChannel, isInSameVoiceChannel, truncate } = require('../../utils
 const { guildContextManager } = require('../../autoplay');
 
 module.exports = {
+    aliases: ['s'],
     data: new SlashCommandBuilder()
         .setName('skip')
         .setDescription('Skip the current track'),

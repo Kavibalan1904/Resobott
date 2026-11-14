@@ -4,6 +4,7 @@ const { truncate, paginate, formatMs } = require('../../utils/helpers');
 const { autoplayStore } = require('../../autoplay');
 
 module.exports = {
+    aliases: ['q'],
     data: new SlashCommandBuilder()
         .setName('queue')
         .setDescription('Show the current music queue')

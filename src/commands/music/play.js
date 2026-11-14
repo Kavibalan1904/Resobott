@@ -66,6 +66,7 @@ async function searchSpotifyTrack(player, item, user) {
 }
 
 module.exports = {
+    aliases: ['p'],
     data: new SlashCommandBuilder()
         .setName('play')
         .setDescription('Play a song or playlist by name, URL, or audio file')

@@ -2,6 +2,7 @@ const { SlashCommandBuilder } = require('discord.js');
 const { errorEmbed, nowPlayingEmbed, createPlayerControls } = require('../../utils/embeds');
 
 module.exports = {
+    aliases: ['np'],
     data: new SlashCommandBuilder()
         .setName('nowplaying')
         .setDescription('Show the currently playing track with interactive controls'),
