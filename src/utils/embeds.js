@@ -1,6 +1,7 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder } = require('discord.js');
 const { createProgressBar, formatMs, truncate } = require('./helpers');
 const { getTrackMetadata } = require('./trackMetadata');
+const { getTimezone } = require('./settings');
 
 // ── Reso Cozy & Warm Color Palette ─────────────────────────────
 // Signature warm fireside palette: warm amber → fireside glow → soft sage & twilight lavender
@@ -124,25 +125,62 @@ const EMOJIS = {
 };
 
 /**
- * Get cozy time greeting based on local hour
+ * Get cozy time greeting based on local hour and timezone
+ * @param {string} [guildId] Optional guild ID to check guild-specific timezone
  */
-function getCozyTimeGreeting() {
-    const hour = new Date().getHours();
-    if (hour >= 0 && hour < 5) return { text: 'Late Night Session', emoji: '🌙', note: 'Grab a warm drink & unwind' };
-    if (hour >= 5 && hour < 12) return { text: 'Morning Brew & Beats', emoji: '☕', note: 'Fresh coffee & good music' };
-    if (hour >= 12 && hour < 18) return { text: 'Afternoon Chill', emoji: '🍃', note: 'Relaxing through the day' };
-    return { text: 'Evening Wind Down', emoji: '✨', note: 'Settling in for the evening' };
+function getCozyTimeGreeting(guildId) {
+    let hour = new Date().getHours();
+    try {
+        const tz = getTimezone(guildId);
+        const str = new Intl.DateTimeFormat('en-US', {
+            hour: 'numeric',
+            hourCycle: 'h23',
+            timeZone: tz
+        }).format(new Date());
+        const parsed = parseInt(str, 10);
+        if (!isNaN(parsed)) hour = parsed;
+    } catch {
+        // Fallback to server local hour
+    }
+
+    // 05:00 - 08:59: Early Morning (Fresh brew / coffee & dawn melodies)
+    if (hour >= 5 && hour < 9) {
+        return { text: 'Morning Brew & Beats', emoji: '☕', note: 'Fresh coffee & warm morning melodies' };
+    }
+    // 09:00 - 11:59: Late Morning (Upbeat work/study grooves)
+    if (hour >= 9 && hour < 12) {
+        return { text: 'Mid-Morning Groove', emoji: '☀️', note: 'Bright tunes to power through your morning' };
+    }
+    // 12:00 - 13:59: Midday / Noon (Lunchtime unwind & chill break)
+    if (hour >= 12 && hour < 14) {
+        return { text: 'Midday Chill', emoji: '☀️', note: 'Relaxing rhythms for your midday break' };
+    }
+    // 14:00 - 16:59: Afternoon (Smooth focus beats)
+    if (hour >= 14 && hour < 17) {
+        return { text: 'Afternoon Chill', emoji: '🍃', note: 'Breeze through the day with good music' };
+    }
+    // 17:00 - 19:59: Sunset / Golden Hour (Evening transition)
+    if (hour >= 17 && hour < 20) {
+        return { text: 'Sunset Melodies', emoji: '🌅', note: 'Golden hour vibes & evening chill' };
+    }
+    // 20:00 - 22:59: Evening Wind Down (Cozy fireside relax)
+    if (hour >= 20 && hour < 23) {
+        return { text: 'Evening Wind Down', emoji: '✨', note: 'Cozy ambiance & unwinding for the night' };
+    }
+    // 23:00 - 04:59: Late Night Session (Midnight lo-fi & peaceful sleep)
+    return { text: 'Late Night Session', emoji: '🌙', note: 'Midnight tracks & relaxing vibes' };
 }
 
 /**
  * Create a themed Reso embed with cozy warm styling
  */
-function createEmbed(type = 'Primary') {
+function createEmbed(type = 'Primary', guildId = null) {
     const color = Colors[type] || Colors.Primary;
+    const greeting = getCozyTimeGreeting(guildId);
     return new EmbedBuilder()
         .setColor(color)
         .setTimestamp()
-        .setFooter({ text: 'Reso  ☕  Good music & warm vibes' });
+        .setFooter({ text: `Reso  ${greeting.emoji}  Good music & warm vibes` });
 }
 
 // ── Cozy Smooth Progress Bar ───────────────────────────────────
@@ -236,7 +274,7 @@ function nowPlayingEmbed(track, player, client, recommendations = []) {
         autoplayText = ' • 🔄 Autoplay On';
     }
 
-    const greeting = getCozyTimeGreeting();
+    const greeting = getCozyTimeGreeting(player?.guildId);
 
     // Build the rich description
     const description = [
@@ -262,7 +300,7 @@ function nowPlayingEmbed(track, player, client, recommendations = []) {
         .setDescription(description)
         .setThumbnail(info.artworkUrl || null)
         .setFooter({
-            text: `Reso  ☕  ${bitrateLabel ? bitrateLabel + ' • ' : ''}Requested by ${requesterName}`,
+            text: `Reso  ${greeting.emoji}  ${bitrateLabel ? bitrateLabel + ' • ' : ''}Requested by ${requesterName}`,
         })
         .setTimestamp();
 

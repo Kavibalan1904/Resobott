@@ -74,6 +74,26 @@ function removeDesignatedChannel(guildId) {
     }
 }
 
+function getTimezone(guildId) {
+    if (guildId && settings[guildId]?.timezone) {
+        return settings[guildId].timezone;
+    }
+    return process.env.TIMEZONE || process.env.TZ || 'Asia/Kolkata';
+}
+
+function setTimezone(guildId, timezone) {
+    if (!settings[guildId]) settings[guildId] = {};
+    settings[guildId].timezone = timezone;
+    saveSettings(true);
+}
+
+function removeTimezone(guildId) {
+    if (settings[guildId] && settings[guildId].timezone) {
+        delete settings[guildId].timezone;
+        saveSettings(true);
+    }
+}
+
 // Initial load
 loadSettings();
 
@@ -82,4 +102,7 @@ module.exports = {
     setDesignatedChannel,
     removeDesignatedChannel,
     isDesignatedChannel,
+    getTimezone,
+    setTimezone,
+    removeTimezone,
 };
