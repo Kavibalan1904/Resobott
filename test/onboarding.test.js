@@ -3,7 +3,17 @@ const assert = require('node:assert');
 const { EventEmitter } = require('events');
 
 const { checkAndPromptFirstTimeGuide, createQuickGuideEmbed, promptGuildOnInvite } = require('../src/utils/onboarding');
-const { hasSeenGuide, setHasSeenGuide, resetHasSeenGuide, hasUserSeenGuide, setUserSeenGuide, resetUserSeenGuide } = require('../src/utils/settings');
+const {
+    hasSeenGuide,
+    setHasSeenGuide,
+    resetHasSeenGuide,
+    hasUserSeenGuide,
+    setUserSeenGuide,
+    resetUserSeenGuide,
+    hasAnsweredGuide,
+    setAnsweredGuide,
+    resetAnsweredGuide,
+} = require('../src/utils/settings');
 const { isTrackDuplicate } = require('../src/autoplay/normalizer');
 const { filterCandidates } = require('../src/autoplay/filter');
 
@@ -13,9 +23,11 @@ describe('First-time Server Onboarding & Anti-Duplication Regression', () => {
     const testUserId2 = 'user_first_time_102';
 
     beforeEach(() => {
-        resetHasSeenGuide(testGuildId);
-        resetUserSeenGuide(testUserId1);
-        resetUserSeenGuide(testUserId2);
+        resetAnsweredGuide(testGuildId);
+        resetAnsweredGuide('other_guild_999');
+        resetAnsweredGuide('guild_invited_456');
+        resetAnsweredGuide(testUserId1);
+        resetAnsweredGuide(testUserId2);
     });
 
     it('createQuickGuideEmbed should contain slash commands, > prefix, autoplay, and playlist save/load instructions', () => {
@@ -36,13 +48,13 @@ describe('First-time Server Onboarding & Anti-Duplication Regression', () => {
         assert.ok(desc.includes('playlist list') || desc.includes('/playlist list'), 'Expected mention of playlist list');
     });
 
-    it('should prompt first-time guide for each new user who uses the bot and never repeat for that user', async () => {
-        assert.strictEqual(hasUserSeenGuide(testUserId1), false);
-        assert.strictEqual(hasUserSeenGuide(testUserId2), false);
+    it('should prompt guide to user who plays music, and once answered never show the prompt again', async () => {
+        assert.strictEqual(hasAnsweredGuide(testUserId1), false);
 
         let sentMessage = null;
         let collectorEmitter = null;
         const mockChannel = {
+            id: 'chan_onboarding_1',
             guildId: testGuildId,
             send: async (payload) => {
                 collectorEmitter = new EventEmitter();
@@ -57,7 +69,6 @@ describe('First-time Server Onboarding & Anti-Duplication Regression', () => {
         };
 
         const mockUser1 = { id: testUserId1, username: 'KaviMusic', bot: false };
-        const mockUser2 = { id: testUserId2, username: 'AlexBeats', bot: false };
 
         // 1. User 1 uses the bot for the first time
         await checkAndPromptFirstTimeGuide(mockChannel, mockUser1, testGuildId);
@@ -66,32 +77,70 @@ describe('First-time Server Onboarding & Anti-Duplication Regression', () => {
         assert.strictEqual(sentMessage.components.length, 1);
         const buttons1 = sentMessage.components[0].components;
         assert.strictEqual(buttons1.length, 2);
-        assert.strictEqual(buttons1[0].data.custom_id, `guide_yes_${testUserId1}`);
-        assert.strictEqual(buttons1[1].data.custom_id, `guide_no_${testUserId1}`);
-        // Valid Discord emoji check (must not be '✕' which Discord API rejects)
         assert.strictEqual(buttons1[0].data.emoji.name, '✨');
         assert.strictEqual(buttons1[1].data.emoji.name, '❌');
         assert.ok(sentMessage.embeds[0].data.description.includes(`<@${testUserId1}>`));
 
-        // User 1 is marked as seen
-        assert.strictEqual(hasUserSeenGuide(testUserId1), true);
+        // Before answering, hasAnsweredGuide is still false
+        assert.strictEqual(hasAnsweredGuide(testUserId1), false);
 
-        // Calling again for User 1 must NOT send a second prompt
+        // Simulate user answering the prompt (clicks "Yes")
+        const mockInteraction = {
+            customId: buttons1[0].data.custom_id,
+            user: mockUser1,
+            update: async () => {},
+        };
+        collectorEmitter.emit('collect', mockInteraction);
+        await new Promise(r => setTimeout(r, 10));
+
+        // Once answered: hasAnsweredGuide is TRUE
+        assert.strictEqual(hasAnsweredGuide(testUserId1), true);
+
+        // Calling again for User 1 must NEVER send any second prompt
         sentMessage = null;
         await checkAndPromptFirstTimeGuide(mockChannel, mockUser1, testGuildId);
-        assert.strictEqual(sentMessage, null, 'Expected second invocation for User 1 to be suppressed');
+        assert.strictEqual(sentMessage, null, 'Expected second invocation for answered user to be completely suppressed');
+    });
 
-        // 2. User 2 uses the bot for the first time (same or different channel/server)
-        await checkAndPromptFirstTimeGuide(mockChannel, mockUser2, testGuildId);
+    it('should prompt guide for second user who has not answered yet', async () => {
+        let sentMessage = null;
+        let collectorEmitter = null;
+        const mockChannel = {
+            id: 'chan_onboarding_2',
+            guildId: 'other_guild_999',
+            send: async (payload) => {
+                collectorEmitter = new EventEmitter();
+                collectorEmitter.stop = () => {};
+                sentMessage = {
+                    ...payload,
+                    createMessageComponentCollector: () => collectorEmitter,
+                    edit: async () => {},
+                };
+                return sentMessage;
+            },
+        };
+
+        const mockUser2 = { id: testUserId2, username: 'AlexBeats', bot: false };
+        await checkAndPromptFirstTimeGuide(mockChannel, mockUser2, 'other_guild_999');
+
         assert.ok(sentMessage, 'Expected prompt message to be sent for User 2');
-        assert.strictEqual(hasUserSeenGuide(testUserId2), true);
-        const buttons2 = sentMessage.components[0].components;
-        assert.strictEqual(buttons2[0].data.custom_id, `guide_yes_${testUserId2}`);
+        assert.strictEqual(hasAnsweredGuide(testUserId2), false);
+
+        // Simulate user answering "No"
+        collectorEmitter.emit('collect', {
+            customId: sentMessage.components[0].components[1].data.custom_id,
+            user: mockUser2,
+            update: async () => {},
+        });
+        await new Promise(r => setTimeout(r, 10));
+
+        assert.strictEqual(hasAnsweredGuide(testUserId2), true);
     });
 
     it('should ignore bots and internal autoplay requester from guide prompt', async () => {
         let sentMessage = null;
         const mockChannel = {
+            id: 'chan_bot_1',
             guildId: testGuildId,
             send: async (payload) => {
                 sentMessage = payload;
@@ -108,72 +157,22 @@ describe('First-time Server Onboarding & Anti-Duplication Regression', () => {
         assert.strictEqual(sentMessage, null);
     });
 
-    it('should prompt first-time guide on new server (guild fallback) and mark as seen', async () => {
-        assert.strictEqual(hasSeenGuide(testGuildId), false);
-
-        let sentMessage = null;
-        const mockChannel = {
-            send: async (payload) => {
-                sentMessage = {
-                    ...payload,
-                    createMessageComponentCollector: () => {
-                        const emitter = new EventEmitter();
-                        emitter.on = emitter.addListener.bind(emitter);
-                        return emitter;
-                    },
-                };
-                return sentMessage;
-            },
-        };
-
-        await checkAndPromptFirstTimeGuide(mockChannel, testGuildId);
-
-        assert.ok(sentMessage, 'Expected prompt message to be sent');
-        assert.strictEqual(sentMessage.components.length, 1);
-        const buttons = sentMessage.components[0].components;
-        assert.strictEqual(buttons.length, 2);
-        assert.strictEqual(buttons[0].data.custom_id, 'guide_yes');
-        assert.strictEqual(buttons[1].data.custom_id, 'guide_no');
-
-        // Marked as seen
-        assert.strictEqual(hasSeenGuide(testGuildId), true);
-
-        // Calling again must NOT send any second prompt
-        sentMessage = null;
-        await checkAndPromptFirstTimeGuide(mockChannel, testGuildId);
-        assert.strictEqual(sentMessage, null, 'Expected second invocation to be suppressed');
-    });
-
-    it('should rollback user seen status if channel.send fails so user is not locked out', async () => {
-        const failUserId = 'user_send_fail_999';
-        resetUserSeenGuide(failUserId);
-
-        const errorChannel = {
-            guildId: testGuildId,
-            send: async () => {
-                throw new Error('Discord API Error: 50035 Invalid Form Body');
-            },
-        };
-
-        await checkAndPromptFirstTimeGuide(errorChannel, { id: failUserId, username: 'FailingUser' }, testGuildId);
-
-        // After failure, user should NOT remain marked as seen
-        assert.strictEqual(hasUserSeenGuide(failUserId), false, 'Expected user seen status to rollback to false');
-    });
-
-    it('promptGuildOnInvite should send onboarding prompt to systemChannel when bot joins a new server', async () => {
+    it('promptGuildOnInvite should send onboarding prompt to systemChannel and record answered state when clicked', async () => {
         const inviteGuildId = 'guild_invited_456';
-        resetHasSeenGuide(inviteGuildId);
+        resetAnsweredGuide(inviteGuildId);
 
         let sentPayload = null;
+        let collectorEmitter = null;
         const mockSystemChannel = {
             id: 'chan_system_1',
             isTextBased: () => true,
             permissionsFor: () => ({ has: () => true }),
             send: async (payload) => {
+                collectorEmitter = new EventEmitter();
+                collectorEmitter.stop = () => {};
                 sentPayload = {
                     ...payload,
-                    createMessageComponentCollector: () => new EventEmitter(),
+                    createMessageComponentCollector: () => collectorEmitter,
                 };
                 return sentPayload;
             },
@@ -187,21 +186,28 @@ describe('First-time Server Onboarding & Anti-Duplication Regression', () => {
             channels: { cache: new Map([['chan_system_1', mockSystemChannel]]) },
         };
 
-        assert.strictEqual(hasSeenGuide(inviteGuildId), false);
+        assert.strictEqual(hasAnsweredGuide(inviteGuildId), false);
         await promptGuildOnInvite(mockGuild);
 
         assert.ok(sentPayload, 'Expected welcome prompt to be sent on guild invite');
         assert.ok(sentPayload.embeds[0].data.description.includes('Vibe Central'));
         assert.strictEqual(sentPayload.components.length, 1);
         const buttons = sentPayload.components[0].components;
-        assert.strictEqual(buttons[0].data.custom_id, `guide_yes_guild_${inviteGuildId}`);
-        assert.strictEqual(buttons[1].data.custom_id, `guide_no_guild_${inviteGuildId}`);
+        assert.strictEqual(buttons[0].data.emoji.name, '✨');
         assert.strictEqual(buttons[1].data.emoji.name, '❌');
 
-        // Marked as seen
-        assert.strictEqual(hasSeenGuide(inviteGuildId), true);
+        // Simulate server member answering the prompt
+        collectorEmitter.emit('collect', {
+            customId: buttons[0].data.custom_id,
+            user: { id: 'server_admin_1' },
+            update: async () => {},
+        });
+        await new Promise(r => setTimeout(r, 10));
 
-        // Second call suppressed
+        // Marked as answered
+        assert.strictEqual(hasAnsweredGuide(inviteGuildId), true);
+
+        // Second call suppressed permanently
         sentPayload = null;
         await promptGuildOnInvite(mockGuild);
         assert.strictEqual(sentPayload, null);

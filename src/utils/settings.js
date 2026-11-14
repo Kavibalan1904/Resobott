@@ -94,43 +94,55 @@ function removeTimezone(guildId) {
     }
 }
 
+function hasAnsweredGuide(id) {
+    if (!id) return false;
+    return Boolean(settings._users?.[id]?.hasAnsweredGuide || settings[id]?.hasAnsweredGuide);
+}
+
+function setAnsweredGuide(id, answered = true) {
+    if (!id) return;
+    if (!settings[id]) settings[id] = {};
+    settings[id].hasAnsweredGuide = answered;
+    if (!settings._users) settings._users = {};
+    if (!settings._users[id]) settings._users[id] = {};
+    settings._users[id].hasAnsweredGuide = answered;
+    saveSettings(true);
+}
+
+function resetAnsweredGuide(id) {
+    if (!id) return;
+    if (settings[id] && settings[id].hasAnsweredGuide !== undefined) {
+        delete settings[id].hasAnsweredGuide;
+    }
+    if (settings._users?.[id] && settings._users[id].hasAnsweredGuide !== undefined) {
+        delete settings._users[id].hasAnsweredGuide;
+    }
+    saveSettings(true);
+}
+
+// Aliases for backwards compatibility
 function hasSeenGuide(guildId) {
-    if (!guildId) return true; // Don't prompt in DMs
-    return Boolean(settings[guildId]?.hasSeenGuide);
+    return hasAnsweredGuide(guildId);
 }
 
 function setHasSeenGuide(guildId, seen = true) {
-    if (!guildId) return;
-    if (!settings[guildId]) settings[guildId] = {};
-    settings[guildId].hasSeenGuide = seen;
-    saveSettings(true);
+    setAnsweredGuide(guildId, seen);
 }
 
 function resetHasSeenGuide(guildId) {
-    if (settings[guildId] && settings[guildId].hasSeenGuide !== undefined) {
-        delete settings[guildId].hasSeenGuide;
-        saveSettings(true);
-    }
+    resetAnsweredGuide(guildId);
 }
 
 function hasUserSeenGuide(userId) {
-    if (!userId) return true;
-    return Boolean(settings._users?.[userId]?.hasSeenGuide);
+    return hasAnsweredGuide(userId);
 }
 
 function setUserSeenGuide(userId, seen = true) {
-    if (!userId) return;
-    if (!settings._users) settings._users = {};
-    if (!settings._users[userId]) settings._users[userId] = {};
-    settings._users[userId].hasSeenGuide = seen;
-    saveSettings(true);
+    setAnsweredGuide(userId, seen);
 }
 
 function resetUserSeenGuide(userId) {
-    if (settings._users?.[userId]?.hasSeenGuide !== undefined) {
-        delete settings._users[userId].hasSeenGuide;
-        saveSettings(true);
-    }
+    resetAnsweredGuide(userId);
 }
 
 // Initial load
@@ -150,4 +162,7 @@ module.exports = {
     hasUserSeenGuide,
     setUserSeenGuide,
     resetUserSeenGuide,
+    hasAnsweredGuide,
+    setAnsweredGuide,
+    resetAnsweredGuide,
 };
