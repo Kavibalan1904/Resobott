@@ -182,7 +182,8 @@ const VIBE_CATEGORIES = {
             'bigil', 'mersal', 'leo', 'goat', 'master', 'dance', 'party', 'club', 'beat',
             'fast', 'dj', 'remix', 'dhol', 'bass', 'energetic', 'alappara', 'verithanam',
             'marana mass', 'naa ready', 'chilla chilla', 'pathala pathala', 'badass',
-            'tauba tauba', 'dhoom', 'swag', 'power', 'anthem', 'theme'
+            'tauba tauba', 'dhoom', 'swag', 'power', 'anthem', 'theme', 'devuda', 'rajinikanth',
+            'thalaivar', 'superstar', 'dappankuthu', 'folk', 'manmatha raasa'
         ],
         searchTerms: {
             tamil: 'tamil energetic mass hit songs',

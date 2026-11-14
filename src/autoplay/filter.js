@@ -14,12 +14,32 @@ const NON_MUSIC_PATTERNS = [
     /\b(unboxing|review|tech\s+review|gameplay|walkthrough|playthrough)\b/i,
     /\b(meme|vlog|asmr|sleep\s+sound|rain\s+sounds\s+10\s+hours|white\s+noise)\b/i,
     /\b(radio\s+stream|24\/7\s+live|lofi\s+hip\s+hop\s+radio|live\s+stream)\b/i,
+    // Movie scenes, comedy clips, dialogues, drama cuts
+    /\b(scenes?|comedy\s+scenes?|comedy\s+track|action\s+scenes?|fight\s+scenes?|climax\s+scenes?|movie\s+scenes?|drama\s+scenes?|dialogues?)\b/i,
+    // Trailers, teasers, promos, announcements, first look
+    /\b(official\s+trailer|trailer|official\s+teaser|teaser|sneak\s+peek|glimpse|motion\s+poster|first\s+look|promo|promo\s+video)\b/i,
+    // Events, audio launches, speeches, public talks
+    /\b(audio\s+launch|press\s+meet|success\s+meet|public\s+review|fan\s+reaction|speech|full\s+event)\b/i,
+    // Status clips, shorts, reels, ringtones
+    /\b(whatsapp\s+status|status\s+video|shorts|reels|tiktok|ringtone|bgm\s+ringtone)\b/i,
+    // Compilations, jukeboxes, long album cuts
+    /\b(jukebox|audio\s+jukebox|full\s+album|all\s+songs|mega\s+jukebox|top\s+\d+\s+songs)\b/i,
+    // Loops and multi-hour extended cuts
+    /\b(1\s+hour|10\s+hours|extended\s+loop|loop\s+version)\b/i,
+    // Gimmick audio edits
+    /\b(slowed\s*\+*\s*reverb|slowed\s+and\s+reverb|bass\s+boosted|8d\s+audio|nightcore)\b/i,
+];
+
+// Devotional / Religious / Temple hymn patterns
+const DEVOTIONAL_PATTERNS = [
+    /\b(devotional|bhajan|bhajans|bhakti|stotram|stuti|aarti|chalisa|mantra|mantras|suprabhatam|slokam|shloka|chants?|prayers?|pooja|puja|keerthana|keerthanalu|kavacham|namavali|sahasranamam|ashtakam|namaskar|bhakthi)\b/i,
+    /\b(ayyappa|ayyappan|murugan\s+songs|vinayagar\s+songs|amman\s+songs|perumal\s+songs|krishna\s+bhajan|shiva\s+stuti|hanuman\s+chalisa)\b/i,
 ];
 
 // Default configuration options
 const DEFAULT_FILTER_OPTIONS = {
     minDurationMs: 45000,      // 45 seconds minimum
-    maxDurationMs: 1200000,    // 20 minutes maximum
+    maxDurationMs: 660000,     // 11 minutes maximum (eliminates 15-20+ min jukeboxes/movie clips)
     historyWindowSize: 20,     // Compare against last 20 history tracks
     allowLiveStreams: false,   // Reject 24/7 streams
 };
@@ -57,6 +77,9 @@ function filterCandidates(candidates, context, options = {}) {
     const failedCandidates = context?.recentFailedCandidates || [];
 
     const seenInBatch = [];
+    const seedTrack = context?.currentTrack || context?.mostRecentManualTrack || null;
+    const seedText = seedTrack?.info ? `${seedTrack.info.title || ''} ${seedTrack.info.author || ''}`.toLowerCase() : '';
+    const isSeedDevotional = DEVOTIONAL_PATTERNS.some(p => p.test(seedText));
 
     for (const track of candidates) {
         if (!track || !track.info) {
@@ -90,6 +113,16 @@ function filterCandidates(candidates, context, options = {}) {
         if (isNonMusic) {
             rejectionCounts.streamOrPodcast++;
             continue;
+        }
+
+        // 2b. Devotional / Religious check
+        // Unless the user is intentionally listening to devotional tracks, reject temple/religious tracks
+        if (!isSeedDevotional) {
+            const candText = `${titleLower} ${String(info.author || '').toLowerCase()}`;
+            if (DEVOTIONAL_PATTERNS.some(p => p.test(candText))) {
+                rejectionCounts.streamOrPodcast++;
+                continue;
+            }
         }
 
         // 3. Duration check (only if duration is known and > 0)
@@ -181,4 +214,5 @@ module.exports = {
     filterCandidates,
     DEFAULT_FILTER_OPTIONS,
     NON_MUSIC_PATTERNS,
+    DEVOTIONAL_PATTERNS,
 };

@@ -5,7 +5,7 @@
 
 const { BaseCandidateProvider } = require('./baseProvider');
 const { normalizeArtist } = require('../normalizer');
-const { parseTrackMetadata } = require('../../utils/recommendations');
+const { parseTrackMetadata, detectLanguage } = require('../../utils/recommendations');
 
 class ArtistDiscoveryProvider extends BaseCandidateProvider {
     constructor(timeoutMs = 6000) {
@@ -18,7 +18,9 @@ class ArtistDiscoveryProvider extends BaseCandidateProvider {
         const artist = this._extractArtist(seedTrack);
         if (!artist || artist.length < 2) return [];
 
-        const query = `${artist} hit songs`.trim();
+        const lang = seedTrack?.info ? detectLanguage(seedTrack.info.title || '', seedTrack.info.author || '') : '';
+        const langPart = (lang && lang !== 'english') ? `${lang} movie` : '';
+        const query = `${artist} ${langPart} hit songs`.replace(/\s+/g, ' ').trim();
         const requester = { username: 'Autoplay', id: 'autoplay' };
 
         try {

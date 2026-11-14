@@ -5,6 +5,7 @@
 
 const { BaseCandidateProvider } = require('./baseProvider');
 const { normalizeArtist } = require('../normalizer');
+const { detectLanguage } = require('../../utils/recommendations');
 
 class HistoryDiscoveryProvider extends BaseCandidateProvider {
     constructor(timeoutMs = 6000) {
@@ -17,7 +18,9 @@ class HistoryDiscoveryProvider extends BaseCandidateProvider {
         const targetArtist = this._pickPromisingArtist(context, seedTrack);
         if (!targetArtist) return [];
 
-        const query = `${targetArtist} top songs`.trim();
+        const lang = seedTrack?.info ? detectLanguage(seedTrack.info.title || '', seedTrack.info.author || '') : '';
+        const langPart = (lang && lang !== 'english') ? `${lang} movie` : '';
+        const query = `${targetArtist} ${langPart} hit songs`.replace(/\s+/g, ' ').trim();
         const requester = { username: 'Autoplay', id: 'autoplay' };
 
         try {

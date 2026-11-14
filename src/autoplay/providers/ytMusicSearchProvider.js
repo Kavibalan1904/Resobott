@@ -5,6 +5,7 @@
 
 const { BaseCandidateProvider } = require('./baseProvider');
 const { cleanVideoTitle } = require('../../utils/helpers');
+const { parseTrackMetadata } = require('../../utils/recommendations');
 
 class YtMusicSearchProvider extends BaseCandidateProvider {
     constructor(timeoutMs = 6000) {
@@ -18,7 +19,13 @@ class YtMusicSearchProvider extends BaseCandidateProvider {
         const author = seedTrack.info.author || '';
         if (!title) return [];
 
-        const query = `${title} ${author}`.trim();
+        let query = `${title} ${author}`.trim();
+        if (typeof parseTrackMetadata === 'function') {
+            const meta = parseTrackMetadata(seedTrack.info.title || '', author);
+            if (meta?.movieOrAlbum && meta.movieOrAlbum.length > 2 && meta.movieOrAlbum.toLowerCase() !== title.toLowerCase()) {
+                query = `${meta.movieOrAlbum} ${title}`.trim();
+            }
+        }
         const requester = { username: 'Autoplay', id: 'autoplay' };
 
         try {

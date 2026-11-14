@@ -4,7 +4,7 @@
  */
 
 const { normalizeTitle, normalizeArtist, stringSimilarity } = require('./normalizer');
-const { detectLanguage, detectVibe } = require('../utils/recommendations');
+const { detectLanguage, detectVibe, parseTrackMetadata } = require('../utils/recommendations');
 
 // Default signal weights per mode (summing to 100)
 const MODE_WEIGHTS = {
@@ -73,6 +73,7 @@ class CandidateScorer {
         const seedAuthor = seedTrack?.info?.author || '';
         const seedNormTitle = normalizeTitle(seedTitle);
         const seedNormArtist = normalizeArtist(seedAuthor);
+        const seedMeta = typeof parseTrackMetadata === 'function' ? parseTrackMetadata(seedTitle, seedAuthor) : null;
 
         const seedLang = detectLanguage ? detectLanguage(seedTitle, seedAuthor, 'english') : 'english';
         const seedVibe = detectVibe ? detectVibe(seedTitle, seedAuthor) : 'chill';
@@ -134,6 +135,11 @@ class CandidateScorer {
                     seedRelevance = Math.min(100, seedRelevance + 10);
                 }
             }
+            // Soundtrack / movie album association boost
+            if (seedMeta?.movieOrAlbum && seedMeta.movieOrAlbum.length > 2 && (candNormTitle.includes(seedMeta.movieOrAlbum.toLowerCase()) || candTitle.toLowerCase().includes(seedMeta.movieOrAlbum.toLowerCase()))) {
+                seedRelevance = 100;
+                sessionRelevance = Math.min(100, sessionRelevance + 20);
+            }
 
             // 2. Artist or musical association (0-100)
             let artistAssociation = 50;
@@ -146,13 +152,9 @@ class CandidateScorer {
                     artistAssociation = 55;
                 }
             }
-
-            // Language & Vibe association
-            const candLang = detectLanguage ? detectLanguage(candTitle, candAuthor, seedLang) : seedLang;
-            if (candLang === seedLang) {
-                artistAssociation = Math.min(100, artistAssociation + 10);
-            } else {
-                artistAssociation = Math.max(0, artistAssociation - 20);
+            // Composer affinity boost
+            if (seedMeta?.composer && seedMeta.composer.length > 2 && (candNormArtist.includes(seedMeta.composer.toLowerCase()) || candTitle.toLowerCase().includes(seedMeta.composer.toLowerCase()))) {
+                artistAssociation = Math.min(100, artistAssociation + 20);
             }
 
             // 3. Listening-session relevance (0-100)
@@ -160,6 +162,19 @@ class CandidateScorer {
             const candVibe = detectVibe ? detectVibe(candTitle, candAuthor) : 'chill';
             if (candVibe === seedVibe) {
                 sessionRelevance += 20;
+            }
+
+            // Language & Vibe association
+            const candLang = detectLanguage ? detectLanguage(candTitle, candAuthor, seedLang) : seedLang;
+            if (candLang && seedLang && candLang === seedLang) {
+                artistAssociation = Math.min(100, artistAssociation + 15);
+                sessionRelevance = Math.min(100, sessionRelevance + 15);
+            } else if (seedLang && candLang && seedLang !== 'english' && candLang !== seedLang) {
+                // Strict penalty on foreign language drift when user is in a regional/Indian language session
+                artistAssociation = Math.max(0, artistAssociation - 25);
+                sessionRelevance = Math.max(0, sessionRelevance - 25);
+            } else if (seedLang && candLang && candLang !== seedLang) {
+                artistAssociation = Math.max(0, artistAssociation - 15);
             }
 
             // Match with recent manual tracks

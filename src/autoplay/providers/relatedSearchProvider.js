@@ -6,6 +6,7 @@
 const { BaseCandidateProvider } = require('./baseProvider');
 const { cleanVideoTitle } = require('../../utils/helpers');
 const { normalizeArtist } = require('../normalizer');
+const { detectLanguage } = require('../../utils/recommendations');
 
 class RelatedSearchProvider extends BaseCandidateProvider {
     constructor(timeoutMs = 6000) {
@@ -19,8 +20,10 @@ class RelatedSearchProvider extends BaseCandidateProvider {
         const artist = normalizeArtist(seedTrack.info.author || '');
         if (!title) return [];
 
+        const lang = seedTrack?.info ? detectLanguage(seedTrack.info.title || '', seedTrack.info.author || '') : '';
+        const langPart = (lang && lang !== 'english') ? `${lang} ` : '';
         // Build related song query
-        const query = `songs like ${title} ${artist}`.trim();
+        const query = `songs like ${title} ${artist} ${langPart}hits`.replace(/\s+/g, ' ').trim();
         const requester = { username: 'Autoplay', id: 'autoplay' };
 
         try {
