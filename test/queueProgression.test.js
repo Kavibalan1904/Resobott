@@ -128,16 +128,62 @@ describe('Queue Progression & Auto-Advance Regression Tests', () => {
         assert.strictEqual(playCalled, 1, 'Expected player.play() to be called for nextTrack');
     });
 
-    it('should retry via scsearch (SoundCloud) first on YouTube login errors and play resolved track', async () => {
+    it('should retry via spsearch (Spotify) first on YouTube login errors and play resolved track', async () => {
         const { client, manager } = createMockSetup();
 
         let playedTrack = null;
         const searchSources = [];
         const loginBlockedTrack = { info: { title: 'Megham Karukatha', author: 'Anirudh', uri: 'uri:yt_blocked' } };
-        const scTrack = { info: { title: 'Megham Karukatha', author: 'Anirudh', sourceName: 'soundcloud', uri: 'uri:sc_resolved' } };
+        const spTrack = { info: { title: 'Megham Karukatha', author: 'Anirudh', sourceName: 'spotify', uri: 'uri:sp_resolved' } };
 
         const mockPlayer = {
             guildId: 'guild_login_test',
+            playing: false,
+            paused: false,
+            destroyed: false,
+            connected: true,
+            node: { id: 'primary-main', connected: true },
+            queue: {
+                current: loginBlockedTrack,
+                tracks: [],
+            },
+            get: () => 0,
+            search: async ({ source }) => {
+                searchSources.push(source);
+                if (source === 'spsearch') {
+                    return { tracks: [spTrack] };
+                }
+                return { tracks: [] };
+            },
+            play: async (opt) => {
+                playedTrack = opt?.clientTrack;
+            },
+            stopPlaying: async () => {},
+        };
+
+        const errorPayload = {
+            exception: {
+                message: 'All clients failed to load the item. Client [ANDROID_MUSIC] failed: This video requires login.',
+            },
+        };
+
+        manager.emit('trackError', mockPlayer, loginBlockedTrack, errorPayload);
+        await new Promise(r => setTimeout(r, 60));
+
+        assert.strictEqual(searchSources[0], 'spsearch', 'Expected first retry attempt to be spsearch (Spotify)');
+        assert.strictEqual(playedTrack, spTrack, 'Expected player.play to be called with resolved Spotify track');
+    });
+
+    it('should fall back to SoundCloud (scsearch) in rare occasions when Spotify and YouTube Music fail', async () => {
+        const { client, manager } = createMockSetup();
+
+        let playedTrack = null;
+        const searchSources = [];
+        const loginBlockedTrack = { info: { title: 'Megham Karukatha', author: 'Anirudh', uri: 'uri:yt_blocked_rare' } };
+        const scTrack = { info: { title: 'Megham Karukatha', author: 'Anirudh', sourceName: 'soundcloud', uri: 'uri:sc_resolved_rare' } };
+
+        const mockPlayer = {
+            guildId: 'guild_rare_sc_test',
             playing: false,
             paused: false,
             destroyed: false,
@@ -170,8 +216,9 @@ describe('Queue Progression & Auto-Advance Regression Tests', () => {
         manager.emit('trackError', mockPlayer, loginBlockedTrack, errorPayload);
         await new Promise(r => setTimeout(r, 60));
 
-        assert.strictEqual(searchSources[0], 'scsearch', 'Expected first retry attempt to be scsearch due to YouTube login block');
-        assert.strictEqual(playedTrack, scTrack, 'Expected player.play to be called with resolved SoundCloud track');
+        assert.ok(searchSources.includes('spsearch'), 'Expected spsearch to be tried first');
+        assert.strictEqual(searchSources[0], 'spsearch', 'Expected first attempt to be spsearch');
+        assert.strictEqual(playedTrack, scTrack, 'Expected player.play to be called with fallback SoundCloud track');
     });
 
     it('should display helpful tip suggesting SoundCloud/Spotify when all retries fail on YouTube login errors', async () => {
@@ -199,6 +246,7 @@ describe('Queue Progression & Auto-Advance Regression Tests', () => {
                 tracks: [],
             },
             get: () => 0,
+            set: () => {},
             getData: () => undefined,
             setData: () => {},
             search: async () => ({ tracks: [] }), // all retries fail
@@ -267,6 +315,7 @@ describe('Queue Progression & Auto-Advance Regression Tests', () => {
                 tracks: [],
             },
             get: () => 0,
+            set: () => {},
             getData: () => undefined,
             setData: () => {},
             search: async ({ source }) => {
@@ -296,5 +345,86 @@ describe('Queue Progression & Auto-Advance Regression Tests', () => {
         assert.ok(sentEmbed, 'Expected notification embed to be sent');
         const desc = sentEmbed.data?.description || '';
         assert.ok(desc.includes('Resumed playback from **1:05**'), `Expected embed description to mention resume timestamp, got: "${desc}"`);
+    });
+
+    it('should calculate resume position from trackStartTime if Lavalink reset player.position to 0', async () => {
+        const { client, manager } = createMockSetup();
+
+        let playedOptions = null;
+        let sentEmbed = null;
+        const mockChannel = {
+            send: async ({ embeds }) => {
+                sentEmbed = embeds?.[0];
+            },
+        };
+        client.channels.cache.set('channel_resume_clock', mockChannel);
+
+        const currentTrack = {
+            info: {
+                title: 'Mannippu',
+                author: 'Suriya',
+                sourceName: 'youtube',
+                uri: 'uri:mannippu_yt',
+                duration: 324000,
+            },
+        };
+
+        const resolvedTrack = {
+            info: {
+                title: 'Mannippu',
+                author: 'Devi Sri Prasad',
+                sourceName: 'spotify',
+                uri: 'uri:mannippu_sp',
+                duration: 324000,
+            },
+        };
+
+        const simulatedStartTime = Date.now() - 45000; // 45 seconds ago
+        const customStore = new Map([['trackStartTime', simulatedStartTime]]);
+
+        const mockPlayer = {
+            guildId: 'guild_resume_clock_test',
+            textChannelId: 'channel_resume_clock',
+            playing: true,
+            paused: false,
+            destroyed: false,
+            connected: true,
+            position: 0, // Lavalink reset position to 0 on socket break
+            node: { id: 'primary-main', connected: true },
+            queue: {
+                current: currentTrack,
+                tracks: [],
+            },
+            get: (key) => customStore.get(key) || 0,
+            set: (key, val) => customStore.set(key, val),
+            getData: () => undefined,
+            setData: () => {},
+            search: async ({ source }) => {
+                if (source === 'spsearch') {
+                    return { tracks: [resolvedTrack] };
+                }
+                return { tracks: [] };
+            },
+            play: async (opt) => {
+                playedOptions = opt;
+            },
+            stopPlaying: async () => {},
+        };
+
+        const errorPayload = {
+            exception: {
+                message: 'All clients failed to load the item. Client [ANDROID_MUSIC] failed: This video requires login.',
+            },
+        };
+
+        manager.emit('trackError', mockPlayer, currentTrack, errorPayload);
+        await new Promise(r => setTimeout(r, 60));
+
+        assert.ok(playedOptions, 'Expected player.play to be called');
+        assert.strictEqual(playedOptions.clientTrack, resolvedTrack, 'Expected clientTrack to be resolved track');
+        assert.ok(playedOptions.position >= 44000 && playedOptions.position <= 47000, `Expected position ~45000, got ${playedOptions.position}`);
+        assert.ok(sentEmbed, 'Expected notification embed to be sent');
+        const desc = sentEmbed.data?.description || '';
+        assert.ok(desc.includes('Resumed playback from **0:45**'), `Expected embed description to mention 0:45, got: "${desc}"`);
     });
 });

@@ -38,6 +38,7 @@ module.exports = {
         }
 
         await player.seek(ms);
+        player.set('trackStartTime', Date.now() - ms);
         return interaction.reply({ embeds: [successEmbed(`Seeked to **${formatTime(seconds)}** ⏱️`)] });
     },
 };

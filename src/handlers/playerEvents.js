@@ -155,13 +155,17 @@ function setupLavalinkEvents(client) {
             // Build a search query from the clean track title + author, plus a core title fallback
             const rawTitle = track?.info?.title || '';
             const author = track?.info?.author && !/unknown|various/i.test(track.info.author) ? track.info.author : '';
-            const sanitizedTitle = (cleanVideoTitle(rawTitle) || rawTitle)
+            const cleanedTitle = cleanVideoTitle(rawTitle) || rawTitle;
+            const sanitizedTitle = cleanedTitle
                 .replace(/["'“”‘’]/g, '')
                 .replace(/\s+/g, ' ')
                 .trim();
             const coreTitle = (sanitizedTitle.split(/[|\-–—]/)[0] || sanitizedTitle).trim();
+            const isPublisherAuthor = /studio|records|music|series|channel|media|films|production|entertainment|pictures/i.test(author);
+
             const queriesToTry = [
-                author && !sanitizedTitle.toLowerCase().includes(author.toLowerCase()) ? `${sanitizedTitle} ${author}` : sanitizedTitle,
+                sanitizedTitle,
+                author && !isPublisherAuthor && !sanitizedTitle.toLowerCase().includes(author.toLowerCase()) ? `${sanitizedTitle} ${author}` : null,
                 coreTitle,
             ].filter((q, idx, arr) => q && arr.indexOf(q) === idx);
             const cleanTitle = sanitizedTitle;
@@ -171,12 +175,11 @@ function setupLavalinkEvents(client) {
             if (!cleanTitle) return false;
             if (!player.node || !player.node.connected) return false;
 
-            // If YouTube blocks playback (e.g. login required / bot detection), prioritize alternative sources
-            // including SoundCloud (scsearch) and Spotify (spsearch) to bypass the YouTube login block completely.
-            // Do NOT retry on YouTube (ytsearch) if YouTube is what threw the login block.
+            // Fallback order: Spotify (spsearch) MUST ALWAYS BE FIRST.
+            // SoundCloud (scsearch) is only queried in very rare occasions when Spotify and YouTube Music fail.
             const isYoutubeBlock = /login|All clients failed|bot detection/i.test(`${reason} ${errorDetails}`);
             const fallbackSources = isYoutubeBlock
-                ? ['scsearch', 'spsearch', 'ytmsearch']
+                ? ['spsearch', 'ytmsearch', 'scsearch']
                 : ['spsearch', 'ytmsearch', 'scsearch', 'ytsearch'];
 
             for (const fallbackSource of fallbackSources) {
@@ -214,6 +217,9 @@ function setupLavalinkEvents(client) {
                             const playOptions = { clientTrack: resolvedTrack };
                             if (resumePosition > 3000 && (!resolvedTrack.info?.duration || resumePosition < (resolvedTrack.info.duration - 5000))) {
                                 playOptions.position = Math.round(resumePosition);
+                                if (typeof player.set === 'function') {
+                                    player.set('pendingResumePosition', Math.round(resumePosition));
+                                }
                             }
                             await player.play(playOptions);
 
@@ -357,9 +363,34 @@ function setupLavalinkEvents(client) {
         }
     });
 
+    // ── Player state update (keep track of exact position for mid-stream fallback) ──
+    manager.on('playerUpdate', (player, payload) => {
+        if (payload?.state?.position !== undefined && payload.state.position !== null) {
+            player.lastPosition = payload.state.position;
+        }
+    });
+
     // ── Track starts playing ───────────────────────────────────
     manager.on('trackStart', async (player, track) => {
         player.set('trackStartTime', Date.now()); // For diagnostics
+
+        // Handle resuming playback where we left off if this is a fallback track
+        const pendingResume = player.get('pendingResumePosition');
+        if (pendingResume && pendingResume > 3000) {
+            player.set('pendingResumePosition', 0);
+            player.set('trackStartTime', Date.now() - pendingResume);
+            setTimeout(async () => {
+                try {
+                    const currentPos = player.position || 0;
+                    if (Math.abs(currentPos - pendingResume) > 2000) {
+                        await player.seek(pendingResume);
+                        console.log(`[Reso] ⏱️ Resumed playback at ${formatMs(pendingResume)}`);
+                    }
+                } catch (seekErr) {
+                    console.warn(`[Reso] ⚠️ Could not seek to resume position:`, seekErr.message);
+                }
+            }, 600);
+        }
         
         const mem = Math.round(process.memoryUsage().rss / 1024 / 1024);
         
@@ -680,13 +711,18 @@ function setupLavalinkEvents(client) {
             markNodeError(player.node.id);
         }
 
-        // Attempt retry before giving up, passing exact error details so retryTrack can select an optimal source (e.g. SoundCloud on YouTube login block)
+        // Attempt retry before giving up, passing exact error details so retryTrack can select an optimal source (Spotify first, then SoundCloud in rare occasions)
         // Also capture current playback position so the fallback track can resume right where it left off
-        const savedPosition = (player?.position && player.position > 3000)
+        const startTime = player.get('trackStartTime');
+        const elapsedWallClock = (startTime && !player.paused) ? (Date.now() - startTime) : 0;
+        const currentPos = (player?.position && player.position > 3000)
             ? player.position
             : (player?.lastPosition && player.lastPosition > 3000)
                 ? player.lastPosition
                 : 0;
+        const rawSaved = Math.max(currentPos, elapsedWallClock > 3000 ? elapsedWallClock : 0);
+        // Only resume if the track hasn't virtually finished (leave 5s buffer)
+        const savedPosition = (track?.info?.duration && rawSaved >= (track.info.duration - 5000)) ? 0 : rawSaved;
         const retried = await retryTrack(player, track, 'failed to load', errorMsg, savedPosition);
         if (retried) return; // Retry initiated, don't skip
 
@@ -717,11 +753,13 @@ function setupLavalinkEvents(client) {
         console.error(`[Reso] 🔍 Diagnostic Payload:`, JSON.stringify(payload));
 
         // Attempt retry before giving up, passing saved position to resume playback seamlessly
-        const savedPosition = (player?.position && player.position > 3000)
+        const currentPos = (player?.position && player.position > 3000)
             ? player.position
             : (player?.lastPosition && player.lastPosition > 3000)
                 ? player.lastPosition
                 : 0;
+        const rawSaved = Math.max(currentPos, elapsed > 3000 ? elapsed : 0);
+        const savedPosition = (track?.info?.duration && rawSaved >= (track.info.duration - 5000)) ? 0 : rawSaved;
         const retried = await retryTrack(player, track, 'got stuck', '', savedPosition);
         if (retried) return; // Retry initiated successfully
 
