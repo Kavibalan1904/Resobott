@@ -15,11 +15,14 @@ const { setupLavalinkEvents } = require('./handlers/playerEvents');
 const { handlePlayerButton } = require('./handlers/buttonHandler');
 const { getBestNode, ensurePlayerNode, truncate } = require('./utils/helpers');
 const { setTrackMetadata } = require('./utils/trackMetadata');
-const { getDesignatedChannel } = require('./utils/settings');
+const { getDesignatedChannel, resetAllAnsweredGuides } = require('./utils/settings');
 const { createEmbed, EMOJIS } = require('./utils/embeds');
 const { createAIProvider } = require('./ai/providers/factory');
 const { handleDashboardRequest } = require('./utils/dashboard');
 const { checkAndPromptFirstTimeGuide, promptGuildOnInvite } = require('./utils/onboarding');
+
+// Reset onboarding answers so user can re-verify prompt on next play
+resetAllAnsweredGuides();
 
 // ── HTTP Health Check & Monitor Server ───────────────────────────
 // Bot-Hosting uses SERVER_PORT, other clouds use PORT. Always bind to 0.0.0.0 for container proxy access.

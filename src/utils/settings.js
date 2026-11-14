@@ -120,6 +120,21 @@ function resetAnsweredGuide(id) {
     saveSettings(true);
 }
 
+function resetAllAnsweredGuides() {
+    if (settings._users) {
+        for (const uid of Object.keys(settings._users)) {
+            delete settings._users[uid].hasAnsweredGuide;
+            delete settings._users[uid].hasSeenGuide;
+        }
+    }
+    for (const gid of Object.keys(settings)) {
+        if (gid === '_users') continue;
+        delete settings[gid].hasAnsweredGuide;
+        delete settings[gid].hasSeenGuide;
+    }
+    saveSettings(true);
+}
+
 // Aliases for backwards compatibility
 function hasSeenGuide(guildId) {
     return hasAnsweredGuide(guildId);
@@ -165,4 +180,5 @@ module.exports = {
     hasAnsweredGuide,
     setAnsweredGuide,
     resetAnsweredGuide,
+    resetAllAnsweredGuides,
 };

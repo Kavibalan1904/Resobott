@@ -19,25 +19,33 @@ const activePrompts = new Set();
  * @returns {import('discord.js').EmbedBuilder}
  */
 function createQuickGuideEmbed(guildId = null, user = null) {
-    const greeting = user?.id ? `Hey <@${user.id}>, welcome to Reso!` : `Here's a quick intro to get the best listening experience with Reso:`;
+    const greeting = user?.id ? `Hey <@${user.id}>, welcome to Reso!` : `Here's a quick cheat sheet to get the best listening experience with Reso:`;
     return createEmbed('Primary', guildId)
         .setAuthor({
-            name: '✨ Reso Quick Guide',
+            name: '✨ Reso Quick Start Guide',
             iconURL: 'https://cdn.discordapp.com/emojis/741605543046807626.gif',
         })
         .setDescription(
             `${greeting}\n\n` +
-            `**⚡ Slash Commands & \`>\` Prefix**\n` +
-            `• Control music using **Slash Commands** (\`/play\`, \`/queue\`, \`/skip\`, \`/pause\`)\n` +
-            `• Or use the **\`>\`** text prefix (\`>play <song>\`, \`>q\`, \`>skip\`, \`>help\`)\n` +
-            `• Type \`/help\` or \`>help\` anytime to see all commands and features.\n\n` +
+            `**⚡ Commands & Shortcuts**\n` +
+            `• **Slash Commands**: \`/play\`, \`/queue\`, \`/skip\`, \`/pause\`, \`/volume\`, \`/lyrics\`, \`/nowplaying\`\n` +
+            `• **Fast \`>\` Prefix**: \`>play <song>\`, \`>p\`, \`>q\`, \`>s\`, \`>np\`, \`>vol\`\n` +
+            `• Supports song names, **Spotify**, **YouTube**, **SoundCloud**, **Apple Music**, or audio file uploads!\n\n` +
             `**🔄 Smart Autoplay (Continuous Music)**\n` +
-            `• Never let the music stop! When your queue ends, Reso's Resonance AI DJ can automatically keep playing similar songs matching your session's vibe and language.\n` +
-            `• Toggle on or off anytime with \`/autoplay\` (or \`>autoplay\`).\n\n` +
+            `• Never let the music stop! When your queue ends, Reso's Resonance AI DJ automatically keeps playing similar songs matching your session's vibe and language.\n` +
+            `• Toggle on or off anytime with \`/autoplay\` (or \`>autoplay\`).\n` +
+            `• Switch recommendation styles with \`/autoplay action:mode\` *(Balanced, Discovery, Chill, Party)*.\n\n` +
             `**💾 Save & Load Playlists**\n` +
             `• **Save your current queue**: \`/playlist save name: <name>\` *(e.g. \`/playlist save name: Favorites\`, or \`>playlist save Favorites\`)*\n` +
             `• **Play a saved playlist**: \`/playlist load name: <name>\` *(e.g. \`/playlist load name: Favorites\`, or \`>playlist load Favorites\`)*\n` +
-            `• **View all playlists**: \`/playlist list\` (or \`>playlist list\`)`
+            `• **View all playlists**: \`/playlist list\` (or \`>playlist list\`)\n\n` +
+            `**🎛️ Audio Filters & AI DJ Vibe**\n` +
+            `• **Audio FX**: \`/filter\` for 8D, Bassboost, Nightcore, Vaporwave, and Karaoke.\n` +
+            `• **Instant AI Mix**: \`/vibe <mood>\` — curates a custom soundtrack tailored to your mood, activity, or gaming session!\n\n` +
+            `**🔒 24/7 Voice & Useful Shortcuts**\n` +
+            `• **24/7 Mode**: \`/247\` — keeps Reso staying in your voice channel 24/7 even when idle.\n` +
+            `• **Full Command List**: Type \`/help\` (or \`>help\`) anytime to explore all 38 commands.\n` +
+            `• **View this guide anytime**: Type \`/guide\` (or \`>guide\`).`
         )
         .setFooter({ text: 'Reso  ☕  Good music & warm vibes • Have fun listening!' });
 }

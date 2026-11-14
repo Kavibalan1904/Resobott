@@ -3,6 +3,7 @@ const assert = require('node:assert');
 const { EventEmitter } = require('events');
 
 const { checkAndPromptFirstTimeGuide, createQuickGuideEmbed, promptGuildOnInvite } = require('../src/utils/onboarding');
+const guideCommand = require('../src/commands/utility/guide');
 const {
     hasSeenGuide,
     setHasSeenGuide,
@@ -276,5 +277,48 @@ describe('First-time Server Onboarding & Anti-Duplication Regression', () => {
         assert.strictEqual(validCandidates.length, 1, 'Expected re-uploaded duplicate to be rejected');
         assert.strictEqual(validCandidates[0].info.title, 'Konja Naal Poru');
         assert.strictEqual(rejectionCounts.recentHistory, 1);
+    });
+
+    it('guide command should display quick start guide on demand and support reset option', async () => {
+        let repliedData = null;
+        const mockInteraction = {
+            options: { getBoolean: () => false },
+            guildId: testGuildId,
+            user: { id: testUserId1, username: 'Kavi' },
+            reply: async (data) => {
+                repliedData = data;
+                return repliedData;
+            },
+        };
+
+        // 1. Direct view
+        await guideCommand.execute(mockInteraction);
+        assert.ok(repliedData?.embeds?.[0]);
+        const desc = repliedData.embeds[0].data.description;
+        assert.ok(desc.includes('Commands & Shortcuts'));
+        assert.ok(desc.includes('Smart Autoplay'));
+        assert.ok(desc.includes('Save & Load Playlists'));
+        assert.ok(desc.includes('Audio Filters'));
+        assert.ok(desc.includes('24/7 Voice'));
+
+        // 2. Reset option
+        setAnsweredGuide(testUserId1, true);
+        assert.strictEqual(hasAnsweredGuide(testUserId1), true);
+
+        const mockResetInteraction = {
+            options: { getBoolean: () => true },
+            guildId: testGuildId,
+            user: { id: testUserId1, username: 'Kavi' },
+            reply: async (data) => data,
+            channel: {
+                id: 'test_chan',
+                send: async (p) => ({
+                    ...p,
+                    createMessageComponentCollector: () => new EventEmitter(),
+                }),
+            },
+        };
+        await guideCommand.execute(mockResetInteraction);
+        assert.strictEqual(hasAnsweredGuide(testUserId1), false, 'Expected user answered guide to be reset to false');
     });
 });
