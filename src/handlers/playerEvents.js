@@ -1,5 +1,5 @@
 const { nowPlayingEmbed, createPlayerControls, createDisabledControls, createEmbed, errorEmbed, warningEmbed, EMOJIS, capitalize } = require('../utils/embeds');
-const { truncate, markNodeError, getHealthyNodes, getBestNode, computeNodeScore, cleanVideoTitle, PRIMARY_NODE_ID } = require('../utils/helpers');
+const { truncate, markNodeError, getHealthyNodes, getBestNode, computeNodeScore, cleanVideoTitle, formatMs, PRIMARY_NODE_ID } = require('../utils/helpers');
 const { getAutoplayTrack, updateSessionState } = require('../utils/recommendations');
 const { guildContextManager, autoplayStore, setTrackMetadata, getTrackMetadata } = require('../autoplay');
 const { getDesignatedChannel } = require('../utils/settings');
@@ -107,7 +107,7 @@ function setupLavalinkEvents(client) {
      * Source-aware: retries on the original source first, then falls back to YouTube.
      * Returns true if retry was initiated, false if we should skip.
      */
-    async function retryTrack(player, track, reason, errorDetails = '') {
+    async function retryTrack(player, track, reason, errorDetails = '', resumePosition = 0) {
         const guildId = player.guildId;
         const trackKey = track?.info?.uri || track?.info?.title || 'unknown';
 
@@ -210,7 +210,11 @@ function setupLavalinkEvents(client) {
                             console.log(`[Reso] ✓ Retry resolved: "${truncate(resolvedTrack.info?.title, 40)}" from ${resolvedSource}`);
 
                             successfulRetries.add(guildId); // Mark as successfully retried BEFORE playing to suppress queueEnd race condition
-                            await player.play({ clientTrack: resolvedTrack });
+                            const playOptions = { clientTrack: resolvedTrack };
+                            if (resumePosition > 3000 && (!resolvedTrack.info?.duration || resumePosition < (resolvedTrack.info.duration - 5000))) {
+                                playOptions.position = Math.round(resumePosition);
+                            }
+                            await player.play(playOptions);
 
                             const channel = getPlayerTextChannel(player);
                             if (channel) {
@@ -226,6 +230,10 @@ function setupLavalinkEvents(client) {
                                     messageText = `Track **${truncate(rawTitle, 50)}** was unavailable on **${capitalize(originalSource)}**. Switched to **${resolvedSource}**.`;
                                 } else {
                                     messageText = `Track **${truncate(rawTitle, 50)}** ${reason}. Switched to **${resolvedSource}**.`;
+                                }
+
+                                if (playOptions.position && playOptions.position > 3000) {
+                                    messageText += ` Resumed playback from **${formatMs(playOptions.position)}**.`;
                                 }
 
                                 const embed = warningEmbed(messageText);
@@ -667,7 +675,13 @@ function setupLavalinkEvents(client) {
         }
 
         // Attempt retry before giving up, passing exact error details so retryTrack can select an optimal source (e.g. SoundCloud on YouTube login block)
-        const retried = await retryTrack(player, track, 'failed to load', errorMsg);
+        // Also capture current playback position so the fallback track can resume right where it left off
+        const savedPosition = (player?.position && player.position > 3000)
+            ? player.position
+            : (player?.lastPosition && player.lastPosition > 3000)
+                ? player.lastPosition
+                : 0;
+        const retried = await retryTrack(player, track, 'failed to load', errorMsg, savedPosition);
         if (retried) return; // Retry initiated, don't skip
 
         // Retry failed or already retried — skip with informative error message
@@ -696,8 +710,13 @@ function setupLavalinkEvents(client) {
         console.error(`[Reso] 🔍 DIAGNOSTICS - Node: ${player.node?.id} | State: ${player.playing ? 'PLAYING' : 'STOPPED'} | Paused: ${player.paused} | Position: ${player.position}ms | Elapsed since start: ${elapsed}ms`);
         console.error(`[Reso] 🔍 Diagnostic Payload:`, JSON.stringify(payload));
 
-        // Attempt retry before giving up
-        const retried = await retryTrack(player, track, 'got stuck');
+        // Attempt retry before giving up, passing saved position to resume playback seamlessly
+        const savedPosition = (player?.position && player.position > 3000)
+            ? player.position
+            : (player?.lastPosition && player.lastPosition > 3000)
+                ? player.lastPosition
+                : 0;
+        const retried = await retryTrack(player, track, 'got stuck', '', savedPosition);
         if (retried) return; // Retry initiated successfully
 
         // Retry failed or already retried — notify user and skip

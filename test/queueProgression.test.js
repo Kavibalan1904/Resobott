@@ -220,4 +220,81 @@ describe('Queue Progression & Auto-Advance Regression Tests', () => {
         assert.ok(desc.includes('YouTube is currently restricting playback'), 'Expected description to include helpful tip about YouTube restrictions');
         assert.ok(desc.includes('SoundCloud'), 'Expected description to mention SoundCloud workaround');
     });
+
+    it('should resume playback at previous position when a track errors mid-stream and falls back', async () => {
+        const { client, manager } = createMockSetup();
+
+        let playedOptions = null;
+        let sentEmbed = null;
+        const mockChannel = {
+            send: async ({ embeds }) => {
+                sentEmbed = embeds?.[0];
+            },
+        };
+        client.channels.cache.set('channel_resume_123', mockChannel);
+
+        const currentTrack = {
+            info: {
+                title: 'Thannane Thamarapoo',
+                author: 'Suriya',
+                sourceName: 'youtube',
+                uri: 'uri:yt_midstream_fail',
+                duration: 273000, // 4:33
+            },
+        };
+
+        const resolvedTrack = {
+            info: {
+                title: 'Thannane Thamarapoo',
+                author: 'Suriya',
+                sourceName: 'spotify',
+                uri: 'uri:spotify_resolved',
+                duration: 273000,
+            },
+        };
+
+        const mockPlayer = {
+            guildId: 'guild_resume_test',
+            textChannelId: 'channel_resume_123',
+            playing: true,
+            paused: false,
+            destroyed: false,
+            connected: true,
+            position: 65000, // 1 min 5 sec in
+            node: { id: 'primary-main', connected: true },
+            queue: {
+                current: currentTrack,
+                tracks: [],
+            },
+            get: () => 0,
+            getData: () => undefined,
+            setData: () => {},
+            search: async ({ source }) => {
+                if (source === 'scsearch' || source === 'spsearch') {
+                    return { tracks: [resolvedTrack] };
+                }
+                return { tracks: [] };
+            },
+            play: async (opt) => {
+                playedOptions = opt;
+            },
+            stopPlaying: async () => {},
+        };
+
+        const errorPayload = {
+            exception: {
+                message: 'This video requires login.',
+            },
+        };
+
+        manager.emit('trackError', mockPlayer, currentTrack, errorPayload);
+        await new Promise(r => setTimeout(r, 60));
+
+        assert.ok(playedOptions, 'Expected player.play to be called');
+        assert.strictEqual(playedOptions.clientTrack, resolvedTrack, 'Expected clientTrack to be resolved track');
+        assert.strictEqual(playedOptions.position, 65000, 'Expected position to be preserved and passed as 65000');
+        assert.ok(sentEmbed, 'Expected notification embed to be sent');
+        const desc = sentEmbed.data?.description || '';
+        assert.ok(desc.includes('Resumed playback from **1:05**'), `Expected embed description to mention resume timestamp, got: "${desc}"`);
+    });
 });
