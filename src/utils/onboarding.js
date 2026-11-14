@@ -1,6 +1,6 @@
-const { ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType, MessageFlags } = require('discord.js');
+const { ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType, MessageFlags, PermissionFlagsBits } = require('discord.js');
 const { createEmbed, Colors } = require('./embeds');
-const { hasSeenGuide, setHasSeenGuide, hasUserSeenGuide, setUserSeenGuide } = require('./settings');
+const { hasSeenGuide, setHasSeenGuide, resetHasSeenGuide, hasUserSeenGuide, setUserSeenGuide, resetUserSeenGuide } = require('./settings');
 
 /**
  * Build the rich quick guide embed
@@ -85,7 +85,7 @@ async function checkAndPromptFirstTimeGuide(channel, userOrGuildId, maybeGuildOr
                 new ButtonBuilder()
                     .setCustomId(`guide_no_${userId}`)
                     .setLabel("No, I'm good")
-                    .setEmoji('✕')
+                    .setEmoji('❌')
                     .setStyle(ButtonStyle.Secondary)
             );
 
@@ -139,6 +139,8 @@ async function checkAndPromptFirstTimeGuide(channel, userOrGuildId, maybeGuildOr
                 }
             });
         } catch (err) {
+            // Reset flag on send failure so user is not locked out
+            resetUserSeenGuide(userId);
             console.warn(`[Reso] Could not send first-time onboarding prompt for user ${userId}:`, err.message);
         }
         return;
@@ -167,7 +169,7 @@ async function checkAndPromptFirstTimeGuide(channel, userOrGuildId, maybeGuildOr
                 new ButtonBuilder()
                     .setCustomId('guide_no')
                     .setLabel("No, I'm good")
-                    .setEmoji('✕')
+                    .setEmoji('❌')
                     .setStyle(ButtonStyle.Secondary)
             );
 
@@ -212,12 +214,130 @@ async function checkAndPromptFirstTimeGuide(channel, userOrGuildId, maybeGuildOr
                 }
             });
         } catch (err) {
+            resetHasSeenGuide(guildId);
             console.warn(`[Reso] Could not send first-time onboarding prompt in guild ${guildId}:`, err.message);
         }
+    }
+}
+
+/**
+ * Prompt onboarding guide when Reso is newly invited to a server
+ * @param {import('discord.js').Guild} guild
+ */
+async function promptGuildOnInvite(guild) {
+    if (!guild || !guild.id) return;
+
+    // Check if server already saw onboarding
+    if (hasSeenGuide(guild.id)) return;
+
+    const permissionsNeeded = [
+        PermissionFlagsBits.ViewChannel,
+        PermissionFlagsBits.SendMessages,
+        PermissionFlagsBits.EmbedLinks,
+    ];
+
+    let targetChannel = null;
+
+    // 1. Try system channel first if bot has permissions
+    if (guild.systemChannel && guild.members?.me) {
+        const perms = guild.systemChannel.permissionsFor(guild.members.me);
+        if (perms && perms.has(permissionsNeeded)) {
+            targetChannel = guild.systemChannel;
+        }
+    }
+
+    // 2. Fall back to designated music or general text channel
+    if (!targetChannel && guild.channels?.cache) {
+        const preferredNames = ['general', 'chat', 'bot-commands', 'commands', 'music', 'lobby', 'main', 'welcome'];
+        const textChannels = Array.from(guild.channels.cache.values()).filter(c =>
+            c.isTextBased() &&
+            !c.isThread?.() &&
+            !c.isVoiceBased?.() &&
+            guild.members?.me &&
+            c.permissionsFor(guild.members.me)?.has(permissionsNeeded)
+        );
+
+        targetChannel = textChannels.find(c => preferredNames.includes(c.name?.toLowerCase())) || textChannels[0];
+    }
+
+    if (!targetChannel) return;
+
+    // Mark as seen immediately
+    setHasSeenGuide(guild.id, true);
+
+    try {
+        const promptEmbed = createEmbed('Info', guild.id)
+            .setAuthor({
+                name: '✨ Thanks for inviting Reso!',
+                iconURL: 'https://cdn.discordapp.com/emojis/741605543046807626.gif',
+            })
+            .setDescription(
+                `Hello **${guild.name}**! ☕ Thanks for inviting Reso — your high-quality Discord music companion.\n\n` +
+                `Would you like a quick 1-minute guide covering **commands**, **smart autoplay**, and **saving playlists**?`
+            );
+
+        const row = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId(`guide_yes_guild_${guild.id}`)
+                .setLabel('Yes, show quick guide')
+                .setEmoji('✨')
+                .setStyle(ButtonStyle.Success),
+            new ButtonBuilder()
+                .setCustomId(`guide_no_guild_${guild.id}`)
+                .setLabel("No, I'm good")
+                .setEmoji('❌')
+                .setStyle(ButtonStyle.Secondary)
+        );
+
+        const promptMsg = await targetChannel.send({
+            embeds: [promptEmbed],
+            components: [row],
+        });
+
+        const collector = promptMsg.createMessageComponentCollector({
+            componentType: ComponentType.Button,
+            time: 90000, // 90 seconds
+        });
+
+        collector.on('collect', async (interaction) => {
+            if (interaction.customId === `guide_yes_guild_${guild.id}`) {
+                const guideEmbed = createQuickGuideEmbed(guild.id);
+                await interaction.update({
+                    embeds: [guideEmbed],
+                    components: [],
+                }).catch(() => {});
+                collector.stop('handled');
+            } else if (interaction.customId === `guide_no_guild_${guild.id}`) {
+                const dismissEmbed = createEmbed('Success', guild.id)
+                    .setDescription(`✨ All set! Enjoy the music in **${guild.name}** 🎶. You can always check \`/help\` or \`>help\` whenever you need.`);
+                await interaction.update({
+                    embeds: [dismissEmbed],
+                    components: [],
+                }).catch(() => {});
+                collector.stop('handled');
+            }
+        });
+
+        collector.on('end', async (collected, reason) => {
+            if (reason !== 'handled') {
+                const disabledRow = new ActionRowBuilder().addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('guide_expired')
+                        .setLabel('Quick guide expired')
+                        .setStyle(ButtonStyle.Secondary)
+                        .setDisabled(true)
+                );
+                await promptMsg.edit({ components: [disabledRow] }).catch(() => {});
+            }
+        });
+    } catch (err) {
+        resetHasSeenGuide(guild.id);
+        console.warn(`[Reso] Could not send server invite onboarding prompt in guild ${guild.id}:`, err.message);
     }
 }
 
 module.exports = {
     checkAndPromptFirstTimeGuide,
     createQuickGuideEmbed,
+    promptGuildOnInvite,
 };

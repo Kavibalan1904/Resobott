@@ -19,7 +19,7 @@ const { getDesignatedChannel } = require('./utils/settings');
 const { createEmbed, EMOJIS } = require('./utils/embeds');
 const { createAIProvider } = require('./ai/providers/factory');
 const { handleDashboardRequest } = require('./utils/dashboard');
-const { checkAndPromptFirstTimeGuide } = require('./utils/onboarding');
+const { checkAndPromptFirstTimeGuide, promptGuildOnInvite } = require('./utils/onboarding');
 
 // ── HTTP Health Check & Monitor Server ───────────────────────────
 // Bot-Hosting uses SERVER_PORT, other clouds use PORT. Always bind to 0.0.0.0 for container proxy access.
@@ -230,6 +230,18 @@ client.on('voiceStateUpdate', (oldState, newState) => {
             aloneTimers.delete(guildId);
         }
     }
+});
+
+// ── Guild Join Onboarding (Sends introductory quick guide prompt when newly invited) ──
+client.on('guildCreate', async (guild) => {
+    if (!guild?.id) return;
+    console.log(`[Reso] Joined new guild: "${guild.name}" (${guild.id}) with ${guild.memberCount || 0} members`);
+    // Allow 1.5s for guild channels and permissions cache to settle
+    setTimeout(() => {
+        promptGuildOnInvite(guild).catch((err) => {
+            console.warn(`[Reso] Could not send welcome onboarding prompt in guild ${guild.id}:`, err.message);
+        });
+    }, 1500);
 });
 
 // ── Guild Leave Cleanup (Prevents memory leaks when bot leaves a server) ──

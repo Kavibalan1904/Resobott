@@ -2,7 +2,7 @@ const { describe, it, beforeEach } = require('node:test');
 const assert = require('node:assert');
 const { EventEmitter } = require('events');
 
-const { checkAndPromptFirstTimeGuide, createQuickGuideEmbed } = require('../src/utils/onboarding');
+const { checkAndPromptFirstTimeGuide, createQuickGuideEmbed, promptGuildOnInvite } = require('../src/utils/onboarding');
 const { hasSeenGuide, setHasSeenGuide, resetHasSeenGuide, hasUserSeenGuide, setUserSeenGuide, resetUserSeenGuide } = require('../src/utils/settings');
 const { isTrackDuplicate } = require('../src/autoplay/normalizer');
 const { filterCandidates } = require('../src/autoplay/filter');
@@ -68,6 +68,9 @@ describe('First-time Server Onboarding & Anti-Duplication Regression', () => {
         assert.strictEqual(buttons1.length, 2);
         assert.strictEqual(buttons1[0].data.custom_id, `guide_yes_${testUserId1}`);
         assert.strictEqual(buttons1[1].data.custom_id, `guide_no_${testUserId1}`);
+        // Valid Discord emoji check (must not be '✕' which Discord API rejects)
+        assert.strictEqual(buttons1[0].data.emoji.name, '✨');
+        assert.strictEqual(buttons1[1].data.emoji.name, '❌');
         assert.ok(sentMessage.embeds[0].data.description.includes(`<@${testUserId1}>`));
 
         // User 1 is marked as seen
@@ -139,6 +142,69 @@ describe('First-time Server Onboarding & Anti-Duplication Regression', () => {
         sentMessage = null;
         await checkAndPromptFirstTimeGuide(mockChannel, testGuildId);
         assert.strictEqual(sentMessage, null, 'Expected second invocation to be suppressed');
+    });
+
+    it('should rollback user seen status if channel.send fails so user is not locked out', async () => {
+        const failUserId = 'user_send_fail_999';
+        resetUserSeenGuide(failUserId);
+
+        const errorChannel = {
+            guildId: testGuildId,
+            send: async () => {
+                throw new Error('Discord API Error: 50035 Invalid Form Body');
+            },
+        };
+
+        await checkAndPromptFirstTimeGuide(errorChannel, { id: failUserId, username: 'FailingUser' }, testGuildId);
+
+        // After failure, user should NOT remain marked as seen
+        assert.strictEqual(hasUserSeenGuide(failUserId), false, 'Expected user seen status to rollback to false');
+    });
+
+    it('promptGuildOnInvite should send onboarding prompt to systemChannel when bot joins a new server', async () => {
+        const inviteGuildId = 'guild_invited_456';
+        resetHasSeenGuide(inviteGuildId);
+
+        let sentPayload = null;
+        const mockSystemChannel = {
+            id: 'chan_system_1',
+            isTextBased: () => true,
+            permissionsFor: () => ({ has: () => true }),
+            send: async (payload) => {
+                sentPayload = {
+                    ...payload,
+                    createMessageComponentCollector: () => new EventEmitter(),
+                };
+                return sentPayload;
+            },
+        };
+
+        const mockGuild = {
+            id: inviteGuildId,
+            name: 'Vibe Central',
+            systemChannel: mockSystemChannel,
+            members: { me: { id: 'bot_me' } },
+            channels: { cache: new Map([['chan_system_1', mockSystemChannel]]) },
+        };
+
+        assert.strictEqual(hasSeenGuide(inviteGuildId), false);
+        await promptGuildOnInvite(mockGuild);
+
+        assert.ok(sentPayload, 'Expected welcome prompt to be sent on guild invite');
+        assert.ok(sentPayload.embeds[0].data.description.includes('Vibe Central'));
+        assert.strictEqual(sentPayload.components.length, 1);
+        const buttons = sentPayload.components[0].components;
+        assert.strictEqual(buttons[0].data.custom_id, `guide_yes_guild_${inviteGuildId}`);
+        assert.strictEqual(buttons[1].data.custom_id, `guide_no_guild_${inviteGuildId}`);
+        assert.strictEqual(buttons[1].data.emoji.name, '❌');
+
+        // Marked as seen
+        assert.strictEqual(hasSeenGuide(inviteGuildId), true);
+
+        // Second call suppressed
+        sentPayload = null;
+        await promptGuildOnInvite(mockGuild);
+        assert.strictEqual(sentPayload, null);
     });
 
     it('isTrackDuplicate should identify movie subtitle and channel re-upload variants as duplicates', () => {
