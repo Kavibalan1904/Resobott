@@ -269,7 +269,11 @@ module.exports = {
                     try {
                         console.log(`[Reso] ↻ ${searchSource} yielded no results, falling back to ytsearch...`);
                         result = await player.search({ query, source: 'ytsearch' }, interaction.user);
-                        if (result?.tracks?.length > 0) fallbackNote = 'Searched via YouTube Video';
+                        if (result?.tracks?.length > 0) {
+                            fallbackNote = 'Searched via YouTube Video';
+                            detectedPlatform = 'youtube';
+                            searchSource = 'ytsearch';
+                        }
                     } catch {}
                 }
 
@@ -483,12 +487,18 @@ module.exports = {
             track.isRecommendation = false;
 
             // Preserve and accurately assign sourceName
-            if (detectedPlatform === 'spotify' || (isUrl && isSpotifyUrl(rawQuery || query)) || (searchSource === 'spsearch' && !isUrl)) {
+            const isExplicitSpotifyUrl = isUrl && isSpotifyUrl(rawQuery || query);
+            const isTrackSpotifyUri = track.info?.uri && (track.info.uri.includes('spotify.com') || track.info.uri.startsWith('spotify:'));
+            const isFromSpotifySearch = (searchSource === 'spsearch' && !isUrl && (!fallbackNote || !fallbackNote.includes('YouTube')));
+
+            if (isExplicitSpotifyUrl || isTrackSpotifyUri || isFromSpotifySearch) {
                 track.sourceName = 'spotify';
                 if (track.info) track.info.sourceName = 'spotify';
-            } else if (detectedPlatform) {
+            } else if (detectedPlatform && detectedPlatform !== 'auto') {
                 track.sourceName = detectedPlatform;
                 if (track.info) track.info.sourceName = detectedPlatform;
+            } else if (track.info?.sourceName) {
+                track.sourceName = track.info.sourceName;
             }
 
             const effectiveSource = getEffectiveSource(track, interaction.guild.id);

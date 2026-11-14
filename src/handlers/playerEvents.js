@@ -151,86 +151,91 @@ function setupLavalinkEvents(client) {
         activeRetries.add(guildId);
 
         try {
-            // Build a search query from the clean track title + author
+            // Build a search query from the clean track title + author, plus a core title fallback
             const rawTitle = track?.info?.title || '';
             const author = track?.info?.author && !/unknown|various/i.test(track.info.author) ? track.info.author : '';
             const sanitizedTitle = (cleanVideoTitle(rawTitle) || rawTitle)
                 .replace(/["'“”‘’]/g, '')
                 .replace(/\s+/g, ' ')
                 .trim();
-            const searchQuery = author && !sanitizedTitle.toLowerCase().includes(author.toLowerCase())
-                ? `${sanitizedTitle} ${author}`
-                : sanitizedTitle;
+            const coreTitle = (sanitizedTitle.split(/[|\-–—]/)[0] || sanitizedTitle).trim();
+            const queriesToTry = [
+                author && !sanitizedTitle.toLowerCase().includes(author.toLowerCase()) ? `${sanitizedTitle} ${author}` : sanitizedTitle,
+                coreTitle,
+            ].filter((q, idx, arr) => q && arr.indexOf(q) === idx);
             const cleanTitle = sanitizedTitle;
             const isrc = track?.info?.isrc || null;
             const originalSource = (track?.info?.sourceName || '').toLowerCase();
 
-            if (!searchQuery) return false;
+            if (!cleanTitle) return false;
             if (!player.node || !player.node.connected) return false;
 
             // If YouTube blocks playback (e.g. login required / bot detection), prioritize alternative sources
             // including SoundCloud (scsearch) and Spotify (spsearch) to bypass the YouTube login block completely.
+            // Do NOT retry on YouTube (ytsearch) if YouTube is what threw the login block.
             const isYoutubeBlock = /login|All clients failed|bot detection/i.test(`${reason} ${errorDetails}`);
             const fallbackSources = isYoutubeBlock
-                ? ['scsearch', 'spsearch', 'ytmsearch', 'ytsearch']
+                ? ['scsearch', 'spsearch', 'ytmsearch']
                 : ['spsearch', 'ytmsearch', 'scsearch', 'ytsearch'];
 
             for (const fallbackSource of fallbackSources) {
-                const ts = new Date().toISOString();
-                console.log(`[Reso ${ts}] ↻ RETRY: Quick retry for "${cleanTitle}" via ${fallbackSource} (reason: ${reason})`);
-                try {
-                    const searchPromise = player.search({ query: searchQuery, source: fallbackSource }, track.requester);
-                    let timeoutId;
-                    const timeoutPromise = new Promise((_, reject) => {
-                        timeoutId = setTimeout(() => reject(new Error('Retry search timeout')), 15000);
-                    });
-                    const result = await Promise.race([searchPromise, timeoutPromise]);
-                    clearTimeout(timeoutId);
+                for (const searchQuery of queriesToTry) {
+                    const ts = new Date().toISOString();
+                    console.log(`[Reso ${ts}] ↻ RETRY: Quick retry for "${searchQuery}" via ${fallbackSource} (reason: ${reason})`);
+                    try {
+                        const searchPromise = player.search({ query: searchQuery, source: fallbackSource }, track.requester);
+                        let timeoutId;
+                        const timeoutPromise = new Promise((_, reject) => {
+                            timeoutId = setTimeout(() => reject(new Error('Retry search timeout')), 15000);
+                        });
+                        const result = await Promise.race([searchPromise, timeoutPromise]);
+                        clearTimeout(timeoutId);
 
-                    if (result && result.tracks && result.tracks.length > 0) {
-                        // Check if a new track started playing while we were searching (e.g. manual skip)
-                        if (player.playing && player.queue.current && player.queue.current.info?.uri !== track.info?.uri) {
-                            console.log(`[Reso] ⏭️ Retry aborted: A new track is already playing.`);
-                            return false;
-                        }
-
-                        // For ytmsearch, pick the first track (exact official audio match).
-                        // For ytsearch, pick the second track to avoid playing the exact same broken video.
-                        let trackIndex = 0;
-                        if ((fallbackSource === 'ytsearch' || fallbackSource === 'youtube') && result.tracks.length > 1) {
-                            trackIndex = 1;
-                        }
-                        const resolvedTrack = result.tracks[trackIndex];
-                        resolvedTrack.requester = track.requester;
-                        const resolvedSource = resolvedTrack?.info?.sourceName ? capitalize(resolvedTrack.info.sourceName) : fallbackSource;
-                        console.log(`[Reso] ✓ Retry resolved: "${truncate(resolvedTrack.info?.title, 40)}" from ${resolvedSource}`);
-
-                        successfulRetries.add(guildId); // Mark as successfully retried BEFORE playing to suppress queueEnd race condition
-                        await player.play({ clientTrack: resolvedTrack });
-
-                        const channel = getPlayerTextChannel(player);
-                        if (channel) {
-                            const isSamePlatform = (originalSource === 'youtube' || originalSource === 'youtubemusic')
-                                && (resolvedSource.toLowerCase() === 'youtube' || resolvedSource.toLowerCase() === 'youtubemusic');
-
-                            let messageText;
-                            if (isSamePlatform) {
-                                messageText = `Primary audio stream for **${truncate(rawTitle, 50)}** ${reason}. Reconnected with alternative audio stream.`;
-                            } else if (isYoutubeBlock) {
-                                messageText = `YouTube audio stream for **${truncate(rawTitle, 50)}** was blocked (login required). Switched to alternative audio on **${resolvedSource}**.`;
-                            } else if (originalSource && originalSource !== 'unknown') {
-                                messageText = `Track **${truncate(rawTitle, 50)}** was unavailable on **${capitalize(originalSource)}**. Switched to **${resolvedSource}**.`;
-                            } else {
-                                messageText = `Track **${truncate(rawTitle, 50)}** ${reason}. Switched to **${resolvedSource}**.`;
+                        if (result && result.tracks && result.tracks.length > 0) {
+                            // Check if a new track started playing while we were searching (e.g. manual skip)
+                            if (player.playing && player.queue.current && player.queue.current.info?.uri !== track.info?.uri) {
+                                console.log(`[Reso] ⏭️ Retry aborted: A new track is already playing.`);
+                                return false;
                             }
 
-                            const embed = warningEmbed(messageText);
-                            channel.send({ embeds: [embed] }).catch(() => { });
+                            // For ytmsearch, pick the first track (exact official audio match).
+                            // For ytsearch, pick the second track to avoid playing the exact same broken video.
+                            let trackIndex = 0;
+                            if ((fallbackSource === 'ytsearch' || fallbackSource === 'youtube') && result.tracks.length > 1) {
+                                trackIndex = 1;
+                            }
+                            const resolvedTrack = result.tracks[trackIndex];
+                            resolvedTrack.requester = track.requester;
+                            const resolvedSource = resolvedTrack?.info?.sourceName ? capitalize(resolvedTrack.info.sourceName) : fallbackSource;
+                            console.log(`[Reso] ✓ Retry resolved: "${truncate(resolvedTrack.info?.title, 40)}" from ${resolvedSource}`);
+
+                            successfulRetries.add(guildId); // Mark as successfully retried BEFORE playing to suppress queueEnd race condition
+                            await player.play({ clientTrack: resolvedTrack });
+
+                            const channel = getPlayerTextChannel(player);
+                            if (channel) {
+                                const isSamePlatform = (originalSource === 'youtube' || originalSource === 'youtubemusic')
+                                    && (resolvedSource.toLowerCase() === 'youtube' || resolvedSource.toLowerCase() === 'youtubemusic');
+
+                                let messageText;
+                                if (isSamePlatform) {
+                                    messageText = `Primary audio stream for **${truncate(rawTitle, 50)}** ${reason}. Reconnected with alternative audio stream.`;
+                                } else if (isYoutubeBlock) {
+                                    messageText = `YouTube audio stream for **${truncate(rawTitle, 50)}** was blocked (login required). Switched to alternative audio on **${resolvedSource}**.`;
+                                } else if (originalSource && originalSource !== 'unknown') {
+                                    messageText = `Track **${truncate(rawTitle, 50)}** was unavailable on **${capitalize(originalSource)}**. Switched to **${resolvedSource}**.`;
+                                } else {
+                                    messageText = `Track **${truncate(rawTitle, 50)}** ${reason}. Switched to **${resolvedSource}**.`;
+                                }
+
+                                const embed = warningEmbed(messageText);
+                                channel.send({ embeds: [embed] }).catch(() => { });
+                            }
+                            return true;
                         }
-                        return true;
+                    } catch (err) {
+                        console.warn(`[Reso] ✗ Retry search on ${fallbackSource} for "${searchQuery}" failed: ${err.message}`);
                     }
-                } catch (err) {
-                    console.warn(`[Reso] ✗ Retry search on ${fallbackSource} failed: ${err.message}`);
                 }
             }
 

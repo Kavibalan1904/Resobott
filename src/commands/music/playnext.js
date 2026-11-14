@@ -214,6 +214,9 @@ module.exports = {
                     try {
                         console.log(`[Reso] ↻ PlayNext ${searchSource} yielded no results, falling back to ytsearch...`);
                         result = await player.search({ query, source: 'ytsearch' }, interaction.user);
+                        if (result?.tracks?.length > 0) {
+                            searchSource = 'ytsearch';
+                        }
                     } catch {}
                 }
 
@@ -420,12 +423,23 @@ module.exports = {
             track.isRecommendation = false;
 
             // Preserve and accurately assign sourceName
-            if ((queryIsUrl && isSpotifyUrl(rawQuery || query)) || (searchSource === 'spsearch' && !queryIsUrl) || source === 'spotify') {
-                track.sourceName = 'spotify';
-                if (track.info) track.info.sourceName = 'spotify';
+            const isExplicitSpotifyUrl = queryIsUrl && isSpotifyUrl(rawQuery || query);
+            const isTrackSpotifyUri = track.info?.uri && (track.info.uri.includes('spotify.com') || track.info.uri.startsWith('spotify:'));
+            const isFromSpotifySearch = (searchSource === 'spsearch' && !queryIsUrl);
+
+            if (isExplicitSpotifyUrl || isTrackSpotifyUri || isFromSpotifySearch || source === 'spotify') {
+                if (searchSource === 'ytsearch') {
+                    track.sourceName = 'youtube';
+                    if (track.info) track.info.sourceName = 'youtube';
+                } else {
+                    track.sourceName = 'spotify';
+                    if (track.info) track.info.sourceName = 'spotify';
+                }
             } else if (source && source !== 'auto') {
                 track.sourceName = source;
                 if (track.info) track.info.sourceName = source;
+            } else if (track.info?.sourceName) {
+                track.sourceName = track.info.sourceName;
             }
 
             const effectiveSource = getEffectiveSource(track, interaction.guild.id);
