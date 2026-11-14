@@ -59,7 +59,7 @@ class ListeningSessionContext {
         if (!track?.info) return;
         this.mostRecentManualTrack = track;
         this.recentManualTracks.unshift(track);
-        if (this.recentManualTracks.length > 20) {
+        if (this.recentManualTracks.length > 50) {
             this.recentManualTracks.pop();
         }
 
@@ -81,7 +81,7 @@ class ListeningSessionContext {
         const isAutoplay = track.requester?.id === 'autoplay';
         if (isAutoplay) {
             this.recentAutoplayRecommendations.unshift(track);
-            if (this.recentAutoplayRecommendations.length > 20) {
+            if (this.recentAutoplayRecommendations.length > 50) {
                 this.recentAutoplayRecommendations.pop();
             }
         }
@@ -94,7 +94,7 @@ class ListeningSessionContext {
     recordTrackCompletion(track) {
         if (!track?.info) return;
         this.recentSuccessfulTracks.unshift(track);
-        if (this.recentSuccessfulTracks.length > 30) {
+        if (this.recentSuccessfulTracks.length > 50) {
             this.recentSuccessfulTracks.pop();
         }
 

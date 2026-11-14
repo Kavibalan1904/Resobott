@@ -94,6 +94,25 @@ function removeTimezone(guildId) {
     }
 }
 
+function hasSeenGuide(guildId) {
+    if (!guildId) return true; // Don't prompt in DMs
+    return Boolean(settings[guildId]?.hasSeenGuide);
+}
+
+function setHasSeenGuide(guildId, seen = true) {
+    if (!guildId) return;
+    if (!settings[guildId]) settings[guildId] = {};
+    settings[guildId].hasSeenGuide = seen;
+    saveSettings(true);
+}
+
+function resetHasSeenGuide(guildId) {
+    if (settings[guildId] && settings[guildId].hasSeenGuide !== undefined) {
+        delete settings[guildId].hasSeenGuide;
+        saveSettings(true);
+    }
+}
+
 // Initial load
 loadSettings();
 
@@ -105,4 +124,7 @@ module.exports = {
     getTimezone,
     setTimezone,
     removeTimezone,
+    hasSeenGuide,
+    setHasSeenGuide,
+    resetHasSeenGuide,
 };

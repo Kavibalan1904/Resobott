@@ -166,6 +166,32 @@ function stringSimilarity(s1, s2) {
     return (longer.length - costs[shorter.length]) / longer.length;
 }
 
+const LABEL_CHANNEL_REGEX = /\b(vevo|official|channel|studio|records|recordings|music|tv|media|productions?|entertainment|films?|pictures|movies?|series|label|south|audio|video|t-series|divo)\b/i;
+
+function isChannelOrPublisher(artist) {
+    if (!artist || artist.length < 2) return true;
+    return LABEL_CHANNEL_REGEX.test(artist);
+}
+
+/**
+ * Extract clean core song title without movie credits, subtitles, or parens
+ * e.g. "Devuda Devuda Official Video | Rajinikanth | Chandramukhi" -> "devuda devuda"
+ *      "Thannane Thamarapoo (From 'Periyanna')" -> "thannane thamarapoo"
+ */
+function extractCoreTitle(rawTitle) {
+    if (!rawTitle || typeof rawTitle !== 'string') return '';
+    const firstPart = rawTitle.split(/[\|\-–—:]/)[0] || rawTitle;
+    return firstPart
+        .replace(/\((?:from\s+)?["']?.*?["']?\)/gi, ' ')
+        .replace(/\[(?:from\s+)?["']?.*?["']?\]/gi, ' ')
+        .replace(/[\(\[\{].*?[\)\]\}]/g, ' ')
+        .replace(/\b(official\s+video|video\s+song|lyric\s+video|full\s+song|audio\s+song|video|audio|lyrics?|hd|4k|mv|remastered)\b/gi, ' ')
+        .toLowerCase()
+        .replace(/[^\w\s\u00C0-\u024F\u0900-\u0D7F]/gi, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
 /**
  * Determine if candidate is a duplicate of a reference track
  * Evaluates: exact video ID, canonical URL, normalized title + artist, and conservative similarity.
@@ -208,9 +234,27 @@ function isTrackDuplicate(candidateInfo, referenceInfo) {
 
     // Exact normalized title match
     if (candNormTitle === refNormTitle) {
-        // If authors match or either author is unknown/contained, it's a duplicate
-        return Boolean(!candNormArtist || !refNormArtist || candNormArtist === refNormArtist ||
-            candNormArtist.includes(refNormArtist) || refNormArtist.includes(candNormArtist));
+        if (!candNormArtist || !refNormArtist || candNormArtist === refNormArtist ||
+            candNormArtist.includes(refNormArtist) || refNormArtist.includes(candNormArtist) ||
+            isChannelOrPublisher(candNormArtist) || isChannelOrPublisher(refNormArtist) ||
+            candNormTitle.length >= 7) {
+            return true;
+        }
+    }
+
+    // 4. Core Base Title Match (Catches variants like "Devuda Devuda", "Devuda Devuda (From Chandramukhi)", "Devuda Devuda Video Song | Rajinikanth")
+    const candCore = extractCoreTitle(candidateInfo.title);
+    const refCore = extractCoreTitle(referenceInfo.title);
+    if (candCore && refCore && candCore.length > 2 && refCore.length > 2) {
+        if (candCore === refCore || (candCore.length > 5 && refCore.length > 5 && (candCore.startsWith(refCore) || refCore.startsWith(candCore)))) {
+            const authorMatches = !candNormArtist || !refNormArtist || candNormArtist === refNormArtist ||
+                candNormArtist.includes(refNormArtist) || refNormArtist.includes(candNormArtist) ||
+                isChannelOrPublisher(candNormArtist) || isChannelOrPublisher(refNormArtist) ||
+                candCore === refCore;
+            if (authorMatches) {
+                return true;
+            }
+        }
     }
 
     // Fast length ratio check: if length delta > 12%, Levenshtein similarity cannot exceed 0.88
@@ -262,6 +306,7 @@ function isExcluded(candidateTrack, exclusions) {
 module.exports = {
     normalizeTitle,
     normalizeArtist,
+    extractCoreTitle,
     getCanonicalIdentifier,
     getCanonicalUrl,
     stringSimilarity,

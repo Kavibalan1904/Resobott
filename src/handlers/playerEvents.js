@@ -3,6 +3,7 @@ const { truncate, markNodeError, getHealthyNodes, getBestNode, computeNodeScore,
 const { getAutoplayTrack, updateSessionState } = require('../utils/recommendations');
 const { guildContextManager, autoplayStore, setTrackMetadata, getTrackMetadata } = require('../autoplay');
 const { getDesignatedChannel } = require('../utils/settings');
+const { checkAndPromptFirstTimeGuide } = require('../utils/onboarding');
 
 /**
  * Setup all Lavalink event listeners on the LavalinkManager
@@ -429,6 +430,11 @@ function setupLavalinkEvents(client) {
             lastNowPlayingMessage.set(player.guildId, sentMsg);
         } catch {
             lastNowPlayingMessage.delete(player.guildId);
+        }
+
+        // ── First-time Onboarding Prompt in new servers ──
+        if (player.guildId && !isAutoplayTrack && track.requester && track.requester.id !== 'autoplay') {
+            checkAndPromptFirstTimeGuide(channel, player.guildId, track.requester).catch(() => {});
         }
     });
 

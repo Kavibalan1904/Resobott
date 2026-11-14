@@ -40,7 +40,7 @@ const DEVOTIONAL_PATTERNS = [
 const DEFAULT_FILTER_OPTIONS = {
     minDurationMs: 45000,      // 45 seconds minimum
     maxDurationMs: 660000,     // 11 minutes maximum (eliminates 15-20+ min jukeboxes/movie clips)
-    historyWindowSize: 20,     // Compare against last 20 history tracks
+    historyWindowSize: 50,     // Compare against last 50 history tracks (prevents repeating songs)
     allowLiveStreams: false,   // Reject 24/7 streams
 };
 

@@ -23,9 +23,15 @@ const { handleDashboardRequest } = require('./utils/dashboard');
 // ── HTTP Health Check & Monitor Server ───────────────────────────
 // Bot-Hosting uses SERVER_PORT, other clouds use PORT. Always bind to 0.0.0.0 for container proxy access.
 const PORT = parseInt(process.env.SERVER_PORT || process.env.PORT || process.env.DASHBOARD_PORT) || 3000;
-http.createServer((req, res) => {
+const server = http.createServer((req, res) => {
     handleDashboardRequest(req, res, client);
-}).listen(PORT, '0.0.0.0', () => {
+});
+
+server.on('error', (err) => {
+    console.error(`[Reso] ⚠️ HTTP server error on port ${PORT}:`, err.message);
+});
+
+server.listen(PORT, '0.0.0.0', () => {
     console.log(`[Reso] ✓ Health check & Monitor Dashboard listening on 0.0.0.0:${PORT}`);
 });
 
