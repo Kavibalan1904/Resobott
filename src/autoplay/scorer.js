@@ -187,6 +187,27 @@ class CandidateScorer {
                     }
                 }
             }
+
+            // Hearing pattern adjustments from listeningProfile
+            if (context?.listeningProfile) {
+                const { preferredVibes, avoidedVibes, preferredLanguages } = context.listeningProfile;
+
+                // If candidate matches an avoided vibe (where user skipped in < 1 min), penalize
+                if (avoidedVibes && candVibe && avoidedVibes.has(candVibe)) {
+                    sessionRelevance = Math.max(0, sessionRelevance - 25);
+                }
+
+                // If candidate matches a preferred vibe (where user listened through), boost
+                if (preferredVibes && candVibe && preferredVibes.has(candVibe)) {
+                    sessionRelevance = Math.min(100, sessionRelevance + 15);
+                }
+
+                // Language matching from active hearing history
+                if (preferredLanguages && candLang && preferredLanguages.has(candLang)) {
+                    sessionRelevance = Math.min(100, sessionRelevance + 10);
+                }
+            }
+
             sessionRelevance = Math.min(100, Math.max(0, sessionRelevance));
 
             // 4. Positive feedback & preference match (0-100)
@@ -208,13 +229,28 @@ class CandidateScorer {
                 }
             }
 
+            // Penalty for artist with recent early skips (< 1 minute) in session
+            if (context?.artistEarlySkipCounts && candNormArtist) {
+                const earlySkips = context.artistEarlySkipCounts.get(candNormArtist) || 0;
+                if (earlySkips > 0) {
+                    feedbackMatch = Math.max(5, feedbackMatch - (earlySkips * 35));
+                }
+            }
+
             // Check skip events
             if (earlySkipNormalizedTitles.length > 0) {
                 for (let i = 0; i < earlySkipNormalizedTitles.length; i++) {
                     if (candNormTitle.includes(earlySkipNormalizedTitles[i])) {
-                        feedbackMatch = Math.min(feedbackMatch, 25);
+                        feedbackMatch = Math.min(feedbackMatch, 10);
                         break;
                     }
+                }
+            }
+
+            // Check earlySkippedTracks set directly
+            if (context?.earlySkippedTracks) {
+                if (context.earlySkippedTracks.has(candNormTitle)) {
+                    feedbackMatch = 0;
                 }
             }
 

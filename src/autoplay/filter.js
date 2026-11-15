@@ -3,7 +3,7 @@
  * Rejects non-music, podcasts, tutorials, streams, out-of-bounds durations, and duplicates.
  */
 
-const { isTrackDuplicate, normalizeTitle } = require('./normalizer');
+const { isTrackDuplicate, normalizeTitle, getCanonicalIdentifier } = require('./normalizer');
 
 // Obvious non-music / non-track video keywords
 const NON_MUSIC_PATTERNS = [
@@ -34,6 +34,20 @@ const NON_MUSIC_PATTERNS = [
 const DEVOTIONAL_PATTERNS = [
     /\b(devotional|bhajan|bhajans|bhakti|stotram|stuti|aarti|chalisa|mantra|mantras|suprabhatam|slokam|shloka|chants?|prayers?|pooja|puja|keerthana|keerthanalu|kavacham|namavali|sahasranamam|ashtakam|namaskar|bhakthi)\b/i,
     /\b(ayyappa|ayyappan|murugan\s+songs|vinayagar\s+songs|amman\s+songs|perumal\s+songs|krishna\s+bhajan|shiva\s+stuti|hanuman\s+chalisa)\b/i,
+];
+
+// Background Music (BGM), Movie Themes, Instrumental Scores, and OST patterns
+const BGM_PATTERNS = [
+    /\b(bgm|b\.g\.m|bgms)\b/i,
+    /\b(background\s+music|background\s+score|original\s+background\s+score)\b/i,
+    /\b(ost|original\s+soundtrack|original\s+score|film\s+score|motion\s+picture\s+score)\b/i,
+    /\b(theme|themes|theme\s+music|theme\s+track|theme\s+song\s+instrumental|instrumental\s+theme)\b/i,
+    /\b(instrumental|instrumentals)\b/i,
+    /\b(character\s+theme|hero\s+theme|villain\s+theme|entry\s+theme|climax\s+theme|mass\s+theme|intro\s+theme)\b/i,
+    /\b(interval\s+bgm|climax\s+bgm|entry\s+bgm|mass\s+bgm|intro\s+bgm|fight\s+bgm|chase\s+bgm|teaser\s+bgm|trailer\s+bgm)\b/i,
+    /\b(title\s+bgm|theme\s+bgm|action\s+bgm|love\s+bgm|sad\s+bgm|emotional\s+bgm)\b/i,
+    /\btheme\s+of\b/i,
+    /\b(instrumental\s+score|soundtrack\s+score)\b/i,
 ];
 
 // Default configuration options
@@ -80,6 +94,7 @@ function filterCandidates(candidates, context, options = {}) {
     const seedTrack = context?.currentTrack || context?.mostRecentManualTrack || null;
     const seedText = seedTrack?.info ? `${seedTrack.info.title || ''} ${seedTrack.info.author || ''}`.toLowerCase() : '';
     const isSeedDevotional = DEVOTIONAL_PATTERNS.some(p => p.test(seedText));
+    const isSeedBgm = BGM_PATTERNS.some(p => p.test(seedText));
 
     for (const track of candidates) {
         if (!track || !track.info) {
@@ -121,6 +136,26 @@ function filterCandidates(candidates, context, options = {}) {
             const candText = `${titleLower} ${String(info.author || '').toLowerCase()}`;
             if (DEVOTIONAL_PATTERNS.some(p => p.test(candText))) {
                 rejectionCounts.streamOrPodcast++;
+                continue;
+            }
+        }
+
+        // 2c. BGM / Instrumental Theme check
+        // Unless the user is intentionally listening to BGM/OST tracks, reject background music & scores
+        if (!isSeedBgm) {
+            const candText = `${titleLower} ${String(info.author || '').toLowerCase()}`;
+            if (BGM_PATTERNS.some(p => p.test(candText))) {
+                rejectionCounts.streamOrPodcast++;
+                continue;
+            }
+        }
+
+        // 2d. Early skipped track check (< 1 minute skips in this session)
+        if (context?.earlySkippedTracks) {
+            const candNorm = normalizeTitle(info.title);
+            const candId = getCanonicalIdentifier(info);
+            if ((candNorm && context.earlySkippedTracks.has(candNorm)) || (candId && context.earlySkippedTracks.has(candId))) {
+                rejectionCounts.failedCandidate++;
                 continue;
             }
         }
@@ -215,4 +250,5 @@ module.exports = {
     DEFAULT_FILTER_OPTIONS,
     NON_MUSIC_PATTERNS,
     DEVOTIONAL_PATTERNS,
+    BGM_PATTERNS,
 };

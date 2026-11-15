@@ -4,6 +4,7 @@
  */
 
 const { getCanonicalIdentifier, normalizeTitle, normalizeArtist } = require('./normalizer');
+const { detectLanguage, detectVibe } = require('../utils/recommendations');
 
 class ListeningSessionContext {
     constructor(guildId) {
@@ -37,6 +38,17 @@ class ListeningSessionContext {
         this.completionEvents = [];             // { trackTitle, timestamp }
         this.explicitLikes = new Set();         // Set of normalized strings (artist, song)
         this.explicitDislikes = new Set();      // Set of normalized strings (artist, song)
+
+        // Early skip tracking (< 1 min) & hearing patterns
+        this.earlySkippedTracks = new Set();    // Set of normalized titles & canonical IDs
+        this.artistEarlySkipCounts = new Map(); // Map of normalized artist -> skip count
+        this.listeningProfile = {
+            preferredVibes: new Map(),          // vibe -> count of completed/engaged tracks
+            preferredLanguages: new Map(),      // lang -> count of completed/engaged tracks
+            preferredArtists: new Map(),        // artist -> count of completed tracks
+            avoidedVibes: new Map(),            // vibe -> count of early skips
+            avoidedArtists: new Set(),          // artists with repeated early skips
+        };
 
         // Concurrency and generation tracking
         this.generationId = 0;
@@ -88,7 +100,7 @@ class ListeningSessionContext {
     }
 
     /**
-     * Record natural track completion
+     * Record natural track completion (or engagement > 1 min)
      * @param {object} track 
      */
     recordTrackCompletion(track) {
@@ -97,6 +109,24 @@ class ListeningSessionContext {
         if (this.recentSuccessfulTracks.length > 50) {
             this.recentSuccessfulTracks.pop();
         }
+
+        const artist = normalizeArtist(track.info.author);
+        if (artist) {
+            this.explicitLikes.add(artist);
+            this.listeningProfile.preferredArtists.set(artist, (this.listeningProfile.preferredArtists.get(artist) || 0) + 1);
+        }
+
+        // Register positive hearing pattern (vibe & language)
+        try {
+            const vibe = detectVibe ? detectVibe(track.info.title, track.info.author) : null;
+            if (vibe) {
+                this.listeningProfile.preferredVibes.set(vibe, (this.listeningProfile.preferredVibes.get(vibe) || 0) + 1);
+            }
+            const lang = detectLanguage ? detectLanguage(track.info.title, track.info.author, 'english') : 'english';
+            if (lang) {
+                this.listeningProfile.preferredLanguages.set(lang, (this.listeningProfile.preferredLanguages.get(lang) || 0) + 1);
+            }
+        } catch { /* ignore */ }
 
         this.completionEvents.unshift({
             title: track.info.title,
@@ -109,17 +139,24 @@ class ListeningSessionContext {
 
     /**
      * Record track skip and determine skip type (early vs late)
+     * Tracks skipped within 1 minute are penalized and used to train hearing patterns
      * @param {object} track 
      * @param {number} [elapsedMs] 
      */
     recordTrackSkip(track, elapsedMs = null) {
         if (!track?.info) return;
+
+        // Prevent duplicate registration of the same skip event if called from both command and trackEnd within 3s
+        if (this.skipEvents.length > 0 && this.skipEvents[0].title === track.info.title && (Date.now() - (this.skipEvents[0].timestamp || 0)) < 3000) {
+            return;
+        }
+
         const totalDuration = track.info.duration || 0;
         const playedMs = elapsedMs !== null ? elapsedMs :
             (this.currentTrackStartTime ? Date.now() - this.currentTrackStartTime : 0);
 
-        // Early skip: < 30 seconds or < 25% of total song duration
-        const isEarly = playedMs < 30000 || (totalDuration > 0 && (playedMs / totalDuration) < 0.25);
+        // Early skip: < 60 seconds (1 minute) or < 25% of total song duration
+        const isEarly = playedMs < 60000 || (totalDuration > 0 && (playedMs / totalDuration) < 0.25);
         const skipType = isEarly ? 'early' : 'late';
 
         this.skipEvents.unshift({
@@ -133,12 +170,33 @@ class ListeningSessionContext {
             this.skipEvents.pop();
         }
 
-        // If it's an early skip on an autoplay track, register negative feedback
-        if (track.requester?.id === 'autoplay' && isEarly) {
-            const artist = normalizeArtist(track.info.author);
+        const normTitle = normalizeTitle(track.info.title);
+        const artist = normalizeArtist(track.info.author);
+        const canonicalId = getCanonicalIdentifier(track.info);
+        const isAutoplay = track.isAutoplay || track.requester?.id === 'autoplay';
+
+        // When skipped early (< 1 minute), train the bot to avoid this song & train hearing pattern
+        if (isEarly) {
+            if (normTitle) this.earlySkippedTracks.add(normTitle);
+            if (canonicalId) this.earlySkippedTracks.add(canonicalId);
+
+            // Register avoided vibe in hearing profile
+            try {
+                const vibe = detectVibe ? detectVibe(track.info.title, track.info.author) : null;
+                if (vibe) {
+                    this.listeningProfile.avoidedVibes.set(vibe, (this.listeningProfile.avoidedVibes.get(vibe) || 0) + 1);
+                }
+            } catch { /* ignore */ }
+
             if (artist) {
-                // Weak dislike on repeated early skips
-                this.explicitDislikes.add(artist);
+                const count = (this.artistEarlySkipCounts.get(artist) || 0) + 1;
+                this.artistEarlySkipCounts.set(artist, count);
+
+                // If it's an autoplay track or repeated early skips, add to explicit dislikes & avoided artists
+                if (isAutoplay || count >= 2) {
+                    this.explicitDislikes.add(artist);
+                    this.listeningProfile.avoidedArtists.add(artist);
+                }
             }
         }
     }
