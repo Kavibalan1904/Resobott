@@ -263,19 +263,83 @@ module.exports = {
                 console.warn(`[Reso] Initial search error: ${err.message}`);
             }
 
+            // If primary player node returned no tracks, check all other connected nodes
+            if (!result || !result.tracks || result.tracks.length === 0) {
+                const searchPayload = (isUrl && ytVideoId)
+                    ? { query: ytVideoId, source: 'ytsearch' }
+                    : (isUrl || isAttachment)
+                        ? { query }
+                        : { query, source: searchSource };
+
+                for (const [nodeId, node] of manager.nodeManager.nodes) {
+                    if (node.connected && nodeId !== player.node?.id) {
+                        try {
+                            const nodeRes = await node.search(searchPayload, interaction.user);
+                            if (nodeRes?.tracks?.length > 0) {
+                                console.log(`[Reso] 🟢 Found ${nodeRes.tracks.length} track(s) via ${searchSource || 'direct'} on node "${node.id}"`);
+                                result = nodeRes;
+                                // Switch player to this node so it can stream the track
+                                if (player.node?.id !== node.id && (!player.playing || player.paused)) {
+                                    try {
+                                        await player.changeNode(node.id, false);
+                                        console.log(`[Reso] 🎯 Switched player to "${node.id}" for playback`);
+                                    } catch (changeErr) {
+                                        console.warn(`[Reso] ⚠️ Could not switch node:`, changeErr.message);
+                                    }
+                                }
+                                break;
+                            }
+                        } catch (nodeErr) {
+                            console.warn(`[Reso] Search on node "${node.id}" failed:`, nodeErr.message);
+                        }
+                    }
+                }
+            }
+
             // Quick fallbacks only if primary search found nothing
             if (!result || !result.tracks || result.tracks.length === 0) {
-                // 1. Text search fallback: if ytmsearch or spsearch returned nothing, try YouTube video search
-                if (!isUrl && !isAttachment && (searchSource === 'ytmsearch' || searchSource === 'spsearch')) {
+                // 1. If Spotify was requested (or searchSource === 'spsearch'), try YouTube Music (ytmsearch) FIRST for clean audio
+                if (!isUrl && !isAttachment && (searchSource === 'spsearch' || source === 'auto' || source === 'spotify')) {
                     try {
-                        console.log(`[Reso] ↻ ${searchSource} yielded no results, falling back to ytsearch...`);
-                        result = await player.search({ query, source: 'ytsearch' }, interaction.user);
+                        console.log(`[Reso] ↻ spsearch yielded no results, trying ytmsearch for clean audio...`);
+                        result = await player.search({ query, source: 'ytmsearch' }, interaction.user);
+                        if (!result || !result.tracks || result.tracks.length === 0) {
+                            // Try ytmsearch on all other connected nodes
+                            for (const [nodeId, node] of manager.nodeManager.nodes) {
+                                if (node.connected && nodeId !== player.node?.id) {
+                                    const nodeRes = await node.search({ query, source: 'ytmsearch' }, interaction.user).catch(() => null);
+                                    if (nodeRes?.tracks?.length > 0) {
+                                        result = nodeRes;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
                         if (result?.tracks?.length > 0) {
-                            fallbackNote = 'Searched via YouTube Video';
-                            detectedPlatform = 'youtube';
-                            searchSource = 'ytsearch';
+                            fallbackNote = 'Matched via clean audio';
+                            detectedPlatform = 'spotify';
+                            searchSource = 'ytmsearch';
+                            if (result.tracks[0]) {
+                                result.tracks[0].sourceName = 'spotify';
+                                if (result.tracks[0].info) result.tracks[0].info.sourceName = 'spotify';
+                            }
                         }
                     } catch {}
+                }
+
+                // 2. Text search fallback to YouTube Video (ytsearch) only as a last resort
+                if (!result || !result.tracks || result.tracks.length === 0) {
+                    if (!isUrl && !isAttachment && (searchSource === 'ytmsearch' || searchSource === 'spsearch')) {
+                        try {
+                            console.log(`[Reso] ↻ Clean audio yielded no results, falling back to ytsearch...`);
+                            result = await player.search({ query, source: 'ytsearch' }, interaction.user);
+                            if (result?.tracks?.length > 0) {
+                                fallbackNote = 'Searched via YouTube Video';
+                                detectedPlatform = 'youtube';
+                                searchSource = 'ytsearch';
+                            }
+                        } catch {}
+                    }
                 }
 
                 // 2. YouTube URL fallback
@@ -491,8 +555,9 @@ module.exports = {
             const isExplicitSpotifyUrl = isUrl && isSpotifyUrl(rawQuery || query);
             const isTrackSpotifyUri = track.info?.uri && (track.info.uri.includes('spotify.com') || track.info.uri.startsWith('spotify:'));
             const isFromSpotifySearch = (searchSource === 'spsearch' && !isUrl && (!fallbackNote || !fallbackNote.includes('YouTube')));
+            const isRequestedSpotify = (source === 'auto' || source === 'spotify') && !isUrl && (!fallbackNote || !fallbackNote.includes('YouTube'));
 
-            if (isExplicitSpotifyUrl || isTrackSpotifyUri || isFromSpotifySearch) {
+            if (isExplicitSpotifyUrl || isTrackSpotifyUri || isFromSpotifySearch || isRequestedSpotify) {
                 track.sourceName = 'spotify';
                 if (track.info) track.info.sourceName = 'spotify';
             } else if (detectedPlatform && detectedPlatform !== 'auto') {
