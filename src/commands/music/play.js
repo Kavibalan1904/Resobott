@@ -263,63 +263,18 @@ module.exports = {
                 console.warn(`[Reso] Initial search error: ${err.message}`);
             }
 
-            // If primary player node returned no tracks, check all other connected nodes
-            if (!result || !result.tracks || result.tracks.length === 0) {
-                const searchPayload = (isUrl && ytVideoId)
-                    ? { query: ytVideoId, source: 'ytsearch' }
-                    : (isUrl || isAttachment)
-                        ? { query }
-                        : { query, source: searchSource };
-
-                for (const [nodeId, node] of manager.nodeManager.nodes) {
-                    if (node.connected && nodeId !== player.node?.id) {
-                        try {
-                            const nodeRes = await node.search(searchPayload, interaction.user);
-                            if (nodeRes?.tracks?.length > 0) {
-                                console.log(`[Reso] 🟢 Found ${nodeRes.tracks.length} track(s) via ${searchSource || 'direct'} on node "${node.id}"`);
-                                result = nodeRes;
-                                // Switch player to this node so it can stream the track
-                                if (player.node?.id !== node.id && (!player.playing || player.paused)) {
-                                    try {
-                                        await player.changeNode(node.id, false);
-                                        console.log(`[Reso] 🎯 Switched player to "${node.id}" for playback`);
-                                    } catch (changeErr) {
-                                        console.warn(`[Reso] ⚠️ Could not switch node:`, changeErr.message);
-                                    }
-                                }
-                                break;
-                            }
-                        } catch (nodeErr) {
-                            console.warn(`[Reso] Search on node "${node.id}" failed:`, nodeErr.message);
-                        }
-                    }
-                }
-            }
-
-            // Quick fallbacks only if primary search found nothing
+            // Quick fallbacks only if primary search found nothing (always remaining on current healthy node)
             if (!result || !result.tracks || result.tracks.length === 0) {
                 // 1. If Spotify was requested (or searchSource === 'spsearch'), try YouTube Music (ytmsearch) FIRST for clean audio
                 if (!isUrl && !isAttachment && (searchSource === 'spsearch' || source === 'auto' || source === 'spotify')) {
                     try {
-                        console.log(`[Reso] ↻ spsearch yielded no results, trying ytmsearch for clean audio...`);
+                        console.log(`[Reso] ↻ spsearch yielded no results, querying ytmsearch for official clean audio...`);
                         result = await player.search({ query, source: 'ytmsearch' }, interaction.user);
-                        if (!result || !result.tracks || result.tracks.length === 0) {
-                            // Try ytmsearch on all other connected nodes
-                            for (const [nodeId, node] of manager.nodeManager.nodes) {
-                                if (node.connected && nodeId !== player.node?.id) {
-                                    const nodeRes = await node.search({ query, source: 'ytmsearch' }, interaction.user).catch(() => null);
-                                    if (nodeRes?.tracks?.length > 0) {
-                                        result = nodeRes;
-                                        break;
-                                    }
-                                }
-                            }
-                        }
                         if (result?.tracks?.length > 0) {
                             fallbackNote = 'Matched via clean audio';
-                            detectedPlatform = 'spotify';
+                            detectedPlatform = (source === 'auto' || source === 'spotify') ? 'spotify' : 'youtubemusic';
                             searchSource = 'ytmsearch';
-                            if (result.tracks[0]) {
+                            if (result.tracks[0] && (source === 'auto' || source === 'spotify')) {
                                 result.tracks[0].sourceName = 'spotify';
                                 if (result.tracks[0].info) result.tracks[0].info.sourceName = 'spotify';
                             }

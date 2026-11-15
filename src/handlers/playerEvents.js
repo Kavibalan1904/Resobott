@@ -192,31 +192,8 @@ function setupLavalinkEvents(client) {
                         const timeoutPromise = new Promise((_, reject) => {
                             timeoutId = setTimeout(() => reject(new Error('Retry search timeout')), 15000);
                         });
-                        let result = await Promise.race([searchPromise, timeoutPromise]);
+                        const result = await Promise.race([searchPromise, timeoutPromise]);
                         clearTimeout(timeoutId);
-
-                        // If current player node returned no tracks, check other connected nodes (e.g. backup node with LavaSrc Spotify)
-                        if (!result || !result.tracks || result.tracks.length === 0) {
-                            const lavalinkMgr = player.lavalinkManager || client.lavalink;
-                            if (lavalinkMgr?.nodeManager?.nodes) {
-                                for (const [nodeId, node] of lavalinkMgr.nodeManager.nodes) {
-                                    if (node.connected && nodeId !== player.node?.id) {
-                                        try {
-                                            const nodeRes = await node.search({ query: searchQuery, source: fallbackSource }, track.requester);
-                                            if (nodeRes?.tracks?.length > 0) {
-                                                result = nodeRes;
-                                                if (player.node?.id !== node.id) {
-                                                    try {
-                                                        await player.changeNode(node.id, false);
-                                                    } catch {}
-                                                }
-                                                break;
-                                            }
-                                        } catch {}
-                                    }
-                                }
-                            }
-                        }
 
                         if (result && result.tracks && result.tracks.length > 0) {
                             // Check if a new track started playing while we were searching (e.g. manual skip)
