@@ -204,6 +204,13 @@ describe('Owner Monitor Command & Dashboard Verification', () => {
         assert.strictEqual(metrics.audio.avgBitrateKbps, 96);
         assert.strictEqual(metrics.audio.sourceBreakdown.spotify, 1);
 
+        // Frame stats verification
+        assert.ok(metrics.audio.frames, 'Expected audio frames metrics');
+        assert.strictEqual(typeof metrics.audio.frames.sent === 'number', true);
+        assert.strictEqual(typeof metrics.audio.frames.deficit === 'number', true);
+        assert.strictEqual(typeof metrics.audio.frames.nulled === 'number', true);
+        assert.strictEqual(typeof metrics.audio.frames.qualityPercent === 'number', true);
+
         // Session enrichment
         assert.strictEqual(metrics.sessions[0].bitrateKbps, 96);
         assert.strictEqual(metrics.sessions[0].is247, true);
@@ -219,7 +226,15 @@ describe('Owner Monitor Command & Dashboard Verification', () => {
             twentyFourSeven: new Set(),
             autoplayGuilds: new Set(),
             lavalink: {
-                nodeManager: { nodes: new Map() },
+                nodeManager: {
+                    nodes: new Map([
+                        ['node-1', {
+                            id: 'node-1',
+                            connected: true,
+                            stats: { frameStats: { sent: 12000, nulled: 0, deficit: 0 } },
+                        }],
+                    ]),
+                },
                 players: new Map(),
             },
         };
@@ -241,6 +256,7 @@ describe('Owner Monitor Command & Dashboard Verification', () => {
         assert.ok(dashResponse.includes('System & Audio Engine Monitor'));
         assert.ok(dashResponse.includes('Private Dashboard'));
         assert.ok(dashResponse.includes('Active Streams'));
+        assert.ok(dashResponse.includes('Audio Frames Health'));
         assert.ok(dashResponse.includes('Music Sources'));
 
         let metricsResponse = '';
@@ -252,5 +268,6 @@ describe('Owner Monitor Command & Dashboard Verification', () => {
         assert.ok(metricsResponse.includes('reso_discord_ws_ping_ms 30'));
         assert.ok(metricsResponse.includes('reso_memory_heap_bytes'));
         assert.ok(metricsResponse.includes('reso_audio_queued_tracks'));
+        assert.ok(metricsResponse.includes('reso_audio_frames_sent_total 12000'));
     });
 });

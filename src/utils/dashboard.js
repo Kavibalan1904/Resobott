@@ -152,6 +152,22 @@ function getSystemMetrics(client) {
     const activeStreamsCount = sessions.filter(s => s.playing).length;
     const pausedStreamsCount = sessions.filter(s => s.paused).length;
 
+    let totalFramesSent = 0;
+    let totalFramesNulled = 0;
+    let totalFramesDeficit = 0;
+
+    for (const n of nodeMetrics) {
+        totalFramesSent += (n.frames?.sent || 0);
+        totalFramesNulled += (n.frames?.nulled || 0);
+        totalFramesDeficit += (n.frames?.deficit || 0);
+    }
+
+    const totalLost = totalFramesNulled + totalFramesDeficit;
+    const overallFrameLossPercent = totalFramesSent > 0
+        ? Number(((totalLost / totalFramesSent) * 100).toFixed(2))
+        : 0;
+    const overallFrameQuality = Number((100 - overallFrameLossPercent).toFixed(2));
+
     const audio = {
         activeStreamsCount,
         pausedStreamsCount,
@@ -163,6 +179,13 @@ function getSystemMetrics(client) {
         autoplayGuildsCount: client.autoplayGuilds?.size || 0,
         avgBitrateKbps,
         sourceBreakdown,
+        frames: {
+            sent: totalFramesSent,
+            nulled: totalFramesNulled,
+            deficit: totalFramesDeficit,
+            lossPercent: overallFrameLossPercent,
+            qualityPercent: overallFrameQuality,
+        },
     };
 
     const bot = {
@@ -248,6 +271,24 @@ function generatePrometheusMetrics(metrics) {
         lines.push('# HELP reso_audio_autoplay_guilds Total guilds with autoplay active');
         lines.push('# TYPE reso_audio_autoplay_guilds gauge');
         lines.push(`reso_audio_autoplay_guilds ${metrics.audio.autoplayGuildsCount || 0}`);
+
+        if (metrics.audio.frames) {
+            lines.push('# HELP reso_audio_frames_sent_total Total audio frames sent across all nodes');
+            lines.push('# TYPE reso_audio_frames_sent_total counter');
+            lines.push(`reso_audio_frames_sent_total ${metrics.audio.frames.sent || 0}`);
+
+            lines.push('# HELP reso_audio_frames_deficit_total Total audio frame deficit across all nodes');
+            lines.push('# TYPE reso_audio_frames_deficit_total counter');
+            lines.push(`reso_audio_frames_deficit_total ${metrics.audio.frames.deficit || 0}`);
+
+            lines.push('# HELP reso_audio_frames_nulled_total Total nulled audio frames across all nodes');
+            lines.push('# TYPE reso_audio_frames_nulled_total counter');
+            lines.push(`reso_audio_frames_nulled_total ${metrics.audio.frames.nulled || 0}`);
+
+            lines.push('# HELP reso_audio_frames_quality_percent Overall audio frame quality percentage');
+            lines.push('# TYPE reso_audio_frames_quality_percent gauge');
+            lines.push(`reso_audio_frames_quality_percent ${metrics.audio.frames.qualityPercent || 100}`);
+        }
     }
 
     if (metrics.host) {
@@ -682,6 +723,7 @@ function generateDashboardHtml() {
         </div>
         <div class="header-actions">
             <span id="chip-status" class="chip chip-green">🟢 Primary Connected</span>
+            <span id="chip-frames" class="chip mono">Frames: 100% OK</span>
             <span id="chip-host" class="chip mono">Host: --</span>
             <span id="chip-uptime" class="chip mono">Up: --</span>
             <select id="poll-interval" class="btn mono" onchange="changeInterval()">
@@ -696,7 +738,7 @@ function generateDashboardHtml() {
         </div>
     </header>
 
-    <!-- 6 KPI Stat Tiles -->
+    <!-- KPI Stat Tiles -->
     <div class="kpi-grid">
         <div class="kpi-card">
             <div class="kpi-label">Active Streams</div>
@@ -704,6 +746,17 @@ function generateDashboardHtml() {
             <div class="kpi-sub" id="kpi-sub-streams">
                 <span>0 paused</span> • <span>0 idle</span>
             </div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">
+                <span>Audio Frames Health</span>
+                <span id="kpi-frames-tag" class="tag tag-spotify" style="font-size:9.5px; padding:1px 5px;">100% OK</span>
+            </div>
+            <div class="kpi-value mono" id="kpi-frames-quality">100.0%</div>
+            <div class="kpi-sub" id="kpi-sub-frames">
+                <span id="kpi-frames-sent">0 sent</span> • <span id="kpi-frames-def">0 def</span> • <span id="kpi-frames-nul">0 nul</span>
+            </div>
+            <div class="mini-progress"><div class="mini-progress-fill" id="kpi-frames-bar" style="width:100%; background:var(--green);"></div></div>
         </div>
         <div class="kpi-card">
             <div class="kpi-label">Queued Tracks</div>
@@ -715,8 +768,8 @@ function generateDashboardHtml() {
         <div class="kpi-card">
             <div class="kpi-label">Lavalink Node</div>
             <div class="kpi-value mono" id="kpi-lavalink-ping">-- ms</div>
-            <div class="kpi-sub" id="kpi-sub-frames">
-                <span id="kpi-frames-tag">100% OK</span> • <span id="kpi-drops">0 drops</span>
+            <div class="kpi-sub" id="kpi-sub-node">
+                <span id="kpi-node-role">Primary</span> • <span id="kpi-node-status">Online</span>
             </div>
         </div>
         <div class="kpi-card">
@@ -902,23 +955,49 @@ function generateDashboardHtml() {
             document.getElementById('kpi-bitrate').innerText = (data.audio?.avgBitrateKbps || 64) + ' kbps avg';
             document.getElementById('kpi-filters').innerText = (data.audio?.activeFiltersCount || 0) + ' filter' + (data.audio?.activeFiltersCount !== 1 ? 's' : '');
 
-            // 3. Lavalink Node KPI
+            // 3. Audio Frames Health KPI
             const primary = (data.nodes || []).find(n => n.isPrimary) || (data.nodes || [])[0];
+            const frames = data.audio?.frames || primary?.frames || { sent: 0, nulled: 0, deficit: 0, lossPercent: 0, qualityPercent: 100 };
+            const qPct = frames.qualityPercent !== undefined ? frames.qualityPercent : Number((100 - (frames.lossPercent || 0)).toFixed(1));
+            const qualityElem = document.getElementById('kpi-frames-quality');
+            if (qualityElem) qualityElem.innerText = qPct.toFixed(1) + '%';
+
+            const framesTag = document.getElementById('kpi-frames-tag');
+            const framesBar = document.getElementById('kpi-frames-bar');
+            if (frames.lossPercent > 5) {
+                if (framesTag) { framesTag.className = 'tag tag-youtube'; framesTag.innerText = frames.lossPercent + '% Drop'; }
+                if (qualityElem) qualityElem.style.color = '#ef4444';
+                if (framesBar) framesBar.style.background = '#ef4444';
+            } else if (frames.lossPercent > 1) {
+                if (framesTag) { framesTag.className = 'tag tag-soundcloud'; framesTag.innerText = frames.lossPercent + '% Jitter'; }
+                if (qualityElem) qualityElem.style.color = '#f59e0b';
+                if (framesBar) framesBar.style.background = '#f59e0b';
+            } else {
+                if (framesTag) { framesTag.className = 'tag tag-spotify'; framesTag.innerText = '100% OK'; }
+                if (qualityElem) qualityElem.style.color = '#10b981';
+                if (framesBar) framesBar.style.background = '#10b981';
+            }
+            if (framesBar) framesBar.style.width = Math.max(0, Math.min(100, qPct)) + '%';
+
+            const sentElem = document.getElementById('kpi-frames-sent');
+            if (sentElem) sentElem.innerText = (frames.sent ? frames.sent.toLocaleString() : '0') + ' sent';
+            const defElem = document.getElementById('kpi-frames-def');
+            if (defElem) defElem.innerText = (frames.deficit || 0) + ' def';
+            const nulElem = document.getElementById('kpi-frames-nul');
+            if (nulElem) nulElem.innerText = (frames.nulled || 0) + ' nul';
+
+            const chipFrames = document.getElementById('chip-frames');
+            if (chipFrames) {
+                chipFrames.innerText = 'Frames: ' + qPct.toFixed(1) + '% (' + (frames.deficit + frames.nulled) + ' drops)';
+            }
+
+            // 4. Lavalink Node KPI
             if (primary) {
                 document.getElementById('kpi-lavalink-ping').innerText = (primary.latencyMs != null ? primary.latencyMs + ' ms' : '--');
-                const dropPercent = primary.frames?.lossPercent || 0;
-                const framesTag = document.getElementById('kpi-frames-tag');
-                if (dropPercent > 5) {
-                    framesTag.innerText = dropPercent + '% Drops';
-                    framesTag.style.color = '#ef4444';
-                } else if (dropPercent > 1) {
-                    framesTag.innerText = dropPercent + '% Jitter';
-                    framesTag.style.color = '#f59e0b';
-                } else {
-                    framesTag.innerText = '100% Clean';
-                    framesTag.style.color = '#10b981';
-                }
-                document.getElementById('kpi-drops').innerText = (primary.frames?.deficit || 0) + ' def / ' + (primary.frames?.nulled || 0) + ' nul';
+                const nodeRole = document.getElementById('kpi-node-role');
+                if (nodeRole) nodeRole.innerText = primary.id;
+                const nodeStatus = document.getElementById('kpi-node-status');
+                if (nodeStatus) nodeStatus.innerText = primary.connected ? 'Online' : 'Offline';
 
                 const chipStatus = document.getElementById('chip-status');
                 if (primary.connected) {
@@ -930,12 +1009,12 @@ function generateDashboardHtml() {
                 }
             }
 
-            // 4. Discord Gateway KPI
+            // 5. Discord Gateway KPI
             document.getElementById('kpi-ws-ping').innerText = (data.bot?.wsPingMs || 0) + ' ms';
             document.getElementById('kpi-guilds').innerText = (data.bot?.guildsCount || 0) + ' guilds';
             document.getElementById('kpi-users').innerText = (data.bot?.membersCount || 0) + ' users';
 
-            // 5. Host System KPI
+            // 6. Host System KPI
             if (data.host) {
                 const load1 = data.host.loadAvg?.[0] !== undefined ? data.host.loadAvg[0] : '--';
                 document.getElementById('kpi-host-load').innerText = 'Load: ' + load1;
@@ -943,7 +1022,7 @@ function generateDashboardHtml() {
                 document.getElementById('kpi-host-mem-bar').style.width = Math.min(100, data.host.memPercent) + '%';
             }
 
-            // 6. Bot Process Memory KPI
+            // 7. Bot Process Memory KPI
             if (data.bot) {
                 document.getElementById('kpi-bot-rss').innerText = data.bot.rssMb + ' MB';
                 const heapPct = data.bot.heapTotalMb > 0 ? Math.round((data.bot.heapUsedMb / data.bot.heapTotalMb) * 100) : 0;
@@ -994,17 +1073,25 @@ function generateDashboardHtml() {
             tbody.innerHTML = nodes.map(n => {
                 const statusPill = n.connected ? '<span class="chip chip-green">Online</span>' : '<span class="chip chip-red">Offline</span>';
                 const roleBadge = n.isPrimary ? '<span style="color:#06b6d4; font-weight:700;">PRIMARY</span>' : '<span style="color:var(--text-muted);">BACKUP</span>';
-                const frameLoss = n.frames?.lossPercent || 0;
-                let frameTag = '<span style="color:#10b981;">Clean</span>';
-                if (frameLoss > 5) frameTag = '<span style="color:#ef4444; font-weight:700;">' + frameLoss + '% Drop</span>';
-                else if (frameLoss > 1) frameTag = '<span style="color:#f59e0b;">' + frameLoss + '% Jitter</span>';
+                const f = n.frames || { sent: 0, nulled: 0, deficit: 0, lossPercent: 0 };
+                const lossPct = f.lossPercent || 0;
+                let frameBadge = '<span class="tag tag-spotify" style="font-size:10px;">100% OK</span>';
+                if (lossPct > 5) frameBadge = '<span class="tag tag-youtube" style="font-size:10px;">' + lossPct + '% Loss</span>';
+                else if (lossPct > 1) frameBadge = '<span class="tag tag-soundcloud" style="font-size:10px;">' + lossPct + '% Jitter</span>';
+
+                const sentStr = (f.sent || 0).toLocaleString();
+                const frameCell = '<div>' + frameBadge + ' <strong class="mono" style="margin-left:4px;">' + sentStr + ' sent</strong></div>' +
+                    '<div class="mono" style="font-size:10.5px; color:var(--text-muted); margin-top:2px;">' +
+                        'Deficit: <span style="color:' + (f.deficit > 0 ? '#ef4444' : 'inherit') + '">' + (f.deficit || 0) + '</span> • ' +
+                        'Nulled: <span style="color:' + (f.nulled > 0 ? '#f59e0b' : 'inherit') + '">' + (f.nulled || 0) + '</span>' +
+                    '</div>';
 
                 return '<tr>' +
                     '<td><strong>' + n.id + '</strong><br><small style="color:var(--text-muted);">' + n.host + '</small></td>' +
                     '<td>' + roleBadge + '</td>' +
                     '<td>' + statusPill + '</td>' +
                     '<td class="mono">' + (n.latencyMs != null ? n.latencyMs + 'ms' : '--') + '</td>' +
-                    '<td>' + frameTag + '</td>' +
+                    '<td>' + frameCell + '</td>' +
                     '<td class="mono">Sys ' + n.cpuSystem + '% | Lava ' + n.cpuLavalink + '%</td>' +
                     '<td class="mono">' + n.memUsedMb + 'MB / ' + n.memAllocatedMb + 'MB</td>' +
                     '<td><strong>' + n.players + '</strong> active <span style="color:var(--text-muted);">(' + n.totalPlayers + ' total)</span></td>' +

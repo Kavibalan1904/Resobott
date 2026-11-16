@@ -76,6 +76,9 @@ function buildMonitorEmbeds(metrics, client) {
     }
     if (metrics.audio) {
         descLines.push(`• **Audio Engine:** \`${metrics.activeStreamsCount}\` playing • \`${metrics.audio.totalTracksQueued || 0}\` queued • \`🔒 ${metrics.audio.twentyFourSevenCount || 0}\` in 24/7 • \`🔄 ${metrics.audio.autoplayGuildsCount || 0}\` in Autoplay`);
+        if (metrics.audio.frames) {
+            descLines.push(`• **Audio Frames:** \`${(metrics.audio.frames.sent || 0).toLocaleString()} sent\` • \`${metrics.audio.frames.deficit || 0} deficit\` • \`${metrics.audio.frames.nulled || 0} nulled\` (\`${metrics.audio.frames.qualityPercent || 100}% clean\`)`);
+        }
     }
 
     const nodeOverview = createEmbed('Primary')
