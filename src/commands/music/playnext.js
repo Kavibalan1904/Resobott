@@ -13,9 +13,10 @@ const {
     isYouTubeUrl,
     isSpotifyUrl,
     cleanVideoTitle,
+    extractTrackSearchQueries,
     isUrl: isUrlHelper,
 } = require('../../utils/helpers');
-const { resolveSpotify } = require('../../utils/spotifyResolver');
+const { resolveSpotify, searchSpotifyTrack } = require('../../utils/spotifyResolver');
 const { setTrackMetadata } = require('../../utils/trackMetadata');
 
 // Map user-friendly source names to Lavalink search platforms
@@ -27,30 +28,6 @@ const SOURCE_MAP = {
     soundcloud: 'scsearch',
     apple: 'amsearch',
 };
-
-/**
- * Helper to resolve a Spotify track/item to a playable Lavalink track.
- * Searches YouTube Music (ytmsearch) first for official audio streams
- * (avoiding YouTube video login requirements and unsupported codecs),
- * falling back to YouTube video search (ytsearch).
- */
-async function searchSpotifyTrack(player, item, user) {
-    if (!item) return null;
-    const queries = [item.searchQuery, item.title].filter(Boolean);
-    for (const q of queries) {
-        try {
-            const res = await player.search({ query: q, source: 'ytmsearch' }, user);
-            if (res?.tracks?.length > 0) return res;
-        } catch {}
-    }
-    for (const q of queries) {
-        try {
-            const res = await player.search({ query: q, source: 'ytsearch' }, user);
-            if (res?.tracks?.length > 0) return res;
-        } catch {}
-    }
-    return null;
-}
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -209,15 +186,40 @@ module.exports = {
 
             // Quick fallbacks only if primary search found nothing
             if (!result || !result.tracks || result.tracks.length === 0) {
-                // 1. Text search fallback: if ytmsearch or spsearch returned nothing, try YouTube search
-                if (!isUrlQuery && !isAttachment && (searchSource === 'ytmsearch' || searchSource === 'spsearch')) {
+                // 1. If Spotify was requested (or searchSource === 'spsearch'), try YouTube Music (ytmsearch) FIRST for clean audio
+                if (!isUrlQuery && !isAttachment && (searchSource === 'spsearch' || source === 'auto' || source === 'spotify')) {
                     try {
-                        console.log(`[Reso] ↻ PlayNext ${searchSource} yielded no results, falling back to ytsearch...`);
-                        result = await player.search({ query, source: 'ytsearch' }, interaction.user);
+                        console.log(`[Reso] ↻ PlayNext: spsearch yielded no results, querying ytmsearch for official clean audio...`);
+                        result = await player.search({ query, source: 'ytmsearch' }, interaction.user);
+                        if (!result?.tracks?.length) {
+                            const subQueries = extractTrackSearchQueries(query);
+                            for (const sq of subQueries) {
+                                if (sq === query) continue;
+                                result = await player.search({ query: sq, source: 'ytmsearch' }, interaction.user);
+                                if (result?.tracks?.length > 0) break;
+                            }
+                        }
                         if (result?.tracks?.length > 0) {
-                            searchSource = 'ytsearch';
+                            searchSource = 'ytmsearch';
+                            if (result.tracks[0] && (source === 'auto' || source === 'spotify')) {
+                                result.tracks[0].sourceName = 'spotify';
+                                if (result.tracks[0].info) result.tracks[0].info.sourceName = 'spotify';
+                            }
                         }
                     } catch {}
+                }
+
+                // 2. Text search fallback to YouTube Video (ytsearch) only as a last resort
+                if (!result || !result.tracks || result.tracks.length === 0) {
+                    if (!isUrlQuery && !isAttachment && (searchSource === 'ytmsearch' || searchSource === 'spsearch')) {
+                        try {
+                            console.log(`[Reso] ↻ PlayNext: Clean audio yielded no results, falling back to ytsearch...`);
+                            result = await player.search({ query, source: 'ytsearch' }, interaction.user);
+                            if (result?.tracks?.length > 0) {
+                                searchSource = 'ytsearch';
+                            }
+                        } catch {}
+                    }
                 }
 
                 // 2. YouTube URL fallback
@@ -426,15 +428,11 @@ module.exports = {
             const isExplicitSpotifyUrl = queryIsUrl && isSpotifyUrl(rawQuery || query);
             const isTrackSpotifyUri = track.info?.uri && (track.info.uri.includes('spotify.com') || track.info.uri.startsWith('spotify:'));
             const isFromSpotifySearch = (searchSource === 'spsearch' && !queryIsUrl);
+            const isRequestedSpotify = (source === 'auto' || source === 'spotify') && !queryIsUrl;
 
-            if (isExplicitSpotifyUrl || isTrackSpotifyUri || isFromSpotifySearch || source === 'spotify') {
-                if (searchSource === 'ytsearch') {
-                    track.sourceName = 'youtube';
-                    if (track.info) track.info.sourceName = 'youtube';
-                } else {
-                    track.sourceName = 'spotify';
-                    if (track.info) track.info.sourceName = 'spotify';
-                }
+            if (isExplicitSpotifyUrl || isTrackSpotifyUri || isFromSpotifySearch || isRequestedSpotify) {
+                track.sourceName = 'spotify';
+                if (track.info) track.info.sourceName = 'spotify';
             } else if (source && source !== 'auto') {
                 track.sourceName = source;
                 if (track.info) track.info.sourceName = source;

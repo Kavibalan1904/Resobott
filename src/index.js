@@ -280,13 +280,17 @@ client.on('guildDelete', (guild) => {
 // ── Discord Client & REST Debugging / Error Handling ───────────
 client.on('error', (err) => console.error('[Reso Discord Error]:', err));
 client.on('warn', (msg) => console.warn('[Reso Discord Warning]:', msg));
-client.on('debug', (info) => {
-    // Filter out noisy debug events to reduce console I/O overhead
-    const lower = info.toLowerCase();
-    if (lower.includes('heartbeat') || lower.includes('session') || lower.includes('gateway')
-        || lower.includes('shard') || lower.includes('identify') || lower.includes('connecting to')) return;
-    console.log('[Reso Discord Debug]:', info);
-});
+if (process.env.DEBUG) {
+    client.on('debug', (info) => {
+        // Filter out noisy debug events and sensitive credentials to reduce console I/O overhead
+        const lower = info.toLowerCase();
+        if (lower.includes('token') || lower.includes('heartbeat') || lower.includes('session')
+            || lower.includes('gateway') || lower.includes('shard') || lower.includes('identify')
+            || lower.includes('connecting to') || lower.includes('failed to find guild')
+            || lower.includes('voice server')) return;
+        console.log('[Reso Discord Debug]:', info);
+    });
+}
 client.rest.on('rateLimited', (info) => {
     console.warn('[Reso Discord RateLimit] 429 Hit! Details:', JSON.stringify(info));
 });

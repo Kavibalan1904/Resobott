@@ -600,13 +600,6 @@ async function ensurePlayerNode(player, client) {
 }
 
 /**
- * Background health monitor placeholder (latency probing disabled)
- */
-function startNodeHealthMonitor(manager) {
-    return null;
-}
-
-/**
  * Extract an 11-character YouTube video ID from various YouTube URL formats
  */
 function extractYouTubeVideoId(url) {
@@ -804,7 +797,6 @@ module.exports = {
     probeAllNodes,
     computeNodeScore,
     optimizeActivePlayers,
-    startNodeHealthMonitor,
     extractYouTubeVideoId,
     isYouTubeUrl,
     isSpotifyUrl,

@@ -17,7 +17,7 @@ const {
     cleanVideoTitle,
     extractTrackSearchQueries,
 } = require('../../utils/helpers');
-const { resolveSpotify } = require('../../utils/spotifyResolver');
+const { resolveSpotify, searchSpotifyTrack } = require('../../utils/spotifyResolver');
 const { setTrackMetadata } = require('../../utils/trackMetadata');
 const { guildContextManager } = require('../../autoplay');
 
@@ -41,30 +41,6 @@ const SOURCE_EMOJIS = {
     apple: '🍎',
     file: '📁',
 };
-
-/**
- * Helper to resolve a Spotify track/item to a playable Lavalink track.
- * Searches YouTube Music (ytmsearch) first for official audio streams
- * (avoiding YouTube video login requirements and unsupported codecs),
- * falling back to YouTube video search (ytsearch).
- */
-async function searchSpotifyTrack(player, item, user) {
-    if (!item) return null;
-    const queries = [item.searchQuery, item.title].filter(Boolean);
-    for (const q of queries) {
-        try {
-            const res = await player.search({ query: q, source: 'ytmsearch' }, user);
-            if (res?.tracks?.length > 0) return res;
-        } catch {}
-    }
-    for (const q of queries) {
-        try {
-            const res = await player.search({ query: q, source: 'ytsearch' }, user);
-            if (res?.tracks?.length > 0) return res;
-        } catch {}
-    }
-    return null;
-}
 
 module.exports = {
     aliases: ['p'],
