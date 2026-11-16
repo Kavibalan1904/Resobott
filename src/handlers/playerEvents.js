@@ -1,5 +1,5 @@
 const { nowPlayingEmbed, createPlayerControls, createDisabledControls, createEmbed, errorEmbed, warningEmbed, EMOJIS, capitalize } = require('../utils/embeds');
-const { truncate, markNodeError, getHealthyNodes, getBestNode, computeNodeScore, cleanVideoTitle, formatMs, PRIMARY_NODE_ID } = require('../utils/helpers');
+const { truncate, markNodeError, getHealthyNodes, getBestNode, computeNodeScore, cleanVideoTitle, extractTrackSearchQueries, isAcceptableFallback, formatMs, PRIMARY_NODE_ID } = require('../utils/helpers');
 const { getAutoplayTrack, updateSessionState } = require('../utils/recommendations');
 const { guildContextManager, autoplayStore, setTrackMetadata, getTrackMetadata } = require('../autoplay');
 const { getDesignatedChannel } = require('../utils/settings');
@@ -152,27 +152,14 @@ function setupLavalinkEvents(client) {
         activeRetries.add(guildId);
 
         try {
-            // Build a search query from the clean track title + author, plus a core title fallback
+            // Build high-precision search queries preserving movie and artist context (e.g. "Mannippu Kanguva")
             const rawTitle = track?.info?.title || '';
             const author = track?.info?.author && !/unknown|various/i.test(track.info.author) ? track.info.author : '';
-            const cleanedTitle = cleanVideoTitle(rawTitle) || rawTitle;
-            const sanitizedTitle = cleanedTitle
-                .replace(/["'“”‘’]/g, '')
-                .replace(/\s+/g, ' ')
-                .trim();
-            const coreTitle = (sanitizedTitle.split(/[|\-–—]/)[0] || sanitizedTitle).trim();
-            const isPublisherAuthor = /studio|records|music|series|channel|media|films|production|entertainment|pictures/i.test(author);
-
-            const queriesToTry = [
-                sanitizedTitle,
-                author && !isPublisherAuthor && !sanitizedTitle.toLowerCase().includes(author.toLowerCase()) ? `${sanitizedTitle} ${author}` : null,
-                coreTitle,
-            ].filter((q, idx, arr) => q && arr.indexOf(q) === idx);
-            const cleanTitle = sanitizedTitle;
+            const queriesToTry = extractTrackSearchQueries(rawTitle, author);
             const isrc = track?.info?.isrc || null;
             const originalSource = (track?.info?.sourceName || '').toLowerCase();
 
-            if (!cleanTitle) return false;
+            if (queriesToTry.length === 0) return false;
             if (!player.node || !player.node.connected) return false;
 
             // Fallback order: Spotify (spsearch) MUST ALWAYS BE FIRST.
@@ -202,23 +189,52 @@ function setupLavalinkEvents(client) {
                                 return false;
                             }
 
-                            // For ytmsearch, pick the first track (exact official audio match).
-                            // For ytsearch, pick the second track to avoid playing the exact same broken video.
-                            let trackIndex = 0;
-                            if ((fallbackSource === 'ytsearch' || fallbackSource === 'youtube') && result.tracks.length > 1) {
-                                trackIndex = 1;
+                            // Find candidate track that strictly matches the original track's identity
+                            let resolvedTrack = null;
+                            if (fallbackSource === 'ytsearch' || fallbackSource === 'youtube') {
+                                // For ytsearch, skip the first if it's the exact same broken video URI
+                                for (let i = (result.tracks.length > 1 ? 1 : 0); i < Math.min(result.tracks.length, 5); i++) {
+                                    if (isAcceptableFallback(result.tracks[i], track, searchQuery)) {
+                                        resolvedTrack = result.tracks[i];
+                                        break;
+                                    }
+                                }
+                            } else {
+                                for (let i = 0; i < Math.min(result.tracks.length, 5); i++) {
+                                    if (isAcceptableFallback(result.tracks[i], track, searchQuery)) {
+                                        resolvedTrack = result.tracks[i];
+                                        break;
+                                    }
+                                }
                             }
-                            const resolvedTrack = result.tracks[trackIndex];
+
+                            // If no candidate matched the original track identity, don't play an unrelated track
+                            if (!resolvedTrack) {
+                                console.log(`[Reso] ⚠ Discarded candidates from ${fallbackSource} for "${searchQuery}" — did not match original track identity.`);
+                                continue;
+                            }
+
                             resolvedTrack.requester = track.requester;
                             const resolvedSource = resolvedTrack?.info?.sourceName ? capitalize(resolvedTrack.info.sourceName) : fallbackSource;
                             console.log(`[Reso] ✓ Retry resolved: "${truncate(resolvedTrack.info?.title, 40)}" from ${resolvedSource}`);
 
                             successfulRetries.add(guildId); // Mark as successfully retried BEFORE playing to suppress queueEnd race condition
                             const playOptions = { clientTrack: resolvedTrack };
-                            if (resumePosition > 3000 && (!resolvedTrack.info?.duration || resumePosition < (resolvedTrack.info.duration - 5000))) {
-                                playOptions.position = Math.round(resumePosition);
+
+                            // Seamlessly resume playback from where the stream was interrupted
+                            let targetPosition = 0;
+                            if (resumePosition > 3000) {
+                                const resolvedDuration = resolvedTrack.info?.duration || 0;
+                                if (!resolvedDuration || resumePosition < resolvedDuration) {
+                                    targetPosition = Math.round(resumePosition);
+                                } else if (resolvedDuration > 6000) {
+                                    targetPosition = Math.round(resolvedDuration - 4000);
+                                }
+                            }
+                            if (targetPosition > 3000) {
+                                playOptions.position = targetPosition;
                                 if (typeof player.set === 'function') {
-                                    player.set('pendingResumePosition', Math.round(resumePosition));
+                                    player.set('pendingResumePosition', targetPosition);
                                 }
                             }
                             await player.play(playOptions);
@@ -239,8 +255,8 @@ function setupLavalinkEvents(client) {
                                     messageText = `Track **${truncate(rawTitle, 50)}** ${reason}. Switched to **${resolvedSource}**.`;
                                 }
 
-                                if (playOptions.position && playOptions.position > 3000) {
-                                    messageText += ` Resumed playback from **${formatMs(playOptions.position)}**.`;
+                                if (targetPosition > 3000) {
+                                    messageText += ` Resumed playback from **${formatMs(targetPosition)}**.`;
                                 }
 
                                 const embed = warningEmbed(messageText);
@@ -721,8 +737,16 @@ function setupLavalinkEvents(client) {
                 ? player.lastPosition
                 : 0;
         const rawSaved = Math.max(currentPos, elapsedWallClock > 3000 ? elapsedWallClock : 0);
-        // Only resume if the track hasn't virtually finished (leave 5s buffer)
-        const savedPosition = (track?.info?.duration && rawSaved >= (track.info.duration - 5000)) ? 0 : rawSaved;
+        const trackDuration = track?.info?.duration || 0;
+
+        // If the track was virtually finished (within last 5s), treat as naturally finished rather than restarting
+        if (trackDuration > 15000 && rawSaved >= (trackDuration - 5000)) {
+            console.log(`[Reso] ⏭️ Track error occurred within last 5s of "${track?.info?.title}". Advancing to next track.`);
+            await skipBrokenTrackSafely(player);
+            return;
+        }
+
+        const savedPosition = rawSaved;
         const retried = await retryTrack(player, track, 'failed to load', errorMsg, savedPosition);
         if (retried) return; // Retry initiated, don't skip
 
@@ -759,7 +783,15 @@ function setupLavalinkEvents(client) {
                 ? player.lastPosition
                 : 0;
         const rawSaved = Math.max(currentPos, elapsed > 3000 ? elapsed : 0);
-        const savedPosition = (track?.info?.duration && rawSaved >= (track.info.duration - 5000)) ? 0 : rawSaved;
+        const trackDuration = track?.info?.duration || 0;
+
+        if (trackDuration > 15000 && rawSaved >= (trackDuration - 5000)) {
+            console.log(`[Reso] ⏭️ Track stuck within last 5s of "${track?.info?.title}". Advancing to next track.`);
+            await skipBrokenTrackSafely(player);
+            return;
+        }
+
+        const savedPosition = rawSaved;
         const retried = await retryTrack(player, track, 'got stuck', '', savedPosition);
         if (retried) return; // Retry initiated successfully
 

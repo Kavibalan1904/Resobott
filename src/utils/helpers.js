@@ -670,6 +670,119 @@ function cleanVideoTitle(rawTitle) {
     return title.replace(/\s+/g, ' ').trim();
 }
 
+/**
+ * Extract clean, high-precision search query variations from a track title and author.
+ * Preserves essential context like movie names, composers, and featured artists
+ * while stripping YouTube noise (Official Video, 4K, Lyric Video, etc.).
+ *
+ * @param {string} rawTitle
+ * @param {string} author
+ * @returns {string[]} Ordered list of search queries from most specific to general
+ */
+function extractTrackSearchQueries(rawTitle, author = '') {
+    if (!rawTitle || typeof rawTitle !== 'string') return [];
+
+    const rawSegments = rawTitle.split(/\s*\|\s*/).map(s => s.trim()).filter(Boolean);
+
+    const cleanedSegments = rawSegments.map(seg => {
+        return seg
+            .replace(CLEAN_PARENS_TAGS_REGEX, '')
+            .replace(/\s*[\|\-–—]\s*(?:Official\s+)?(?:(?:4K|HD)\s+)?(?:Video(?:\s+Song)?|Audio(?:\s+Song)?|Music\s+Video|Lyric(?:al)?(?:\s+Video)?|Full\s+Song|Full\s+Video|4K|HD|Remastered|Visualizer)\b/gi, '')
+            .replace(/\b((?:4k\s+)?video\s+song|lyric\s+video|official\s+video|full\s+video)\b/gi, '')
+            .replace(CLEAN_AT_MENTIONS_REGEX, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+    }).filter(s => s.length > 0 && !/^(official\s+video|video\s+song|lyric\s+video|audio|4k|hd)$/i.test(s));
+
+    const queries = [];
+    const isPublisher = /studio|records|music|series|channel|media|films|production|entertainment|pictures|label/i.test(author);
+
+    if (cleanedSegments.length >= 2) {
+        // e.g. "Mannippu Kanguva"
+        queries.push(`${cleanedSegments[0]} ${cleanedSegments[1]}`);
+        if (cleanedSegments.length >= 3) {
+            // e.g. "Mannippu Kanguva Devi Sri Prasad"
+            queries.push(`${cleanedSegments[0]} ${cleanedSegments[1]} ${cleanedSegments[2]}`);
+        }
+    }
+
+    if (cleanedSegments.length >= 1) {
+        queries.push(cleanedSegments[0]);
+    }
+
+    if (author && !isPublisher && cleanedSegments[0] && !cleanedSegments[0].toLowerCase().includes(author.toLowerCase())) {
+        queries.push(`${cleanedSegments[0]} ${author}`);
+        if (cleanedSegments.length >= 2 && !cleanedSegments[1].toLowerCase().includes(author.toLowerCase())) {
+            queries.push(`${cleanedSegments[0]} ${cleanedSegments[1]} ${author}`);
+        }
+    }
+
+    // Fall back to cleanVideoTitle
+    const cvt = cleanVideoTitle(rawTitle);
+    if (cvt) queries.push(cvt);
+
+    return [...new Set(queries.map(q => q.replace(/["'“”‘’]/g, '').replace(/\s+/g, ' ').trim()))].filter(Boolean);
+}
+
+/**
+ * Validate that a fallback candidate track matches the original track closely enough
+ * to avoid playing random, wrong songs (e.g. Fr Deva Raj on SoundCloud instead of Kanguva).
+ */
+function isAcceptableFallback(candidateTrack, originalTrack, cleanQuery = '') {
+    if (!candidateTrack?.info) return false;
+    const candTitle = (candidateTrack.info.title || '').toLowerCase();
+    const candAuthor = (candidateTrack.info.author || '').toLowerCase();
+    const origTitle = (originalTrack?.info?.title || '').toLowerCase();
+    const origAuthor = (originalTrack?.info?.author || '').toLowerCase();
+
+    // Extract significant keywords (length >= 3, excluding generic stopwords)
+    const keywords = (cleanQuery || origTitle)
+        .toLowerCase()
+        .replace(/["'“”‘’[\](){}|-]/g, ' ')
+        .split(/\s+/)
+        .filter(w => w.length >= 3 && !/^(the|and|from|with|feat|video|audio|song|full|official|version|track)$/i.test(w));
+
+    if (keywords.length > 0) {
+        const matchesAnyKeyword = keywords.some(w => candTitle.includes(w) || candAuthor.includes(w));
+        if (!matchesAnyKeyword) return false;
+    }
+
+    const candCombined = `${candTitle} ${candAuthor}`;
+
+    // If original track is not devotional, reject clergy/church uploads (e.g. Fr Deva Raj, Pastor, Gospel)
+    const isOrigDevotional = /devotional|christian|gospel|worship|church|bhajan|keerthanai/i.test(`${origTitle} ${origAuthor}`);
+    if (!isOrigDevotional && /\b(fr\.?|father|pastor|gospel|church|christian\s+song|worship\s+song)\b/i.test(candCombined)) {
+        return false;
+    }
+
+    // Check author/qualifier match
+    const authorWords = origAuthor
+        .toLowerCase()
+        .replace(/["'“”‘’[\](){}|-]/g, ' ')
+        .split(/\s+/)
+        .filter(w => w.length >= 3 && !/^(the|and|music|records|studio|india|series|channel|production)$/i.test(w));
+
+    const hasAuthorMatch = authorWords.length > 0 && authorWords.some(w => candCombined.includes(w));
+    const qualifierWords = keywords.slice(1); // e.g. "kanguva", "baththa", "mambattiyan"
+    const hasQualifierMatch = qualifierWords.length > 0 && qualifierWords.some(w => candCombined.includes(w));
+
+    const origDuration = originalTrack?.info?.duration || 0;
+    const candDuration = candidateTrack.info.duration || 0;
+
+    if (origDuration > 30000 && candDuration > 0) {
+        const ratio = candDuration / origDuration;
+        if (hasAuthorMatch || hasQualifierMatch) {
+            // Author or movie matched — allow normal duration range
+            if (ratio < 0.65 || ratio > 1.45) return false;
+        } else {
+            // Neither author nor movie matched: title word alone is ambiguous, require tight duration (within 15%)
+            if (ratio < 0.85 || ratio > 1.15) return false;
+        }
+    }
+
+    return true;
+}
+
 module.exports = {
     parseTime,
     formatTime,
@@ -698,5 +811,7 @@ module.exports = {
     isSoundCloudUrl,
     isUrl,
     cleanVideoTitle,
+    extractTrackSearchQueries,
+    isAcceptableFallback,
     PRIMARY_NODE_ID,
 };

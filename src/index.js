@@ -179,6 +179,9 @@ client.on('voiceStateUpdate', (oldState, newState) => {
     // Only care about channel leave/move events (not mute/deaf/etc.)
     if (oldState.channelId === newState.channelId) return;
 
+    // Guard against gateway reconnection transients (don't evict players during socket drops)
+    if (client.ws.status !== 0) return;
+
     const guildId = oldState.guild.id || newState.guild.id;
 
     // ── 24/7 mode check: Never disconnect if 24/7 mode is active ──
@@ -200,10 +203,13 @@ client.on('voiceStateUpdate', (oldState, newState) => {
     const humanMembers = botVC.members.filter(m => !m.user.bot).size;
 
     if (humanMembers === 0) {
-        // All humans left — start a 5-second grace timer then disconnect
+        // All humans left — start a 20-second grace timer then disconnect safely
         if (!aloneTimers.has(guildId)) {
             const timer = setTimeout(() => {
                 aloneTimers.delete(guildId);
+                // Do not destroy player if client is currently reconnecting to Discord gateway
+                if (client.ws.status !== 0) return;
+
                 const currentPlayer = client.lavalink.getPlayer(guildId);
                 if (!currentPlayer) return;
 
@@ -223,7 +229,7 @@ client.on('voiceStateUpdate', (oldState, newState) => {
                         textChannel.send({ embeds: [embed] }).catch(() => { });
                     }
                 }
-            }, 5000);
+            }, 20000);
             aloneTimers.set(guildId, timer);
         }
     } else {

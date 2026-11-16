@@ -15,6 +15,7 @@ const {
     isSoundCloudUrl,
     isUrl: isUrlHelper,
     cleanVideoTitle,
+    extractTrackSearchQueries,
 } = require('../../utils/helpers');
 const { resolveSpotify } = require('../../utils/spotifyResolver');
 const { setTrackMetadata } = require('../../utils/trackMetadata');
@@ -270,6 +271,14 @@ module.exports = {
                     try {
                         console.log(`[Reso] ↻ spsearch yielded no results, querying ytmsearch for official clean audio...`);
                         result = await player.search({ query, source: 'ytmsearch' }, interaction.user);
+                        if (!result?.tracks?.length) {
+                            const subQueries = extractTrackSearchQueries(query);
+                            for (const sq of subQueries) {
+                                if (sq === query) continue;
+                                result = await player.search({ query: sq, source: 'ytmsearch' }, interaction.user);
+                                if (result?.tracks?.length > 0) break;
+                            }
+                        }
                         if (result?.tracks?.length > 0) {
                             fallbackNote = 'Matched via clean audio';
                             detectedPlatform = (source === 'auto' || source === 'spotify') ? 'spotify' : 'youtubemusic';
@@ -289,8 +298,10 @@ module.exports = {
                             console.log(`[Reso] ↻ Clean audio yielded no results, falling back to ytsearch...`);
                             result = await player.search({ query, source: 'ytsearch' }, interaction.user);
                             if (result?.tracks?.length > 0) {
-                                fallbackNote = 'Searched via YouTube Video';
-                                detectedPlatform = 'youtube';
+                                fallbackNote = (source === 'auto' || source === 'spotify')
+                                    ? 'Streamed via YouTube fallback'
+                                    : 'Searched via YouTube Video';
+                                detectedPlatform = (source === 'auto' || source === 'spotify') ? 'spotify' : 'youtube';
                                 searchSource = 'ytsearch';
                             }
                         } catch {}
@@ -509,8 +520,8 @@ module.exports = {
             // Preserve and accurately assign sourceName
             const isExplicitSpotifyUrl = isUrl && isSpotifyUrl(rawQuery || query);
             const isTrackSpotifyUri = track.info?.uri && (track.info.uri.includes('spotify.com') || track.info.uri.startsWith('spotify:'));
-            const isFromSpotifySearch = (searchSource === 'spsearch' && !isUrl && (!fallbackNote || !fallbackNote.includes('YouTube')));
-            const isRequestedSpotify = (source === 'auto' || source === 'spotify') && !isUrl && (!fallbackNote || !fallbackNote.includes('YouTube'));
+            const isFromSpotifySearch = (searchSource === 'spsearch' && !isUrl);
+            const isRequestedSpotify = (source === 'auto' || source === 'spotify') && !isUrl;
 
             if (isExplicitSpotifyUrl || isTrackSpotifyUri || isFromSpotifySearch || isRequestedSpotify) {
                 track.sourceName = 'spotify';
