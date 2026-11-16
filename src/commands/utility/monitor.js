@@ -65,17 +65,26 @@ function buildMonitorEmbeds(metrics, client) {
         healthColor = Colors.Warning;
     }
 
+    const descLines = [
+        `🔒 **Owner Private View** • Real-time diagnostic metrics`,
+        `• **Discord WS:** \`${metrics.bot.wsPingMs}ms\` • **Bot Uptime:** \`${metrics.bot.uptimeFormatted}\``,
+        `• **Bot RAM:** \`${metrics.bot.rssMb}MB\` (Heap: \`${metrics.bot.heapUsedMb}MB\`) • **Guilds:** \`${metrics.bot.guildsCount}\``,
+    ];
+
+    if (metrics.host) {
+        descLines.push(`• **Host:** \`${metrics.host.platform} ${metrics.host.arch}\` (Node \`${metrics.host.nodeVersion}\`) • **Load:** \`${metrics.host.loadAvg?.[0] ?? '--'}\` • **RAM:** \`${metrics.host.memPercent}%\``);
+    }
+    if (metrics.audio) {
+        descLines.push(`• **Audio Engine:** \`${metrics.activeStreamsCount}\` playing • \`${metrics.audio.totalTracksQueued || 0}\` queued • \`🔒 ${metrics.audio.twentyFourSevenCount || 0}\` in 24/7 • \`🔄 ${metrics.audio.autoplayGuildsCount || 0}\` in Autoplay`);
+    }
+
     const nodeOverview = createEmbed('Primary')
         .setColor(healthColor)
         .setAuthor({
             name: 'Reso • Owner System & Health Monitor',
             iconURL: client.user?.displayAvatarURL?.(),
         })
-        .setDescription(
-            `🔒 **Owner Private View** • Real-time diagnostic metrics\n` +
-            `• **Discord WS:** \`${metrics.bot.wsPingMs}ms\` • **Bot Uptime:** \`${metrics.bot.uptimeFormatted}\`\n` +
-            `• **Bot RAM:** \`${metrics.bot.rssMb}MB\` (Heap: \`${metrics.bot.heapUsedMb}MB\`) • **Guilds:** \`${metrics.bot.guildsCount}\``
-        );
+        .setDescription(descLines.join('\n'));
 
     for (const node of metrics.nodes) {
         const role = node.isPrimary ? '⭐ PRIMARY' : '⚪ BACKUP';
@@ -126,7 +135,14 @@ function buildMonitorEmbeds(metrics, client) {
                 ? createProgressBar(session.positionMs, track.durationMs, 12)
                 : (track?.isStream ? '🔴 Live Stream' : '0:00 ▬ 0:00');
 
-            const title = `${statusEmoji} ${truncate(session.guildName, 30)} (\`${session.guildId}\`)`;
+            const badges = [];
+            if (session.is247) badges.push('🔒 24/7');
+            if (session.isAutoplay) badges.push('🔄 Auto');
+            if (session.queueLength > 0) badges.push(`+${session.queueLength} queued`);
+            if (session.bitrateKbps) badges.push(`${session.bitrateKbps}kbps`);
+            const badgeStr = badges.length > 0 ? ` • ${badges.join(' • ')}` : '';
+
+            const title = `${statusEmoji} ${truncate(session.guildName, 30)} (\`${session.guildId}\`)${badgeStr}`;
             const lines = [
                 `> **Track:** **[${truncate(track?.title || 'Unknown', 45)}](${track?.uri || ''})**`,
                 `> **Artist:** ${truncate(track?.author || 'Unknown', 30)} • **Source:** ${sourceBadge.emoji} \`${sourceBadge.label}\``,

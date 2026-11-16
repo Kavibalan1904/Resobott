@@ -1,4 +1,5 @@
 const http = require('http');
+const os = require('os');
 const { formatUptime, formatMs, truncate } = require('./helpers');
 const { getEffectiveSource } = require('./embeds');
 
@@ -52,52 +53,142 @@ function getSystemMetrics(client) {
 
     // Active session details
     const sessions = [];
-    if (manager?.players) {
-        for (const player of manager.players.values()) {
-            if (!player || (!player.playing && !player.paused)) continue;
-            const current = player.queue?.current;
-            const guild = client.guilds.cache.get(player.guildId);
-            const source = current ? getEffectiveSource(current, player.guildId) : 'unknown';
+    const allPlayers = manager?.players ? Array.from(manager.players.values()) : [];
+    let idlePlayersCount = 0;
+    let totalTracksQueued = 0;
+    let activeFiltersCount = 0;
+    const bitrates = [];
 
-            sessions.push({
-                guildId: player.guildId,
-                guildName: guild?.name || 'Unknown Guild',
-                voiceChannelId: player.voiceChannelId,
-                playing: !!player.playing,
-                paused: !!player.paused,
-                volume: player.volume || 100,
-                nodeId: player.node?.id || 'unknown',
-                positionMs: player.position || 0,
-                durationMs: current?.info?.duration || 0,
-                track: current?.info ? {
-                    title: current.info.title || 'Unknown Title',
-                    author: current.info.author || 'Unknown Artist',
-                    uri: current.info.uri || '',
-                    artworkUrl: current.info.artworkUrl || null,
-                    source,
-                    isStream: !!current.info.isStream,
-                } : null,
-            });
+    for (const player of allPlayers) {
+        if (!player) continue;
+        const qLen = player.queue?.tracks?.length || 0;
+        totalTracksQueued += qLen;
+
+        const filters = player.activeFilters ? (player.activeFilters.size || 0) : 0;
+        activeFiltersCount += filters;
+
+        if (player.voiceChannelId && client.channels?.cache) {
+            const vc = client.channels.cache.get(player.voiceChannelId);
+            if (vc && vc.bitrate) bitrates.push(Math.round(vc.bitrate / 1000));
         }
+
+        if (!player.playing && !player.paused) {
+            idlePlayersCount++;
+            continue;
+        }
+
+        const current = player.queue?.current;
+        const guild = client.guilds?.cache?.get(player.guildId);
+        const source = current ? getEffectiveSource(current, player.guildId) : 'unknown';
+        const vc = client.channels?.cache?.get(player.voiceChannelId);
+        const bitrateKbps = vc && vc.bitrate ? Math.round(vc.bitrate / 1000) : null;
+        const is247 = Boolean(client.twentyFourSeven?.has(player.guildId));
+        const isAutoplay = Boolean(client.autoplayGuilds?.has(player.guildId));
+        const queueLength = player.queue?.tracks?.length || 0;
+        const repeatMode = player.repeatMode || 'off';
+        const activeFilterNames = player.activeFilters
+            ? (Array.isArray(player.activeFilters) ? player.activeFilters : Array.from(player.activeFilters.keys ? player.activeFilters.keys() : []))
+            : [];
+
+        sessions.push({
+            guildId: player.guildId,
+            guildName: guild?.name || 'Unknown Guild',
+            voiceChannelId: player.voiceChannelId,
+            playing: !!player.playing,
+            paused: !!player.paused,
+            volume: player.volume || 100,
+            nodeId: player.node?.id || 'unknown',
+            positionMs: player.position || 0,
+            durationMs: current?.info?.duration || 0,
+            bitrateKbps,
+            is247,
+            isAutoplay,
+            queueLength,
+            repeatMode,
+            filters: activeFilterNames,
+            track: current?.info ? {
+                title: current.info.title || 'Unknown Title',
+                author: current.info.author || 'Unknown Artist',
+                uri: current.info.uri || '',
+                artworkUrl: current.info.artworkUrl || null,
+                source,
+                isStream: !!current.info.isStream,
+            } : null,
+        });
     }
 
+    const sourceBreakdown = {};
+    for (const s of sessions) {
+        const src = s.track?.source || 'unknown';
+        sourceBreakdown[src] = (sourceBreakdown[src] || 0) + 1;
+    }
+
+    const avgBitrateKbps = bitrates.length > 0
+        ? Math.round(bitrates.reduce((a, b) => a + b, 0) / bitrates.length)
+        : 64;
+
     const memUsage = process.memoryUsage();
+    const totalMem = os.totalmem ? os.totalmem() : 0;
+    const freeMem = os.freemem ? os.freemem() : 0;
+    const usedMem = totalMem - freeMem;
+    const loadAvg = (os.loadavg && typeof os.loadavg === 'function')
+        ? os.loadavg().map(l => Number(l.toFixed(2)))
+        : [0, 0, 0];
+
+    const host = {
+        platform: process.platform,
+        arch: process.arch,
+        nodeVersion: process.version,
+        pid: process.pid,
+        cpuCount: os.cpus ? os.cpus().length : 1,
+        cpuModel: (os.cpus && os.cpus()[0]) ? os.cpus()[0].model : 'CPU',
+        loadAvg,
+        totalMemMb: Math.round(totalMem / 1024 / 1024),
+        freeMemMb: Math.round(freeMem / 1024 / 1024),
+        usedMemMb: Math.round(usedMem / 1024 / 1024),
+        memPercent: totalMem > 0 ? Number(((usedMem / totalMem) * 100).toFixed(1)) : 0,
+    };
+
+    const activeStreamsCount = sessions.filter(s => s.playing).length;
+    const pausedStreamsCount = sessions.filter(s => s.paused).length;
+
+    const audio = {
+        activeStreamsCount,
+        pausedStreamsCount,
+        idlePlayersCount,
+        totalPlayersCount: allPlayers.length,
+        totalTracksQueued,
+        activeFiltersCount,
+        twentyFourSevenCount: client.twentyFourSeven?.size || 0,
+        autoplayGuildsCount: client.autoplayGuilds?.size || 0,
+        avgBitrateKbps,
+        sourceBreakdown,
+    };
+
+    const bot = {
+        uptime: client.uptime || 0,
+        uptimeFormatted: formatUptime(client.uptime),
+        wsPingMs: Math.round(client.ws?.ping || 0),
+        guildsCount: client.guilds?.cache?.size || 0,
+        membersCount: Array.from(client.guilds?.cache?.values() || []).reduce((acc, g) => acc + (g.memberCount || 0), 0),
+        channelsCount: client.channels?.cache?.size || 0,
+        voiceChannelsCount: client.channels?.cache ? Array.from(client.channels.cache.values()).filter(c => c.isVoiceBased?.()).length : 0,
+        shardsCount: client.ws?.shards?.size || client.shard?.count || 1,
+        commandsCount: client.commands?.size || 0,
+        heapUsedMb: Math.round(memUsage.heapUsed / 1024 / 1024),
+        heapTotalMb: Math.round(memUsage.heapTotal / 1024 / 1024),
+        rssMb: Math.round(memUsage.rss / 1024 / 1024),
+        externalMb: Math.round((memUsage.external || 0) / 1024 / 1024),
+    };
 
     return {
         timestamp: Date.now(),
-        bot: {
-            uptime: client.uptime || 0,
-            uptimeFormatted: formatUptime(client.uptime),
-            wsPingMs: Math.round(client.ws?.ping || 0),
-            guildsCount: client.guilds?.cache?.size || 0,
-            membersCount: Array.from(client.guilds?.cache?.values() || []).reduce((acc, g) => acc + (g.memberCount || 0), 0),
-            heapUsedMb: Math.round(memUsage.heapUsed / 1024 / 1024),
-            heapTotalMb: Math.round(memUsage.heapTotal / 1024 / 1024),
-            rssMb: Math.round(memUsage.rss / 1024 / 1024),
-        },
+        host,
+        bot,
+        audio,
         nodes: nodeMetrics,
         sessions,
-        activeStreamsCount: sessions.filter(s => s.playing).length,
+        activeStreamsCount,
         totalSessionsCount: sessions.length,
     };
 }
@@ -117,6 +208,22 @@ function generatePrometheusMetrics(metrics) {
     lines.push('# TYPE reso_memory_heap_bytes gauge');
     lines.push(`reso_memory_heap_bytes ${metrics.bot.heapUsedMb * 1024 * 1024}`);
 
+    lines.push('# HELP reso_memory_rss_bytes Node.js RSS memory in bytes');
+    lines.push('# TYPE reso_memory_rss_bytes gauge');
+    lines.push(`reso_memory_rss_bytes ${metrics.bot.rssMb * 1024 * 1024}`);
+
+    lines.push('# HELP reso_bot_uptime_seconds Bot uptime in seconds');
+    lines.push('# TYPE reso_bot_uptime_seconds gauge');
+    lines.push(`reso_bot_uptime_seconds ${Math.round((metrics.bot.uptime || 0) / 1000)}`);
+
+    lines.push('# HELP reso_bot_guilds_total Total Discord guilds connected');
+    lines.push('# TYPE reso_bot_guilds_total gauge');
+    lines.push(`reso_bot_guilds_total ${metrics.bot.guildsCount}`);
+
+    lines.push('# HELP reso_bot_members_total Total cached users across guilds');
+    lines.push('# TYPE reso_bot_members_total gauge');
+    lines.push(`reso_bot_members_total ${metrics.bot.membersCount}`);
+
     lines.push('# HELP reso_active_streams Current active audio playback streams');
     lines.push('# TYPE reso_active_streams gauge');
     lines.push(`reso_active_streams ${metrics.activeStreamsCount}`);
@@ -124,6 +231,34 @@ function generatePrometheusMetrics(metrics) {
     lines.push('# HELP reso_total_sessions Total connected music players');
     lines.push('# TYPE reso_total_sessions gauge');
     lines.push(`reso_total_sessions ${metrics.totalSessionsCount}`);
+
+    if (metrics.audio) {
+        lines.push('# HELP reso_audio_paused_streams Paused audio streams');
+        lines.push('# TYPE reso_audio_paused_streams gauge');
+        lines.push(`reso_audio_paused_streams ${metrics.audio.pausedStreamsCount || 0}`);
+
+        lines.push('# HELP reso_audio_queued_tracks Total tracks in all queues');
+        lines.push('# TYPE reso_audio_queued_tracks gauge');
+        lines.push(`reso_audio_queued_tracks ${metrics.audio.totalTracksQueued || 0}`);
+
+        lines.push('# HELP reso_audio_247_sessions Total 24/7 active voice sessions');
+        lines.push('# TYPE reso_audio_247_sessions gauge');
+        lines.push(`reso_audio_247_sessions ${metrics.audio.twentyFourSevenCount || 0}`);
+
+        lines.push('# HELP reso_audio_autoplay_guilds Total guilds with autoplay active');
+        lines.push('# TYPE reso_audio_autoplay_guilds gauge');
+        lines.push(`reso_audio_autoplay_guilds ${metrics.audio.autoplayGuildsCount || 0}`);
+    }
+
+    if (metrics.host) {
+        lines.push('# HELP reso_host_cpu_load_1m Host 1-minute CPU load average');
+        lines.push('# TYPE reso_host_cpu_load_1m gauge');
+        lines.push(`reso_host_cpu_load_1m ${metrics.host.loadAvg[0] || 0}`);
+
+        lines.push('# HELP reso_host_memory_used_bytes Host system memory used in bytes');
+        lines.push('# TYPE reso_host_memory_used_bytes gauge');
+        lines.push(`reso_host_memory_used_bytes ${metrics.host.usedMemMb * 1024 * 1024}`);
+    }
 
     // Lavalink metrics per node
     for (const node of metrics.nodes) {
@@ -147,7 +282,7 @@ function generatePrometheusMetrics(metrics) {
 }
 
 /**
- * Generate Grafana-inspired HTML dashboard
+ * Generate Minimal & Efficient HTML dashboard
  */
 function generateDashboardHtml() {
     return `<!DOCTYPE html>
@@ -159,111 +294,478 @@ function generateDashboardHtml() {
     <link rel="icon" href="https://cdn.discordapp.com/emojis/1068864756531937320.webp" />
     <style>
         :root {
-            --bg: #0b0e14;
-            --card-bg: #151922;
-            --card-border: #232936;
-            --text-main: #f0f3f6;
-            --text-muted: #8b949e;
-            --accent: #5865F2;
-            --accent-cyan: #00d2ff;
-            --green: #238636;
-            --yellow: #d29922;
-            --red: #da3633;
+            --bg: #08090d;
+            --surface: #0f121a;
+            --surface-hover: #151924;
+            --border: #1c2230;
+            --border-light: #283042;
+            --text-main: #f1f5f9;
+            --text-muted: #7c8799;
+            --text-faint: #4b5563;
+            --accent: #6366f1;
+            --accent-glow: rgba(99, 102, 241, 0.15);
+            --green: #10b981;
+            --green-glow: rgba(16, 185, 129, 0.15);
+            --amber: #f59e0b;
+            --amber-glow: rgba(245, 158, 11, 0.15);
+            --red: #ef4444;
+            --red-glow: rgba(239, 68, 68, 0.15);
+            --cyan: #06b6d4;
         }
-        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-        body { background: var(--bg); color: var(--text-main); padding: 24px; min-height: 100vh; }
-        header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; border-bottom: 1px solid var(--card-border); padding-bottom: 16px; flex-wrap: wrap; gap: 12px; }
-        .logo-group { display: flex; align-items: center; gap: 12px; }
-        .logo-badge { background: linear-gradient(135deg, #5865F2, #00d2ff); color: white; padding: 6px 14px; border-radius: 8px; font-weight: bold; font-size: 14px; letter-spacing: 0.5px; }
-        h1 { font-size: 22px; font-weight: 700; }
-        .header-status { display: flex; align-items: center; gap: 16px; font-size: 13px; color: var(--text-muted); }
-        .pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; }
-        .pill-green { background: rgba(35, 134, 54, 0.2); color: #3fb950; border: 1px solid rgba(35, 134, 54, 0.4); }
-        .pill-yellow { background: rgba(210, 153, 34, 0.2); color: #e3b341; border: 1px solid rgba(210, 153, 34, 0.4); }
-        .pill-red { background: rgba(218, 54, 51, 0.2); color: #f85149; border: 1px solid rgba(218, 54, 51, 0.4); }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            background: var(--bg);
+            color: var(--text-main);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            padding: 20px 24px 60px;
+            min-height: 100vh;
+            -webkit-font-smoothing: antialiased;
+        }
+        code, .mono {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+            font-variant-numeric: tabular-nums;
+        }
+        a { color: inherit; text-decoration: none; }
+        a:hover { color: var(--cyan); text-decoration: underline; }
 
-        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; margin-bottom: 24px; }
-        .card { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 10px; padding: 18px; }
-        .card-title { font-size: 12px; font-weight: 600; text-transform: uppercase; color: var(--text-muted); letter-spacing: 0.8px; margin-bottom: 8px; }
-        .card-value { font-size: 28px; font-weight: 800; }
-        .card-subtitle { font-size: 12px; color: var(--text-muted); margin-top: 6px; }
+        /* Top Header */
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding-bottom: 16px;
+            border-bottom: 1px solid var(--border);
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .brand-badge {
+            background: linear-gradient(135deg, #6366f1, #06b6d4);
+            color: #fff;
+            padding: 5px 12px;
+            border-radius: 6px;
+            font-weight: 700;
+            font-size: 13px;
+            letter-spacing: 0.6px;
+            box-shadow: 0 0 12px var(--accent-glow);
+        }
+        h1 { font-size: 18px; font-weight: 600; letter-spacing: -0.2px; }
+        
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 500;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            color: var(--text-muted);
+        }
+        .chip-green { background: var(--green-glow); color: var(--green); border-color: rgba(16, 185, 129, 0.3); }
+        .chip-amber { background: var(--amber-glow); color: var(--amber); border-color: rgba(245, 158, 11, 0.3); }
+        .chip-red { background: var(--red-glow); color: var(--red); border-color: rgba(239, 68, 68, 0.3); }
 
-        .section-header { font-size: 16px; font-weight: 700; margin: 28px 0 14px; display: flex; align-items: center; gap: 8px; }
+        .btn {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            color: var(--text-main);
+            padding: 5px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 500;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            transition: all 0.15s ease;
+        }
+        .btn:hover { background: var(--surface-hover); border-color: var(--border-light); }
+        .btn-primary { background: var(--accent); border-color: var(--accent); color: white; }
+        .btn-primary:hover { opacity: 0.9; }
 
-        table { width: 100%; border-collapse: collapse; font-size: 13px; }
-        th { text-align: left; padding: 12px 14px; background: rgba(255,255,255,0.03); color: var(--text-muted); font-weight: 600; border-bottom: 1px solid var(--card-border); }
-        td { padding: 14px; border-bottom: 1px solid var(--card-border); }
+        /* KPI Stat Cards Grid */
+        .kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+        .kpi-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 14px 16px;
+            position: relative;
+            transition: border-color 0.2s ease;
+        }
+        .kpi-card:hover { border-color: var(--border-light); }
+        .kpi-label {
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
+            color: var(--text-muted);
+            margin-bottom: 6px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .kpi-value {
+            font-size: 24px;
+            font-weight: 700;
+            color: var(--text-main);
+            line-height: 1.2;
+            letter-spacing: -0.5px;
+        }
+        .kpi-sub {
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-top: 6px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+
+        /* Source Distribution Bar */
+        .strip-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 12px 16px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+        .strip-label {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            white-space: nowrap;
+        }
+        .strip-bar {
+            flex: 1;
+            min-width: 200px;
+            height: 8px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 4px;
+            display: flex;
+            overflow: hidden;
+        }
+        .strip-seg { height: 100%; transition: width 0.3s ease; }
+        .strip-legend {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 12px;
+            color: var(--text-muted);
+            flex-wrap: wrap;
+        }
+        .legend-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 4px;
+        }
+
+        /* Section Layout */
+        .section-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin: 24px 0 10px;
+        }
+        .section-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-main);
+            letter-spacing: -0.2px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .filter-input {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            color: var(--text-main);
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            outline: none;
+            width: 220px;
+            transition: border-color 0.15s;
+        }
+        .filter-input:focus { border-color: var(--accent); }
+
+        /* Tables */
+        .table-wrap {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            overflow-x: auto;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+            text-align: left;
+        }
+        th {
+            background: rgba(255, 255, 255, 0.02);
+            color: var(--text-muted);
+            font-weight: 600;
+            padding: 10px 14px;
+            border-bottom: 1px solid var(--border);
+            text-transform: uppercase;
+            font-size: 10.5px;
+            letter-spacing: 0.5px;
+        }
+        td {
+            padding: 12px 14px;
+            border-bottom: 1px solid var(--border);
+            vertical-align: middle;
+        }
         tr:last-child td { border-bottom: none; }
-        .table-card { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 10px; overflow-x: auto; }
+        tbody tr:hover { background: rgba(255, 255, 255, 0.015); }
 
-        .track-cell { display: flex; align-items: center; gap: 12px; }
-        .track-thumb { width: 44px; height: 44px; border-radius: 6px; object-fit: cover; background: #222; }
-        .track-info-title { font-weight: 600; color: var(--text-main); margin-bottom: 2px; }
-        .track-info-artist { color: var(--text-muted); font-size: 12px; }
-        .source-tag { padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; text-transform: uppercase; }
-        .src-spotify { background: #1db95422; color: #1ed760; border: 1px solid #1db95455; }
-        .src-youtube { background: #ff000022; color: #ff4d4d; border: 1px solid #ff000055; }
-        .src-soundcloud { background: #ff550022; color: #ff8533; border: 1px solid #ff550055; }
+        /* Track Cell */
+        .track-cell {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .track-art {
+            width: 38px;
+            height: 38px;
+            border-radius: 6px;
+            object-fit: cover;
+            background: #111;
+            border: 1px solid var(--border);
+            flex-shrink: 0;
+        }
+        .track-title {
+            font-weight: 600;
+            color: var(--text-main);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 280px;
+        }
+        .track-artist {
+            color: var(--text-muted);
+            font-size: 11px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 280px;
+        }
 
-        .progress-bar-bg { width: 100%; height: 6px; background: rgba(255,255,255,0.1); border-radius: 3px; margin-top: 6px; overflow: hidden; }
-        .progress-bar-fill { height: 100%; background: var(--accent-cyan); border-radius: 3px; }
+        /* Tags */
+        .tag {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 2px 7px;
+            border-radius: 4px;
+            font-size: 10.5px;
+            font-weight: 600;
+            letter-spacing: 0.3px;
+            text-transform: uppercase;
+        }
+        .tag-spotify { background: rgba(30, 215, 96, 0.12); color: #1ed760; border: 1px solid rgba(30, 215, 96, 0.25); }
+        .tag-youtube { background: rgba(255, 77, 77, 0.12); color: #ff4d4d; border: 1px solid rgba(255, 77, 77, 0.25); }
+        .tag-soundcloud { background: rgba(255, 133, 51, 0.12); color: #ff8533; border: 1px solid rgba(255, 133, 51, 0.25); }
+        .tag-upload { background: rgba(6, 182, 212, 0.12); color: #06b6d4; border: 1px solid rgba(6, 182, 212, 0.25); }
+        .tag-default { background: rgba(255, 255, 255, 0.05); color: var(--text-muted); border: 1px solid var(--border); }
 
-        #auth-overlay { position: fixed; inset: 0; background: var(--bg); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 16px; }
-        .auth-card { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 12px; padding: 32px; max-width: 380px; width: 100%; text-align: center; }
-        .auth-input { width: 100%; padding: 12px 14px; background: #0b0e14; border: 1px solid var(--card-border); color: white; border-radius: 8px; margin: 16px 0; font-size: 14px; outline: none; }
-        .auth-btn { width: 100%; padding: 12px; background: var(--accent); color: white; border: none; border-radius: 8px; font-weight: 600; font-size: 14px; cursor: pointer; transition: 0.2s; }
-        .auth-btn:hover { opacity: 0.9; }
+        /* Progress Bar */
+        .mini-progress {
+            width: 100%;
+            height: 4px;
+            background: rgba(255, 255, 255, 0.08);
+            border-radius: 2px;
+            margin-top: 5px;
+            overflow: hidden;
+        }
+        .mini-progress-fill {
+            height: 100%;
+            background: var(--accent);
+            border-radius: 2px;
+        }
+
+        /* Auth Overlay */
+        #auth-overlay {
+            position: fixed;
+            inset: 0;
+            background: var(--bg);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            padding: 16px;
+        }
+        .auth-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 28px 24px;
+            max-width: 340px;
+            width: 100%;
+            text-align: center;
+        }
+        .auth-input {
+            width: 100%;
+            padding: 10px 12px;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            color: white;
+            border-radius: 6px;
+            margin: 14px 0;
+            font-size: 13px;
+            outline: none;
+        }
+        .auth-input:focus { border-color: var(--accent); }
+
+        /* Toast */
+        #toast {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            background: var(--surface);
+            border: 1px solid var(--border-light);
+            color: var(--text-main);
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-size: 12px;
+            display: none;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+            z-index: 999;
+        }
     </style>
 </head>
 <body>
     <div id="auth-overlay">
         <div class="auth-card">
-            <div class="logo-badge" style="display:inline-block; margin-bottom:12px;">RESO MONITOR</div>
-            <h2>Private Dashboard</h2>
-            <p style="font-size:13px; color:var(--text-muted); margin-top:6px;">Enter your secret owner key to monitor real-time playback & node health.</p>
-            <input type="password" id="auth-key-input" class="auth-input" placeholder="Secret Key" />
-            <button class="auth-btn" onclick="submitAuth()">Enter Dashboard</button>
-            <div id="auth-error" style="color:#f85149; font-size:12px; margin-top:10px; display:none;">Invalid authorization key</div>
+            <div class="brand-badge" style="display:inline-block; margin-bottom:12px;">RESO MONITOR</div>
+            <h2 style="font-size:16px;">Private Dashboard</h2>
+            <p style="font-size:12px; color:var(--text-muted); margin-top:6px;">Enter your owner key to inspect real-time audio playback & system health.</p>
+            <input type="password" id="auth-key-input" class="auth-input" placeholder="Owner Secret Key" />
+            <button class="btn btn-primary" style="width:100%; justify-content:center;" onclick="submitAuth()">Enter Dashboard</button>
+            <div id="auth-error" style="color:var(--red); font-size:11px; margin-top:10px; display:none;">Invalid authorization key</div>
         </div>
     </div>
 
+    <div id="toast"></div>
+
     <header>
-        <div class="logo-group">
-            <div class="logo-badge">RESO</div>
+        <div class="brand">
+            <div class="brand-badge">RESO</div>
             <h1>System & Audio Engine Monitor</h1>
         </div>
-        <div class="header-status">
-            <span id="live-indicator" class="pill pill-green">🟢 Live Polling (3s)</span>
-            <span id="bot-uptime">Uptime: --</span>
-            <button onclick="logout()" style="background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:12px; text-decoration:underline;">Logout</button>
+        <div class="header-actions">
+            <span id="chip-status" class="chip chip-green">🟢 Primary Connected</span>
+            <span id="chip-host" class="chip mono">Host: --</span>
+            <span id="chip-uptime" class="chip mono">Up: --</span>
+            <select id="poll-interval" class="btn mono" onchange="changeInterval()">
+                <option value="2000">2s Live</option>
+                <option value="3000" selected>3s Poll</option>
+                <option value="5000">5s Poll</option>
+                <option value="0">Paused</option>
+            </select>
+            <button class="btn" onclick="fetchData()">⟳ Refresh</button>
+            <button class="btn" onclick="copyMetricsJson()">📋 Copy JSON</button>
+            <button class="btn" onclick="logout()" style="color:var(--text-muted);">Logout</button>
         </div>
     </header>
 
-    <div class="grid">
-        <div class="card">
-            <div class="card-title">Active Streams</div>
-            <div class="card-value" id="val-streams">0</div>
-            <div class="card-subtitle" id="sub-sessions">0 total sessions</div>
+    <!-- 6 KPI Stat Tiles -->
+    <div class="kpi-grid">
+        <div class="kpi-card">
+            <div class="kpi-label">Active Streams</div>
+            <div class="kpi-value mono" id="kpi-streams">0</div>
+            <div class="kpi-sub" id="kpi-sub-streams">
+                <span>0 paused</span> • <span>0 idle</span>
+            </div>
         </div>
-        <div class="card">
-            <div class="card-title">Lavalink Heartbeat</div>
-            <div class="card-value" id="val-lavalink-ping">-- ms</div>
-            <div class="card-subtitle" id="sub-lavalink-status">Checking node...</div>
+        <div class="kpi-card">
+            <div class="kpi-label">Queued Tracks</div>
+            <div class="kpi-value mono" id="kpi-queue">0</div>
+            <div class="kpi-sub" id="kpi-sub-queue">
+                <span id="kpi-bitrate">64 kbps avg</span> • <span id="kpi-filters">0 filters</span>
+            </div>
         </div>
-        <div class="card">
-            <div class="card-title">Audio Frame Quality</div>
-            <div class="card-value" id="val-frames-quality">100%</div>
-            <div class="card-subtitle" id="sub-frame-drops">0 frame drops / deficit</div>
+        <div class="kpi-card">
+            <div class="kpi-label">Lavalink Node</div>
+            <div class="kpi-value mono" id="kpi-lavalink-ping">-- ms</div>
+            <div class="kpi-sub" id="kpi-sub-frames">
+                <span id="kpi-frames-tag">100% OK</span> • <span id="kpi-drops">0 drops</span>
+            </div>
         </div>
-        <div class="card">
-            <div class="card-title">Discord WS Ping</div>
-            <div class="card-value" id="val-ws-ping">-- ms</div>
-            <div class="card-subtitle" id="sub-bot-mem">RAM: -- MB</div>
+        <div class="kpi-card">
+            <div class="kpi-label">Discord Gateway</div>
+            <div class="kpi-value mono" id="kpi-ws-ping">-- ms</div>
+            <div class="kpi-sub" id="kpi-sub-discord">
+                <span id="kpi-guilds">0 guilds</span> • <span id="kpi-users">0 users</span>
+            </div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">Host System</div>
+            <div class="kpi-value mono" id="kpi-host-load">Load: --</div>
+            <div class="kpi-sub" id="kpi-sub-host">
+                <span id="kpi-host-mem">RAM: --%</span>
+            </div>
+            <div class="mini-progress"><div class="mini-progress-fill" id="kpi-host-mem-bar" style="width:0%;"></div></div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">Bot Process Memory</div>
+            <div class="kpi-value mono" id="kpi-bot-rss">-- MB</div>
+            <div class="kpi-sub" id="kpi-sub-bot-heap">
+                <span>Heap: -- MB</span>
+            </div>
+            <div class="mini-progress"><div class="mini-progress-fill" id="kpi-bot-heap-bar" style="width:0%; background:var(--cyan);"></div></div>
         </div>
     </div>
 
-    <div class="section-header">🎵 Lavalink Audio Nodes</div>
-    <div class="table-card">
+    <!-- Live Source Distribution Bar -->
+    <div class="strip-card">
+        <div class="strip-label">Music Sources</div>
+        <div class="strip-bar">
+            <div id="src-bar-spotify" class="strip-seg" style="width:0%; background:#1ed760;"></div>
+            <div id="src-bar-youtube" class="strip-seg" style="width:0%; background:#ff4d4d;"></div>
+            <div id="src-bar-soundcloud" class="strip-seg" style="width:0%; background:#ff8533;"></div>
+            <div id="src-bar-other" class="strip-seg" style="width:0%; background:#6366f1;"></div>
+        </div>
+        <div class="strip-legend" id="src-legend">
+            <span><span class="legend-dot" style="background:#1ed760;"></span>Spotify: <strong id="lbl-spotify">0%</strong></span>
+            <span><span class="legend-dot" style="background:#ff4d4d;"></span>YouTube: <strong id="lbl-youtube">0%</strong></span>
+            <span><span class="legend-dot" style="background:#ff8533;"></span>SoundCloud: <strong id="lbl-soundcloud">0%</strong></span>
+            <span><span class="legend-dot" style="background:#6366f1;"></span>Uploads: <strong id="lbl-other">0%</strong></span>
+        </div>
+    </div>
+
+    <!-- Nodes Table -->
+    <div class="section-bar">
+        <div class="section-title">🎵 Lavalink Audio Nodes</div>
+    </div>
+    <div class="table-wrap">
         <table>
             <thead>
                 <tr>
@@ -272,38 +774,44 @@ function generateDashboardHtml() {
                     <th>Status</th>
                     <th>Latency</th>
                     <th>Frame Health</th>
-                    <th>CPU Load</th>
-                    <th>Memory</th>
-                    <th>Streams</th>
+                    <th>CPU (Sys / Lava)</th>
+                    <th>RAM Used</th>
+                    <th>Active Players</th>
                 </tr>
             </thead>
             <tbody id="nodes-tbody">
-                <tr><td colspan="8" style="text-align:center; color:var(--text-muted);">Loading node health...</td></tr>
+                <tr><td colspan="8" style="text-align:center; color:var(--text-muted); padding:18px;">Connecting to audio nodes...</td></tr>
             </tbody>
         </table>
     </div>
 
-    <div class="section-header">🎧 Current Live Playback Sessions</div>
-    <div class="table-card">
+    <!-- Live Sessions Table -->
+    <div class="section-bar">
+        <div class="section-title">🎧 Active Playback Sessions</div>
+        <input type="text" id="session-filter" class="filter-input" placeholder="Search guild, song, artist..." oninput="filterSessions()" />
+    </div>
+    <div class="table-wrap">
         <table>
             <thead>
                 <tr>
                     <th>Server</th>
-                    <th>Track</th>
+                    <th>Track / Artist</th>
                     <th>Source</th>
-                    <th>Position / Progress</th>
-                    <th>Status</th>
+                    <th style="min-width:180px;">Playback Progress</th>
+                    <th>Session State</th>
                     <th>Node</th>
                 </tr>
             </thead>
             <tbody id="sessions-tbody">
-                <tr><td colspan="6" style="text-align:center; color:var(--text-muted);">No active music sessions right now.</td></tr>
+                <tr><td colspan="6" style="text-align:center; color:var(--text-muted); padding:24px;">No active music sessions right now. ☕</td></tr>
             </tbody>
         </table>
     </div>
 
     <script>
         let authKey = new URLSearchParams(window.location.search).get('key') || localStorage.getItem('reso_auth_key') || '';
+        let lastData = null;
+        let pollTimer = null;
 
         function formatMs(ms) {
             if (!ms || isNaN(ms)) return '0:00';
@@ -311,6 +819,13 @@ function generateDashboardHtml() {
             const m = Math.floor(totalSec / 60);
             const s = totalSec % 60;
             return m + ':' + (s < 10 ? '0' : '') + s;
+        }
+
+        function showToast(msg) {
+            const t = document.getElementById('toast');
+            t.innerText = msg;
+            t.style.display = 'block';
+            setTimeout(() => { t.style.display = 'none'; }, 2400);
         }
 
         function submitAuth() {
@@ -322,6 +837,24 @@ function generateDashboardHtml() {
         function logout() {
             localStorage.removeItem('reso_auth_key');
             location.href = window.location.pathname;
+        }
+
+        function changeInterval() {
+            if (pollTimer) clearInterval(pollTimer);
+            const ms = parseInt(document.getElementById('poll-interval').value, 10);
+            if (ms > 0) {
+                pollTimer = setInterval(fetchData, ms);
+            }
+        }
+
+        async function copyMetricsJson() {
+            if (!lastData) return;
+            try {
+                await navigator.clipboard.writeText(JSON.stringify(lastData, null, 2));
+                showToast('✓ Metrics JSON copied to clipboard');
+            } catch {
+                showToast('Could not copy to clipboard');
+            }
         }
 
         async function fetchData() {
@@ -338,6 +871,7 @@ function generateDashboardHtml() {
                     return;
                 }
                 const data = await res.json();
+                lastData = data;
                 document.getElementById('auth-overlay').style.display = 'none';
                 renderDashboard(data);
             } catch (err) {
@@ -346,85 +880,204 @@ function generateDashboardHtml() {
         }
 
         function renderDashboard(data) {
-            document.getElementById('bot-uptime').innerText = 'Uptime: ' + data.bot.uptimeFormatted;
-            document.getElementById('val-streams').innerText = data.activeStreamsCount;
-            document.getElementById('sub-sessions').innerText = data.totalSessionsCount + ' server session' + (data.totalSessionsCount !== 1 ? 's' : '');
-            document.getElementById('val-ws-ping').innerText = data.bot.wsPingMs + ' ms';
-            document.getElementById('sub-bot-mem').innerText = 'Bot RAM: ' + data.bot.rssMb + ' MB (Heap: ' + data.bot.heapUsedMb + 'MB)';
-
-            // Node summaries
-            const primary = data.nodes.find(n => n.isPrimary) || data.nodes[0];
-            if (primary) {
-                document.getElementById('val-lavalink-ping').innerText = (primary.latencyMs != null ? primary.latencyMs + ' ms' : '--');
-                document.getElementById('sub-lavalink-status').innerText = primary.connected ? '🟢 Connected (' + primary.id + ')' : '🔴 Disconnected';
-
-                const frameLoss = primary.frames.lossPercent;
-                const qualityElem = document.getElementById('val-frames-quality');
-                qualityElem.innerText = (100 - frameLoss).toFixed(1) + '%';
-                if (frameLoss > 5) {
-                    qualityElem.style.color = '#f85149';
-                } else if (frameLoss > 1) {
-                    qualityElem.style.color = '#e3b341';
-                } else {
-                    qualityElem.style.color = '#3fb950';
-                }
-                document.getElementById('sub-frame-drops').innerText = primary.frames.deficit + ' deficit / ' + primary.frames.nulled + ' nulled frames';
+            // Header chips
+            document.getElementById('chip-uptime').innerText = 'Up: ' + (data.bot?.uptimeFormatted || '--');
+            if (data.host) {
+                document.getElementById('chip-host').innerText = data.host.platform + ' ' + data.host.arch + ' • Node ' + data.host.nodeVersion;
             }
+
+            // 1. Streams KPI
+            document.getElementById('kpi-streams').innerText = data.activeStreamsCount || 0;
+            const paused = data.audio?.pausedStreamsCount || 0;
+            const idle = data.audio?.idlePlayersCount || 0;
+            const total247 = data.audio?.twentyFourSevenCount || 0;
+            const totalAuto = data.audio?.autoplayGuildsCount || 0;
+            document.getElementById('kpi-sub-streams').innerHTML = 
+                '<span>' + paused + ' paused</span> • <span>' + idle + ' idle</span>' +
+                (total247 > 0 ? ' • <span style="color:#6366f1;">🔒 ' + total247 + ' in 24/7</span>' : '') +
+                (totalAuto > 0 ? ' • <span style="color:#06b6d4;">🔄 ' + totalAuto + ' auto</span>' : '');
+
+            // 2. Queue KPI
+            document.getElementById('kpi-queue').innerText = (data.audio?.totalTracksQueued || 0) + ' Tracks';
+            document.getElementById('kpi-bitrate').innerText = (data.audio?.avgBitrateKbps || 64) + ' kbps avg';
+            document.getElementById('kpi-filters').innerText = (data.audio?.activeFiltersCount || 0) + ' filter' + (data.audio?.activeFiltersCount !== 1 ? 's' : '');
+
+            // 3. Lavalink Node KPI
+            const primary = (data.nodes || []).find(n => n.isPrimary) || (data.nodes || [])[0];
+            if (primary) {
+                document.getElementById('kpi-lavalink-ping').innerText = (primary.latencyMs != null ? primary.latencyMs + ' ms' : '--');
+                const dropPercent = primary.frames?.lossPercent || 0;
+                const framesTag = document.getElementById('kpi-frames-tag');
+                if (dropPercent > 5) {
+                    framesTag.innerText = dropPercent + '% Drops';
+                    framesTag.style.color = '#ef4444';
+                } else if (dropPercent > 1) {
+                    framesTag.innerText = dropPercent + '% Jitter';
+                    framesTag.style.color = '#f59e0b';
+                } else {
+                    framesTag.innerText = '100% Clean';
+                    framesTag.style.color = '#10b981';
+                }
+                document.getElementById('kpi-drops').innerText = (primary.frames?.deficit || 0) + ' def / ' + (primary.frames?.nulled || 0) + ' nul';
+
+                const chipStatus = document.getElementById('chip-status');
+                if (primary.connected) {
+                    chipStatus.className = 'chip chip-green';
+                    chipStatus.innerText = '🟢 Primary Online';
+                } else {
+                    chipStatus.className = 'chip chip-red';
+                    chipStatus.innerText = '🔴 Primary Offline';
+                }
+            }
+
+            // 4. Discord Gateway KPI
+            document.getElementById('kpi-ws-ping').innerText = (data.bot?.wsPingMs || 0) + ' ms';
+            document.getElementById('kpi-guilds').innerText = (data.bot?.guildsCount || 0) + ' guilds';
+            document.getElementById('kpi-users').innerText = (data.bot?.membersCount || 0) + ' users';
+
+            // 5. Host System KPI
+            if (data.host) {
+                const load1 = data.host.loadAvg?.[0] !== undefined ? data.host.loadAvg[0] : '--';
+                document.getElementById('kpi-host-load').innerText = 'Load: ' + load1;
+                document.getElementById('kpi-host-mem').innerText = 'RAM: ' + data.host.memPercent + '% (' + data.host.freeMemMb + 'MB free)';
+                document.getElementById('kpi-host-mem-bar').style.width = Math.min(100, data.host.memPercent) + '%';
+            }
+
+            // 6. Bot Process Memory KPI
+            if (data.bot) {
+                document.getElementById('kpi-bot-rss').innerText = data.bot.rssMb + ' MB';
+                const heapPct = data.bot.heapTotalMb > 0 ? Math.round((data.bot.heapUsedMb / data.bot.heapTotalMb) * 100) : 0;
+                document.getElementById('kpi-sub-bot-heap').innerText = 'Heap: ' + data.bot.heapUsedMb + 'MB / ' + data.bot.heapTotalMb + 'MB (' + heapPct + '%)';
+                document.getElementById('kpi-bot-heap-bar').style.width = Math.min(100, heapPct) + '%';
+            }
+
+            // Source Distribution Strip
+            renderSourceStrip(data);
 
             // Nodes Table
-            const nodesTbody = document.getElementById('nodes-tbody');
-            if (data.nodes.length === 0) {
-                nodesTbody.innerHTML = '<tr><td colspan="8" style="text-align:center;">No Lavalink nodes configured</td></tr>';
-            } else {
-                nodesTbody.innerHTML = data.nodes.map(n => {
-                    const statusPill = n.connected ? '<span class="pill pill-green">Online</span>' : '<span class="pill pill-red">Offline</span>';
-                    const roleBadge = n.isPrimary ? '<span style="color:#00d2ff; font-weight:700;">PRIMARY</span>' : '<span style="color:#8b949e;">BACKUP</span>';
-                    const frameLossTag = n.frames.lossPercent > 2 ? '<span style="color:#f85149; font-weight:700;">' + n.frames.lossPercent + '% Drop</span>' : '<span style="color:#3fb950;">100% OK</span>';
-                    return '<tr>' +
-                        '<td><strong>' + n.id + '</strong><br><small style="color:#8b949e;">' + n.host + '</small></td>' +
-                        '<td>' + roleBadge + '</td>' +
-                        '<td>' + statusPill + '</td>' +
-                        '<td><code>' + (n.latencyMs != null ? n.latencyMs + 'ms' : '--') + '</code></td>' +
-                        '<td>' + frameLossTag + '</td>' +
-                        '<td>Sys: ' + n.cpuSystem + '% | Lava: ' + n.cpuLavalink + '%</td>' +
-                        '<td>' + n.memUsedMb + ' MB / ' + n.memAllocatedMb + ' MB</td>' +
-                        '<td><strong>' + n.players + '</strong> active (' + n.totalPlayers + ' total)</td>' +
-                    '</tr>';
-                }).join('');
-            }
+            renderNodesTable(data.nodes || []);
 
             // Sessions Table
-            const sessionsTbody = document.getElementById('sessions-tbody');
-            if (data.sessions.length === 0) {
-                sessionsTbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:var(--text-muted); padding:24px;">No active music sessions right now. ☕</td></tr>';
-            } else {
-                sessionsTbody.innerHTML = data.sessions.map(s => {
-                    const t = s.track || { title: 'Unknown', author: 'Unknown', source: 'unknown' };
-                    const progressPercent = (s.durationMs > 0) ? Math.min(100, Math.round((s.positionMs / s.durationMs) * 100)) : 0;
-                    const srcClass = t.source === 'spotify' ? 'src-spotify' : (t.source === 'youtube' || t.source === 'youtubemusic' ? 'src-youtube' : 'src-soundcloud');
-                    const statusText = s.paused ? '⏸ Paused' : (s.playing ? '▶️ Playing' : '⏹ Idle');
-
-                    return '<tr>' +
-                        '<td><strong>' + s.guildName + '</strong><br><small style="color:#8b949e;">ID: ' + s.guildId + '</small></td>' +
-                        '<td><div class="track-cell">' +
-                            (t.artworkUrl ? '<img src="' + t.artworkUrl + '" class="track-thumb" />' : '') +
-                            '<div><div class="track-info-title">' + t.title + '</div><div class="track-info-artist">' + t.author + '</div></div>' +
-                        '</div></td>' +
-                        '<td><span class="source-tag ' + srcClass + '">' + t.source + '</span></td>' +
-                        '<td style="min-width:160px;">' +
-                            '<div>' + formatMs(s.positionMs) + ' / ' + (t.isStream ? 'Live' : formatMs(s.durationMs)) + ' (' + progressPercent + '%)</div>' +
-                            '<div class="progress-bar-bg"><div class="progress-bar-fill" style="width:' + progressPercent + '%;"></div></div>' +
-                        '</td>' +
-                        '<td>' + statusText + ' (' + s.volume + '%)</td>' +
-                        '<td><code>' + s.nodeId + '</code></td>' +
-                    '</tr>';
-                }).join('');
-            }
+            renderSessionsTable(data.sessions || []);
         }
 
-        // Initial fetch and auto-refresh loop
+        function renderSourceStrip(data) {
+            const counts = data.audio?.sourceBreakdown || {};
+            const total = Object.values(counts).reduce((a, b) => a + b, 0) || 1;
+            const sp = counts.spotify || 0;
+            const yt = (counts.youtube || 0) + (counts.youtubemusic || 0);
+            const sc = counts.soundcloud || 0;
+            const other = total - sp - yt - sc;
+
+            const spPct = Math.round((sp / total) * 100);
+            const ytPct = Math.round((yt / total) * 100);
+            const scPct = Math.round((sc / total) * 100);
+            const otPct = Math.max(0, 100 - spPct - ytPct - scPct);
+
+            document.getElementById('src-bar-spotify').style.width = spPct + '%';
+            document.getElementById('src-bar-youtube').style.width = ytPct + '%';
+            document.getElementById('src-bar-soundcloud').style.width = scPct + '%';
+            document.getElementById('src-bar-other').style.width = otPct + '%';
+
+            document.getElementById('lbl-spotify').innerText = spPct + '% (' + sp + ')';
+            document.getElementById('lbl-youtube').innerText = ytPct + '% (' + yt + ')';
+            document.getElementById('lbl-soundcloud').innerText = scPct + '% (' + sc + ')';
+            document.getElementById('lbl-other').innerText = otPct + '% (' + (counts.file || other) + ')';
+        }
+
+        function renderNodesTable(nodes) {
+            const tbody = document.getElementById('nodes-tbody');
+            if (nodes.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; color:var(--text-muted);">No Lavalink nodes configured</td></tr>';
+                return;
+            }
+            tbody.innerHTML = nodes.map(n => {
+                const statusPill = n.connected ? '<span class="chip chip-green">Online</span>' : '<span class="chip chip-red">Offline</span>';
+                const roleBadge = n.isPrimary ? '<span style="color:#06b6d4; font-weight:700;">PRIMARY</span>' : '<span style="color:var(--text-muted);">BACKUP</span>';
+                const frameLoss = n.frames?.lossPercent || 0;
+                let frameTag = '<span style="color:#10b981;">Clean</span>';
+                if (frameLoss > 5) frameTag = '<span style="color:#ef4444; font-weight:700;">' + frameLoss + '% Drop</span>';
+                else if (frameLoss > 1) frameTag = '<span style="color:#f59e0b;">' + frameLoss + '% Jitter</span>';
+
+                return '<tr>' +
+                    '<td><strong>' + n.id + '</strong><br><small style="color:var(--text-muted);">' + n.host + '</small></td>' +
+                    '<td>' + roleBadge + '</td>' +
+                    '<td>' + statusPill + '</td>' +
+                    '<td class="mono">' + (n.latencyMs != null ? n.latencyMs + 'ms' : '--') + '</td>' +
+                    '<td>' + frameTag + '</td>' +
+                    '<td class="mono">Sys ' + n.cpuSystem + '% | Lava ' + n.cpuLavalink + '%</td>' +
+                    '<td class="mono">' + n.memUsedMb + 'MB / ' + n.memAllocatedMb + 'MB</td>' +
+                    '<td><strong>' + n.players + '</strong> active <span style="color:var(--text-muted);">(' + n.totalPlayers + ' total)</span></td>' +
+                '</tr>';
+            }).join('');
+        }
+
+        function renderSessionsTable(sessions) {
+            const tbody = document.getElementById('sessions-tbody');
+            const filter = (document.getElementById('session-filter')?.value || '').toLowerCase().trim();
+
+            const filtered = sessions.filter(s => {
+                if (!filter) return true;
+                const gName = (s.guildName || '').toLowerCase();
+                const tName = (s.track?.title || '').toLowerCase();
+                const aName = (s.track?.author || '').toLowerCase();
+                const src = (s.track?.source || '').toLowerCase();
+                return gName.includes(filter) || tName.includes(filter) || aName.includes(filter) || src.includes(filter);
+            });
+
+            if (filtered.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:var(--text-muted); padding:24px;">' +
+                    (sessions.length > 0 ? 'No sessions match your filter query.' : 'No active music sessions right now. ☕') +
+                '</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = filtered.map(s => {
+                const t = s.track || { title: 'Unknown', author: 'Unknown', source: 'unknown' };
+                const progressPct = (s.durationMs > 0) ? Math.min(100, Math.round((s.positionMs / s.durationMs) * 100)) : 0;
+                let tagClass = 'tag-default';
+                if (t.source === 'spotify') tagClass = 'tag-spotify';
+                else if (t.source === 'youtube' || t.source === 'youtubemusic') tagClass = 'tag-youtube';
+                else if (t.source === 'soundcloud') tagClass = 'tag-soundcloud';
+                else if (t.source === 'file') tagClass = 'tag-upload';
+
+                const stateEmoji = s.paused ? '⏸' : (s.playing ? '▶️' : '⏹');
+                const badges = [];
+                if (s.is247) badges.push('🔒 24/7');
+                if (s.isAutoplay) badges.push('🔄 Auto');
+                if (s.queueLength > 0) badges.push('+' + s.queueLength + ' queued');
+                if (s.bitrateKbps) badges.push(s.bitrateKbps + 'kbps');
+
+                return '<tr>' +
+                    '<td><strong>' + s.guildName + '</strong><br><small class="mono" style="color:var(--text-muted);">ID: ' + s.guildId + '</small></td>' +
+                    '<td><div class="track-cell">' +
+                        (t.artworkUrl ? '<img src="' + t.artworkUrl + '" class="track-art" loading="lazy" />' : '') +
+                        '<div>' +
+                            '<div class="track-title"><a href="' + (t.uri || '#') + '" target="_blank">' + t.title + '</a></div>' +
+                            '<div class="track-artist">' + t.author + '</div>' +
+                        '</div>' +
+                    '</div></td>' +
+                    '<td><span class="tag ' + tagClass + '">' + t.source + '</span></td>' +
+                    '<td>' +
+                        '<div class="mono">' + formatMs(s.positionMs) + ' / ' + (t.isStream ? 'Live' : formatMs(s.durationMs)) + ' <span style="color:var(--text-muted);">(' + progressPct + '%)</span></div>' +
+                        '<div class="mini-progress"><div class="mini-progress-fill" style="width:' + progressPct + '%;"></div></div>' +
+                    '</td>' +
+                    '<td>' +
+                        '<div>' + stateEmoji + ' ' + s.volume + '% vol</div>' +
+                        '<div style="font-size:11px; color:var(--text-muted); margin-top:2px;">' + (badges.join(' • ') || 'Standard') + '</div>' +
+                    '</td>' +
+                    '<td><code style="color:var(--cyan);">' + s.nodeId + '</code></td>' +
+                '</tr>';
+            }).join('');
+        }
+
+        function filterSessions() {
+            if (lastData) renderSessionsTable(lastData.sessions || []);
+        }
+
+        // Initial launch
         fetchData();
-        setInterval(fetchData, 3000);
+        changeInterval();
     </script>
 </body>
 </html>`;
@@ -448,7 +1101,6 @@ function handleDashboardRequest(req, res, client) {
 
     // 2. Metrics endpoint (Prometheus format)
     if (pathname === '/metrics') {
-        // Optional key check for /metrics: only require if DASHBOARD_KEY is set and user specifies secure metrics
         if (process.env.DASHBOARD_KEY && providedKey !== expectedKey) {
             res.writeHead(401, { 'Content-Type': 'text/plain' });
             return res.end('Unauthorized: Valid ?key=... required');

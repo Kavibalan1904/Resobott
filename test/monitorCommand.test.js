@@ -150,11 +150,35 @@ describe('Owner Monitor Command & Dashboard Verification', () => {
     it('getSystemMetrics should format system and audio quality stats properly', () => {
         const mockClient = {
             uptime: 60000,
-            ws: { ping: 30 },
-            guilds: { cache: new Map() },
+            ws: { ping: 30, shards: new Map([['0', {}]]) },
+            guilds: {
+                cache: new Map([
+                    ['g1', { id: 'g1', memberCount: 50 }],
+                ]),
+            },
+            channels: {
+                cache: new Map([
+                    ['vc1', { id: 'vc1', isVoiceBased: () => true, bitrate: 96000 }],
+                ]),
+            },
+            twentyFourSeven: new Set(['g1']),
+            autoplayGuilds: new Set(['g1']),
             lavalink: {
                 nodeManager: { nodes: new Map() },
-                players: new Map(),
+                players: new Map([
+                    ['g1', {
+                        guildId: 'g1',
+                        voiceChannelId: 'vc1',
+                        playing: true,
+                        paused: false,
+                        volume: 80,
+                        activeFilters: new Set(['bassboost']),
+                        queue: {
+                            current: { info: { title: 'T1', author: 'A1', duration: 180000, sourceName: 'spotify' } },
+                            tracks: [{ info: { title: 'T2' } }, { info: { title: 'T3' } }],
+                        },
+                    }],
+                ]),
             },
         };
 
@@ -163,13 +187,37 @@ describe('Owner Monitor Command & Dashboard Verification', () => {
         assert.strictEqual(metrics.bot.wsPingMs, 30);
         assert.strictEqual(Array.isArray(metrics.nodes), true);
         assert.strictEqual(Array.isArray(metrics.sessions), true);
+
+        // Host system stats verification
+        assert.ok(metrics.host, 'Expected host metrics');
+        assert.ok(typeof metrics.host.cpuCount === 'number');
+        assert.ok(Array.isArray(metrics.host.loadAvg));
+        assert.ok(typeof metrics.host.totalMemMb === 'number');
+        assert.ok(typeof metrics.host.memPercent === 'number');
+
+        // Audio engine stats verification
+        assert.ok(metrics.audio, 'Expected audio metrics');
+        assert.strictEqual(metrics.audio.activeStreamsCount, 1);
+        assert.strictEqual(metrics.audio.totalTracksQueued, 2);
+        assert.strictEqual(metrics.audio.twentyFourSevenCount, 1);
+        assert.strictEqual(metrics.audio.autoplayGuildsCount, 1);
+        assert.strictEqual(metrics.audio.avgBitrateKbps, 96);
+        assert.strictEqual(metrics.audio.sourceBreakdown.spotify, 1);
+
+        // Session enrichment
+        assert.strictEqual(metrics.sessions[0].bitrateKbps, 96);
+        assert.strictEqual(metrics.sessions[0].is247, true);
+        assert.strictEqual(metrics.sessions[0].isAutoplay, true);
+        assert.strictEqual(metrics.sessions[0].queueLength, 2);
     });
 
-    it('handleDashboardRequest should respond to health, dashboard, and metrics endpoints', () => {
+    it('handleDashboardRequest should respond to health, dashboard, and metrics endpoints with extended metrics', () => {
         const mockClient = {
             uptime: 60000,
             ws: { ping: 30 },
             guilds: { cache: new Map() },
+            twentyFourSeven: new Set(),
+            autoplayGuilds: new Set(),
             lavalink: {
                 nodeManager: { nodes: new Map() },
                 players: new Map(),
@@ -192,5 +240,17 @@ describe('Owner Monitor Command & Dashboard Verification', () => {
         handleDashboardRequest({ url: '/dashboard', headers: {} }, mockDashRes, mockClient);
         assert.ok(dashResponse.includes('System & Audio Engine Monitor'));
         assert.ok(dashResponse.includes('Private Dashboard'));
+        assert.ok(dashResponse.includes('Active Streams'));
+        assert.ok(dashResponse.includes('Music Sources'));
+
+        let metricsResponse = '';
+        const mockMetricsRes = {
+            writeHead: (status, headers) => { },
+            end: (body) => { metricsResponse = body; },
+        };
+        handleDashboardRequest({ url: '/metrics', headers: {} }, mockMetricsRes, mockClient);
+        assert.ok(metricsResponse.includes('reso_discord_ws_ping_ms 30'));
+        assert.ok(metricsResponse.includes('reso_memory_heap_bytes'));
+        assert.ok(metricsResponse.includes('reso_audio_queued_tracks'));
     });
 });
