@@ -15,14 +15,11 @@ const { setupLavalinkEvents } = require('./handlers/playerEvents');
 const { handlePlayerButton } = require('./handlers/buttonHandler');
 const { getBestNode, ensurePlayerNode, truncate } = require('./utils/helpers');
 const { setTrackMetadata } = require('./utils/trackMetadata');
-const { getDesignatedChannel, resetAllAnsweredGuides } = require('./utils/settings');
+const { getDesignatedChannel } = require('./utils/settings');
 const { createEmbed, EMOJIS } = require('./utils/embeds');
 const { createAIProvider } = require('./ai/providers/factory');
 const { handleDashboardRequest } = require('./utils/dashboard');
-const { checkAndPromptFirstTimeGuide, promptGuildOnInvite } = require('./utils/onboarding');
-
-// Reset onboarding answers so user can re-verify prompt on next play
-resetAllAnsweredGuides();
+const { checkAndPromptFirstTimeGuide, promptGuildOnInvite, handleGuideButton } = require('./utils/onboarding');
 
 // ── HTTP Health Check & Monitor Server ───────────────────────────
 // Bot-Hosting uses SERVER_PORT, other clouds use PORT. Always bind to 0.0.0.0 for container proxy access.
@@ -113,6 +110,7 @@ defaultNodes.push({
     retryDelay: 5000,      // Fast 5s reconnect attempts
     heartBeatInterval: 15000, // 15s WebSocket ping prevents reverse proxy idle closure (code 1006)
     enablePingOnStatsCheck: true,
+    requestSignalTimeoutMS: 30000, // 30s timeout prevents false local AbortSignal timeout on remote searches
 });
 
 // ── Fallback Backup Node (Ensures 100% uptime when primary is restarting/sleeping) ──
@@ -126,6 +124,7 @@ defaultNodes.push({
     retryDelay: 10000,
     heartBeatInterval: 15000,
     enablePingOnStatsCheck: true,
+    requestSignalTimeoutMS: 30000,
 });
 
 client.lavalink = new LavalinkManager({
@@ -426,6 +425,16 @@ async function main() {
                     await interaction.update({ embeds, components });
                 } catch (err) {
                     console.error('[Reso] Monitor refresh error:', err);
+                }
+                return;
+            }
+
+            // ── Handle onboarding guide buttons (guide_yes, guide_no, guide_expired) ──
+            if (interaction.isButton() && interaction.customId?.startsWith('guide_')) {
+                try {
+                    await handleGuideButton(interaction);
+                } catch (err) {
+                    console.error('[Reso] Guide button error:', err);
                 }
                 return;
             }

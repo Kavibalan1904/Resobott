@@ -472,6 +472,30 @@ module.exports = {
 
         } catch (error) {
             console.error('[Reso] PlayNext error:', error);
+
+            if (player?.playing && player?.queue?.current) {
+                const playingTrack = player.queue.current;
+                const info = playingTrack.info || {};
+                const effSource = getEffectiveSource(playingTrack, interaction.guild.id);
+                const sourceBadge = getSourceBadge(effSource);
+                const sourceEmoji = isAttachment ? '📁' : (SOURCE_EMOJIS[effSource] || sourceBadge.emoji || '🔍');
+                const matchedSource = isAttachment ? 'Audio Upload' : sourceBadge.label;
+
+                const embed = createEmbed('Success')
+                    .setDescription(
+                        `📌 **Playing Next** • ${sourceEmoji} ${isAttachment ? 'Loaded from' : 'Found on'} **${matchedSource}**\n\n` +
+                        `**[${truncate(info.title || 'Unknown Track', 55)}](${info.uri || ''})**\n` +
+                        `${EMOJIS.clock} \`${info.isStream ? 'Live' : formatMs(info.duration)}\` • Requested by ${interaction.user}` +
+                        (fallbackNote ? `\n\n> *${fallbackNote}*` : '')
+                    )
+                    .setThumbnail(info.artworkUrl || null);
+
+                if (interaction.deferred || interaction.replied) {
+                    return interaction.editReply({ embeds: [embed] }).catch(() => {});
+                }
+                return interaction.reply({ embeds: [embed] }).catch(() => {});
+            }
+
             const embed = errorEmbed(`Could not add song: ${truncate(error.message, 100)}`);
             if (interaction.deferred || interaction.replied) {
                 return interaction.editReply({ embeds: [embed] }).catch(() => {});

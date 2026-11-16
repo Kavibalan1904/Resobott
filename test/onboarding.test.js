@@ -2,7 +2,7 @@ const { describe, it, beforeEach } = require('node:test');
 const assert = require('node:assert');
 const { EventEmitter } = require('events');
 
-const { checkAndPromptFirstTimeGuide, createQuickGuideEmbed, promptGuildOnInvite } = require('../src/utils/onboarding');
+const { checkAndPromptFirstTimeGuide, createQuickGuideEmbed, promptGuildOnInvite, handleGuideButton } = require('../src/utils/onboarding');
 const guideCommand = require('../src/commands/utility/guide');
 const {
     hasSeenGuide,
@@ -320,5 +320,73 @@ describe('First-time Server Onboarding & Anti-Duplication Regression', () => {
         };
         await guideCommand.execute(mockResetInteraction);
         assert.strictEqual(hasAnsweredGuide(testUserId1), false, 'Expected user answered guide to be reset to false');
+    });
+
+    it('should permanently mark user and guild as answered when prompt collector expires', async () => {
+        const testUserId3 = 'user_first_time_103';
+        const testGuildId3 = 'guild_expire_test_789';
+        resetAnsweredGuide(testUserId3);
+        resetAnsweredGuide(testGuildId3);
+
+        let sentMessage = null;
+        let collectorEmitter = null;
+        let editedMessage = null;
+        const mockChannel = {
+            id: 'chan_onboarding_expire',
+            guildId: testGuildId3,
+            send: async (payload) => {
+                collectorEmitter = new EventEmitter();
+                sentMessage = {
+                    ...payload,
+                    createMessageComponentCollector: () => collectorEmitter,
+                    edit: async (data) => {
+                        editedMessage = data;
+                    },
+                };
+                return sentMessage;
+            },
+        };
+
+        const mockUser = { id: testUserId3, username: 'KaviMusic', bot: false };
+        await checkAndPromptFirstTimeGuide(mockChannel, mockUser, testGuildId3);
+
+        assert.strictEqual(hasAnsweredGuide(testUserId3), false);
+        assert.strictEqual(hasAnsweredGuide(testGuildId3), false);
+
+        // Simulate 60s timeout expiration
+        collectorEmitter.emit('end', new Map(), 'time');
+        await new Promise(r => setTimeout(r, 10));
+
+        // Once expired: both user and guild are permanently recorded as answered
+        assert.strictEqual(hasAnsweredGuide(testUserId3), true, 'User should be marked answered after expiry');
+        assert.strictEqual(hasAnsweredGuide(testGuildId3), true, 'Guild should be marked answered after expiry');
+        assert.ok(editedMessage?.components?.[0]?.components?.[0]?.data?.label === 'Quick guide expired');
+
+        // Subsequent play must NEVER trigger prompt again
+        sentMessage = null;
+        await checkAndPromptFirstTimeGuide(mockChannel, mockUser, testGuildId3);
+        assert.strictEqual(sentMessage, null, 'Prompt should never be sent again once expired');
+    });
+
+    it('handleGuideButton should handle guide buttons globally and record answered state', async () => {
+        const testUser = { id: testUserId2, username: 'Tester' };
+        resetAnsweredGuide(testUserId2);
+        assert.strictEqual(hasAnsweredGuide(testUserId2), false);
+
+        let updatedData = null;
+        const mockInteractionYes = {
+            isButton: () => true,
+            customId: `guide_yes_${testUserId2}`,
+            user: testUser,
+            guildId: testGuildId,
+            update: async (data) => {
+                updatedData = data;
+            },
+        };
+
+        const handled = await handleGuideButton(mockInteractionYes);
+        assert.strictEqual(handled, true);
+        assert.ok(updatedData?.embeds?.[0]);
+        assert.strictEqual(hasAnsweredGuide(testUserId2), true);
     });
 });

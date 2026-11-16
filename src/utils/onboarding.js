@@ -165,6 +165,10 @@ async function checkAndPromptFirstTimeGuide(channel, userOrGuildId, maybeGuildOr
             activePrompts.delete(promptKey);
             if (userId) activePrompts.delete(userId);
 
+            // Once the prompt has ended/expired, record as answered so it never prompts again
+            if (userId) setAnsweredGuide(userId, true);
+            if (guildId) setAnsweredGuide(guildId, true);
+
             if (reason !== 'answered') {
                 const disabledRow = new ActionRowBuilder().addComponents(
                     new ButtonBuilder()
@@ -292,6 +296,9 @@ async function promptGuildOnInvite(guild) {
 
         collector.on('end', async (collected, reason) => {
             activePrompts.delete(promptKey);
+            // Once prompt expires or ends, mark guild as answered so it never prompts again
+            setAnsweredGuide(guild.id, true);
+
             if (reason !== 'answered') {
                 const disabledRow = new ActionRowBuilder().addComponents(
                     new ButtonBuilder()
@@ -309,8 +316,65 @@ async function promptGuildOnInvite(guild) {
     }
 }
 
+/**
+ * Global button interaction handler for guide buttons (guide_yes, guide_no, guide_expired)
+ * Ensures buttons work even after collector expiry or bot process restarts.
+ *
+ * @param {import('discord.js').ButtonInteraction} interaction
+ * @returns {Promise<boolean>} Whether the interaction was handled
+ */
+async function handleGuideButton(interaction) {
+    if (!interaction?.isButton?.() || !interaction.customId?.startsWith('guide_')) return false;
+
+    const guildId = interaction.guildId;
+    const userId = interaction.user.id;
+
+    try {
+        if (interaction.customId.startsWith('guide_yes')) {
+            const guideEmbed = createQuickGuideEmbed(guildId, interaction.user);
+            await interaction.update({
+                embeds: [guideEmbed],
+                components: [],
+            }).catch(() => {});
+
+            if (userId) setAnsweredGuide(userId, true);
+            if (guildId) setAnsweredGuide(guildId, true);
+            return true;
+        }
+
+        if (interaction.customId.startsWith('guide_no')) {
+            const dismissEmbed = createEmbed('Success', guildId)
+                .setDescription(`✨ All set! Enjoy the music 🎶. You can always check \`/help\` or \`>help\` whenever you need.`);
+            await interaction.update({
+                embeds: [dismissEmbed],
+                components: [],
+            }).catch(() => {});
+
+            if (userId) setAnsweredGuide(userId, true);
+            if (guildId) setAnsweredGuide(guildId, true);
+            return true;
+        }
+
+        if (interaction.customId === 'guide_expired') {
+            await interaction.reply({
+                content: '✨ This guide prompt has expired. You can view the guide anytime with `/guide` or `>guide`! 🎶',
+                flags: MessageFlags.Ephemeral,
+            }).catch(() => {});
+
+            if (userId) setAnsweredGuide(userId, true);
+            if (guildId) setAnsweredGuide(guildId, true);
+            return true;
+        }
+    } catch (err) {
+        console.warn('[Reso] Error in handleGuideButton:', err.message);
+    }
+
+    return false;
+}
+
 module.exports = {
     checkAndPromptFirstTimeGuide,
     createQuickGuideEmbed,
     promptGuildOnInvite,
+    handleGuideButton,
 };
