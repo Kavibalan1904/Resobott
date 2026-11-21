@@ -1,6 +1,7 @@
 const { nowPlayingEmbed, createPlayerControls, createDisabledControls, createEmbed, errorEmbed, warningEmbed, EMOJIS, capitalize } = require('../utils/embeds');
 const { truncate, markNodeError, getHealthyNodes, getBestNode, computeNodeScore, cleanVideoTitle, extractTrackSearchQueries, isAcceptableFallback, formatMs, PRIMARY_NODE_ID } = require('../utils/helpers');
 const { getAutoplayTrack, updateSessionState } = require('../utils/recommendations');
+const { searchSpotifyTrackUrl } = require('../utils/spotifyResolver');
 const { guildContextManager, autoplayStore, setTrackMetadata, getTrackMetadata } = require('../autoplay');
 const { getDesignatedChannel } = require('../utils/settings');
 const { checkAndPromptFirstTimeGuide } = require('../utils/onboarding');
@@ -163,10 +164,11 @@ function setupLavalinkEvents(client) {
             if (!player.node || !player.node.connected) return false;
 
             // Fallback order: Spotify (spsearch) MUST ALWAYS BE FIRST.
-            // SoundCloud (scsearch) is only queried in very rare occasions when Spotify and YouTube Music fail.
-            const isYoutubeBlock = /login|All clients failed|bot detection/i.test(`${reason} ${errorDetails}`);
+            // When blocked by YouTube (bot detection, decoding error, restricted audio, login),
+            // strictly fall back to Spotify, or SoundCloud as last non-YouTube resort. NEVER fall back to YouTube/YouTube Music.
+            const isYoutubeBlock = /login|All clients failed|bot detection|decoding the track|No supported audio streams|restricted|Sign in|rate-limit|Playback on other websites has been disabled/i.test(`${reason} ${errorDetails}`);
             const fallbackSources = isYoutubeBlock
-                ? ['spsearch', 'ytmsearch', 'scsearch']
+                ? ['spsearch', 'scsearch']
                 : ['spsearch', 'ytmsearch', 'scsearch', 'ytsearch'];
 
             for (const fallbackSource of fallbackSources) {
@@ -174,13 +176,27 @@ function setupLavalinkEvents(client) {
                     const ts = new Date().toISOString();
                     console.log(`[Reso ${ts}] ↻ RETRY: Quick retry for "${searchQuery}" via ${fallbackSource} (reason: ${reason})`);
                     try {
+                        let result = null;
                         const searchPromise = player.search({ query: searchQuery, source: fallbackSource }, track.requester);
                         let timeoutId;
                         const timeoutPromise = new Promise((_, reject) => {
                             timeoutId = setTimeout(() => reject(new Error('Retry search timeout')), 15000);
                         });
-                        const result = await Promise.race([searchPromise, timeoutPromise]);
+                        result = await Promise.race([searchPromise, timeoutPromise]);
                         clearTimeout(timeoutId);
+
+                        // If spsearch yielded no tracks directly, attempt to resolve via Spotify Web API track URL
+                        if ((!result || !result.tracks || result.tracks.length === 0) && fallbackSource === 'spsearch' && searchSpotifyTrackUrl) {
+                            try {
+                                const spotifyUrl = await searchSpotifyTrackUrl(searchQuery);
+                                if (spotifyUrl) {
+                                    console.log(`[Reso] 🟢 Resolved Spotify track URL for fallback: ${spotifyUrl}`);
+                                    result = await player.search({ query: spotifyUrl }, track.requester);
+                                }
+                            } catch (err) {
+                                console.warn(`[Reso] Spotify track URL search failed: ${err.message}`);
+                            }
+                        }
 
                         if (result && result.tracks && result.tracks.length > 0) {
                             // Check if a new track started playing while we were searching (e.g. manual skip)
@@ -206,6 +222,12 @@ function setupLavalinkEvents(client) {
                                         break;
                                     }
                                 }
+                            }
+
+                            // If YouTube is blocked, reject any candidate that still resolves to YouTube
+                            if (isYoutubeBlock && resolvedTrack?.info?.sourceName && /youtube/i.test(resolvedTrack.info.sourceName)) {
+                                console.log(`[Reso] ⚠ Discarded candidate "${resolvedTrack.info?.title}" because it resolves to YouTube while YouTube is blocked.`);
+                                continue;
                             }
 
                             // If no candidate matched the original track identity, don't play an unrelated track
@@ -753,10 +775,10 @@ function setupLavalinkEvents(client) {
         // Retry failed or already retried — skip with informative error message
         const channel = getPlayerTextChannel(player);
         if (channel) {
-            const isLoginError = /requires login|All clients failed|bot detection/i.test(errorMsg);
+            const isLoginError = /requires login|All clients failed|bot detection|decoding the track|No supported audio streams|restricted|Sign in/i.test(errorMsg);
             let description = `Failed to play **${truncate(track?.info?.title, 50)}**\n\`\`\`${truncate(errorMsg, 200)}\`\`\``;
             if (isLoginError) {
-                description += `\n💡 **Tip**: YouTube is currently restricting playback on the server. Try playing via SoundCloud (\`/play query: ${truncate(track?.info?.title, 30)} source: SoundCloud\`) or using a Spotify link.`;
+                description += `\n💡 **Tip**: YouTube is currently restricting playback on this server. Try playing via Spotify or SoundCloud (\`/play query: ${truncate(track?.info?.title, 30)} source: Spotify\`).`;
             }
             const embed = errorEmbed(description);
             channel.send({ embeds: [embed] }).catch(() => { });

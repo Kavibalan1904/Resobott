@@ -698,3 +698,87 @@ describe('Reso Smart Autoplay — 8. Autoplay & Recommendations Strict Separatio
     });
 });
 
+describe('Reso Smart Autoplay — 9. Autoplay Command Mode Selection', () => {
+    const autoplayCommand = require('../src/commands/music/autoplay');
+
+    it('should set mode to Discovery when called with action: status and mode: Discovery', async () => {
+        const guildId = 'guild_cmd_status_mode';
+        autoplayStore.setMode(guildId, 'Balanced');
+        assert.strictEqual(autoplayStore.getMode(guildId), 'Balanced');
+
+        let repliedEmbeds = null;
+        const interaction = {
+            guild: { id: guildId },
+            client: { lavalink: { getPlayer: () => null }, autoplayGuilds: new Set([guildId]) },
+            options: {
+                getString: (name) => {
+                    if (name === 'action') return 'status';
+                    if (name === 'mode') return 'Discovery';
+                    return null;
+                }
+            },
+            reply: async ({ embeds }) => {
+                repliedEmbeds = embeds;
+            }
+        };
+
+        await autoplayCommand.execute(interaction);
+        assert.strictEqual(autoplayStore.getMode(guildId), 'Discovery', 'Store mode must be updated to Discovery');
+        assert.ok(repliedEmbeds && repliedEmbeds.length > 0);
+        assert.ok(repliedEmbeds[0].data.description.includes('`Discovery`'), 'Embed description should reflect Discovery mode');
+    });
+
+    it('should set mode to Familiar when called with mode: Familiar without action', async () => {
+        const guildId = 'guild_cmd_mode_only';
+        autoplayStore.setMode(guildId, 'Balanced');
+
+        let repliedEmbeds = null;
+        const interaction = {
+            guild: { id: guildId },
+            client: { lavalink: { getPlayer: () => null } },
+            options: {
+                getString: (name) => {
+                    if (name === 'action') return null;
+                    if (name === 'mode') return 'Familiar';
+                    return null;
+                }
+            },
+            reply: async ({ embeds }) => {
+                repliedEmbeds = embeds;
+            }
+        };
+
+        await autoplayCommand.execute(interaction);
+        assert.strictEqual(autoplayStore.getMode(guildId), 'Familiar', 'Store mode must be updated to Familiar');
+        assert.ok(repliedEmbeds && repliedEmbeds.length > 0);
+        assert.ok(repliedEmbeds[0].data.description.includes('`Familiar`'));
+    });
+
+    it('should set mode when action itself is a mode name (prefix command e.g. >autoplay familiar)', async () => {
+        const guildId = 'guild_cmd_prefix_action';
+        autoplayStore.setMode(guildId, 'Balanced');
+
+        let repliedEmbeds = null;
+        const interaction = {
+            guild: { id: guildId },
+            client: { lavalink: { getPlayer: () => null } },
+            options: {
+                getString: (name) => {
+                    if (name === 'action') return 'familiar';
+                    if (name === 'mode') return null;
+                    return null;
+                }
+            },
+            reply: async ({ embeds }) => {
+                repliedEmbeds = embeds;
+            }
+        };
+
+        await autoplayCommand.execute(interaction);
+        assert.strictEqual(autoplayStore.getMode(guildId), 'Familiar', 'Prefix mode argument must update store to Familiar');
+        assert.ok(repliedEmbeds && repliedEmbeds.length > 0);
+        assert.ok(repliedEmbeds[0].data.description.includes('`Familiar`'));
+    });
+});
+
+

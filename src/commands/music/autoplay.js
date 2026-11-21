@@ -3,6 +3,22 @@ const { successEmbed, errorEmbed, createEmbed, EMOJIS } = require('../../utils/e
 const { getVoiceChannel, truncate } = require('../../utils/helpers');
 const { autoplayStore, guildContextManager } = require('../../autoplay');
 
+const VALID_MODES = ['Balanced', 'Familiar', 'Discovery', 'Artist Focus', 'Session Focus'];
+
+function normalizeMode(input) {
+    if (!input || typeof input !== 'string') return null;
+    const clean = input.trim().toLowerCase();
+    for (const valid of VALID_MODES) {
+        if (valid.toLowerCase() === clean) return valid;
+    }
+    if (clean.includes('familiar')) return 'Familiar';
+    if (clean.includes('discover')) return 'Discovery';
+    if (clean.includes('balance')) return 'Balanced';
+    if (clean.includes('artist')) return 'Artist Focus';
+    if (clean.includes('session')) return 'Session Focus';
+    return null;
+}
+
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('autoplay')
@@ -36,9 +52,49 @@ module.exports = {
 
     async execute(interaction) {
         const guildId = interaction.guild.id;
-        const action = interaction.options.getString('action') || 'toggle';
+        const rawAction = interaction.options.getString('action');
+        const rawMode = interaction.options.getString('mode');
         const context = guildContextManager.getContext(guildId);
         const player = interaction.client.lavalink?.getPlayer(guildId);
+
+        // Intelligently detect if mode was requested directly, via mode option, or via action parameter
+        const requestedMode = normalizeMode(rawMode) || normalizeMode(rawAction);
+
+        // ── Direct Mode Switch ──
+        if (requestedMode) {
+            autoplayStore.setMode(guildId, requestedMode);
+            context.mode = requestedMode;
+
+            // If action was specifically 'status', show status embed with updated mode
+            if (rawAction === 'status') {
+                const isEnabled = autoplayStore.isEnabled(guildId) || interaction.client.autoplayGuilds?.has(guildId);
+                const seed = context.getRecommendationSeed();
+                const lastPicked = context.lastSelectedTrack;
+
+                const embed = createEmbed('Info')
+                    .setAuthor({ name: '🔄 Reso Smart Autoplay Status' })
+                    .setDescription(
+                        `### State: ${isEnabled ? '✅ Enabled' : '❌ Disabled'}\n` +
+                        `> **Engine:** Resonance AI DJ (YouTube Music Radio)\n` +
+                        `> **Active Mode:** \`${requestedMode}\` *(Updated)*\n\n` +
+                        `**🌱 Current Recommendation Seed:**\n` +
+                        `> ${seed?.info ? `**${truncate(seed.info.title, 45)}** by ${seed.info.author || 'Unknown'}` : '*No seed yet (play a song to set seed)*'}\n\n` +
+                        `**🎧 Last Autoplay Selection:**\n` +
+                        `> ${lastPicked?.info ? `**${truncate(lastPicked.info.title, 45)}** (${context.lastSelectionReason || 'Recommended'})` : '*None in current session*'}\n\n` +
+                        `**📜 History Memory:**\n` +
+                        `> \`${context.recentHistory.length}\` tracks tracked | \`${context.explicitLikes.size}\` likes | \`${context.explicitDislikes.size}\` dislikes`
+                    )
+                    .setFooter({ text: 'Use /autoplay action:mode to switch recommendation style' });
+
+                return interaction.reply({ embeds: [embed] });
+            }
+
+            const embed = createEmbed('Success')
+                .setDescription(`🎯 **Autoplay mode** updated to **\`${requestedMode}\`**! ${EMOJIS.sparkle}`);
+            return interaction.reply({ embeds: [embed] });
+        }
+
+        const action = rawAction || 'toggle';
 
         // Subaction: Status
         if (action === 'status') {
@@ -67,28 +123,19 @@ module.exports = {
 
         // Subaction: Mode
         if (action === 'mode') {
-            const newMode = interaction.options.getString('mode');
-            if (!newMode) {
-                const currentMode = autoplayStore.getMode(guildId);
-                const embed = createEmbed('Info')
-                    .setAuthor({ name: '🎯 Autoplay Recommendation Modes' })
-                    .setDescription(
-                        `Current Mode: **\`${currentMode}\`**\n\n` +
-                        `**Available Modes:**\n` +
-                        `• **\`Balanced\`** (Default) — 30% seed relevance, 20% artist match, 15% session vibe, 15% feedback, 10% novelty, 10% quality.\n` +
-                        `• **\`Familiar\`** — Heavily prefers known artists, past hits, and positive feedback.\n` +
-                        `• **\`Discovery\`** — Introduces more new and fresh artists within the same genre/language.\n` +
-                        `• **\`Artist Focus\`** — Stays tightly focused on the current artist's catalog.\n` +
-                        `• **\`Session Focus\`** — Gives dominant weight to the recent sequence of manual requests.\n\n` +
-                        `*Select a mode with \`/autoplay action:mode mode:<Choice>\`*`
-                    );
-                return interaction.reply({ embeds: [embed] });
-            }
-
-            autoplayStore.setMode(guildId, newMode);
-            context.mode = newMode;
-            const embed = createEmbed('Success')
-                .setDescription(`🎯 **Autoplay mode** updated to **\`${newMode}\`**! ${EMOJIS.sparkle}`);
+            const currentMode = autoplayStore.getMode(guildId);
+            const embed = createEmbed('Info')
+                .setAuthor({ name: '🎯 Autoplay Recommendation Modes' })
+                .setDescription(
+                    `Current Mode: **\`${currentMode}\`**\n\n` +
+                    `**Available Modes:**\n` +
+                    `• **\`Balanced\`** (Default) — 30% seed relevance, 20% artist match, 15% session vibe, 15% feedback, 10% novelty, 10% quality.\n` +
+                    `• **\`Familiar\`** — Heavily prefers known artists, past hits, and positive feedback.\n` +
+                    `• **\`Discovery\`** — Introduces more new and fresh artists within the same genre/language.\n` +
+                    `• **\`Artist Focus\`** — Stays tightly focused on the current artist's catalog.\n` +
+                    `• **\`Session Focus\`** — Gives dominant weight to the recent sequence of manual requests.\n\n` +
+                    `*Select a mode with \`/autoplay action:mode mode:<Choice>\` or \`/autoplay mode:<Choice>\`*`
+                );
             return interaction.reply({ embeds: [embed] });
         }
 

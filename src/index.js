@@ -546,6 +546,18 @@ async function main() {
                             return args.slice(1).join(' ');
                         }
                         if ((name === 'query' || name === 'request') && args.length > 0) return args.join(' ');
+                        if (commandName === 'autoplay') {
+                            if (name === 'action') {
+                                const validActions = ['status', 'mode', 'toggle', 'explain', 'clearhistory', 'like', 'dislike'];
+                                if (validActions.includes(args[0]?.toLowerCase())) return args[0].toLowerCase();
+                                return args[0] || null;
+                            }
+                            if (name === 'mode') {
+                                if (args[0]?.toLowerCase() === 'mode' && args.length > 1) return args.slice(1).join(' ');
+                                if (args[0]?.toLowerCase() === 'status' && args.length > 1) return args.slice(1).join(' ');
+                                return args.join(' ') || null;
+                            }
+                        }
                         if (name === 'source') {
                             const validSources = ['auto', 'youtube', 'youtubemusic', 'spotify', 'soundcloud', 'apple'];
                             const lastArg = args[args.length - 1]?.toLowerCase();

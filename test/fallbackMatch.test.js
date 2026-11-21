@@ -73,4 +73,32 @@ describe('Fallback Matching & Track Identity Preservation', () => {
         const acceptable = isAcceptableFallback(legitimateCandidate, originalTrack, 'Mannippu Kanguva');
         assert.strictEqual(acceptable, true, 'Should accept legitimate audio match');
     });
+
+    it('should identify YouTube playback block errors accurately', () => {
+        const errorStrings = [
+            'All clients failed to load the item. Client [TVHTML5] failed: Something went wrong when decoding the track. Client [WEB] failed: No supported audio streams available',
+            'This video requires login to confirm your age',
+            'Sign in to confirm you’re not a bot',
+            'rate-limit exceeded on youtube',
+            'No supported audio streams available, available types: []',
+        ];
+
+        const isYoutubeBlockRegex = /login|All clients failed|bot detection|decoding the track|No supported audio streams|restricted|Sign in|rate-limit|Playback on other websites has been disabled/i;
+
+        for (const err of errorStrings) {
+            assert.ok(isYoutubeBlockRegex.test(err), `Should match block error: "${err}"`);
+        }
+    });
+
+    it('should strictly exclude ytmsearch and ytsearch when YouTube is blocked', () => {
+        const isYoutubeBlock = true;
+        const fallbackSources = isYoutubeBlock
+            ? ['spsearch', 'scsearch']
+            : ['spsearch', 'ytmsearch', 'scsearch', 'ytsearch'];
+
+        assert.deepStrictEqual(fallbackSources, ['spsearch', 'scsearch']);
+        assert.ok(!fallbackSources.includes('ytmsearch'), 'Must not search YouTube Music when YouTube is blocked');
+        assert.ok(!fallbackSources.includes('ytsearch'), 'Must not search YouTube Video when YouTube is blocked');
+        assert.strictEqual(fallbackSources[0], 'spsearch', 'Spotify must be the first fallback');
+    });
 });

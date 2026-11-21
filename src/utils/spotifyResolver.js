@@ -410,10 +410,43 @@ async function searchSpotifyTrack(player, item, user) {
     return null;
 }
 
+/**
+ * Search Spotify Web API for a track by query (requires SPOTIFY_CLIENT_ID & SPOTIFY_CLIENT_SECRET)
+ * Returns the track's Spotify web URL or null
+ *
+ * @param {string} query Search terms (title, artist)
+ * @returns {Promise<string|null>} Spotify track URL
+ */
+async function searchSpotifyTrackUrl(query) {
+    if (!query || typeof query !== 'string') return null;
+    const token = await getSpotifyApiToken();
+    if (!token) return null;
+
+    try {
+        const market = process.env.SPOTIFY_COUNTRY_CODE || 'US';
+        const endpoint = `https://api.spotify.com/v1/search?q=${encodeURIComponent(query)}&type=track&limit=3&market=${market}`;
+        const res = await requestUrl(endpoint, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        }, 6000);
+
+        if (res.status === 200) {
+            const data = JSON.parse(res.data);
+            const items = data.tracks?.items;
+            if (items && items.length > 0) {
+                return items[0].external_urls?.spotify || `https://open.spotify.com/track/${items[0].id}`;
+            }
+        }
+    } catch (e) {
+        console.warn(`[Spotify] Search API error: ${e.message}`);
+    }
+    return null;
+}
+
 module.exports = {
     parseSpotifyUrl,
     expandSpotifyUrl,
     resolveSpotify,
     searchSpotifyTrack,
+    searchSpotifyTrackUrl,
     requestUrl,
 };
